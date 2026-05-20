@@ -14,9 +14,9 @@
     "docker": "bash release.sh"
   },
   "dependencies": {
-    "@atproto/api": "0.18.20",
+    "@atproto/api": "0.19.19",
     "@atproto/xrpc": "0.7.7",
-    "axios": "1.13.4",
+    "axios": "1.16.1",
     "dotenv": "^17.0.0",
     "feedsub": "^0.7.8",
     "html-entities": "2.6.0",
@@ -24,15 +24,15 @@
     "open-graph-scraper": "6.11.0"
   },
   "devDependencies": {
-    "@types/node": "24.10.10",
+    "@types/node": "24.12.4",
     "gts": "7.0.0",
-    "tsx": "4.21.0",
-    "typescript": "5.9.3",
+    "tsx": "4.22.2",
+    "typescript": "6.0.3",
     "underscore-cli": "^0.2.19"
   },
   "typeRoots": [
     "./node_modules/@types",
     "./app/types"
   ],
-  "packageManager": "yarn@4.12.0"
+  "packageManager": "yarn@4.14.1"
 }
