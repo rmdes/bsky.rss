@@ -110,8 +110,8 @@ export class FeedReader {
   private itemHandler: ((parsed: ParsedItem) => void) | null = null;
 
   constructor(
-    private feedUrl: URL,
-    private fetchIntervalMinutes: number,
+    feedUrl: URL,
+    fetchIntervalMinutes: number,
     private config: FeedReaderConfig,
     private store: BotStore
   ) {
