@@ -1,0 +1,50 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { XRPCError, ResponseType } from "@atproto/xrpc";
+import { classifyPostError } from "./bskyClient.ts";
+
+function makeXRPCError(status: number, headers?: Record<string, string>): XRPCError {
+  const err = new XRPCError(status, "TestError", "test error");
+  (err as any).headers = headers;
+  return err;
+}
+
+test("classifies a 429 with a lowercase retry-after header (the real-world shape)", () => {
+  const err = makeXRPCError(ResponseType.RateLimitExceeded, { "retry-after": "45" });
+  const result = classifyPostError(err);
+  assert.equal(result.ratelimit, true);
+  assert.equal(result.retryAfterSeconds, 45);
+});
+
+test("classifies a 504 the same way as a 429", () => {
+  const err = makeXRPCError(ResponseType.UpstreamTimeout, { "retry-after": "12" });
+  const result = classifyPostError(err);
+  assert.equal(result.ratelimit, true);
+  assert.equal(result.retryAfterSeconds, 12);
+});
+
+test("falls back to 30s when a rate-limit status has no retry-after header", () => {
+  const err = makeXRPCError(ResponseType.RateLimitExceeded, {});
+  const result = classifyPostError(err);
+  assert.equal(result.ratelimit, true);
+  assert.equal(result.retryAfterSeconds, 30);
+});
+
+test("falls back to 30s for a non-rate-limit XRPCError, matching today's catch-all behavior", () => {
+  const err = makeXRPCError(ResponseType.InvalidRequest, { "retry-after": "999" });
+  const result = classifyPostError(err);
+  assert.equal(result.ratelimit, true);
+  assert.equal(result.retryAfterSeconds, 30);
+});
+
+test("falls back to 30s for a non-XRPCError exception (network error, etc.)", () => {
+  const result = classifyPostError(new Error("ECONNRESET"));
+  assert.equal(result.ratelimit, true);
+  assert.equal(result.retryAfterSeconds, 30);
+});
+
+test("ignores a non-numeric retry-after value and falls back to 30s", () => {
+  const err = makeXRPCError(ResponseType.RateLimitExceeded, { "retry-after": "not-a-number" });
+  const result = classifyPostError(err);
+  assert.equal(result.retryAfterSeconds, 30);
+});
