@@ -115,6 +115,9 @@ dist
 .temp
 .cache
 
+# superpower docs/spec
+docs/
+
 # Docusaurus cache and generated files
 .docusaurus
 
