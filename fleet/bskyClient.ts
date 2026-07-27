@@ -54,10 +54,15 @@ export class BskyClient {
   async login(identifier: string, password: string): Promise<void> {
     const persisted = this.store.readSession<AtpSessionData>();
     if (persisted) {
-      const resumed = await this.agent.resumeSession(persisted);
-      if (resumed.success) {
-        console.log(`[${new Date().toUTCString()}] - [bsky.rss LOGIN] Resumed session for ${resumed.data.handle}`);
-        return;
+      try {
+        const resumed = await this.agent.resumeSession(persisted);
+        if (resumed.success) {
+          console.log(`[${new Date().toUTCString()}] - [bsky.rss LOGIN] Resumed session for ${resumed.data.handle}`);
+          return;
+        }
+      } catch (e) {
+        // resumeSession throws on any failure (expired token, network error, etc.)
+        // Fall through to password login below
       }
     }
     const loginResult = await this.agent.login({ identifier, password });
