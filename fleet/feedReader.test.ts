@@ -41,11 +41,11 @@ test("parseString substitutes $title, $link, $description", () => {
   assert.equal(result, "My Title - https://example.com/post (My description)");
 });
 
-test("parseString truncates to 300 chars when truncate is true", () => {
+test("parseString truncates past 300 chars to 280 chars when truncate is true", () => {
   const longTitle = "x".repeat(400);
   const item = { title: longTitle, link: { href: "https://example.com" }, description: "" };
   const result = parseString("$title", item, true, false, false);
-  assert.equal(result.length, 300);
+  assert.equal(result.length, 280);
   assert.ok(result.endsWith("..."));
 });
 
