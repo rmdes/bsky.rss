@@ -88,6 +88,9 @@ export function parseString(
   }
 
   if (template.includes("$description")) {
+    // Deliberate improvement over app/utils/rssHandler.ts, which leaves
+    // `description` undefined here and lets String.replace stringify it to
+    // the literal text "undefined" in the post - a real bug in production.
     let description = item.description ?? item.content ?? "";
     if (descriptionClearHTML) description = removeHTMLTags(description);
     result = result.replace("$description", description);
@@ -110,6 +113,7 @@ export class FeedReader {
   private itemHandler: ((parsed: ParsedItem) => void) | null = null;
 
   constructor(
+    private botId: string,
     feedUrl: URL,
     fetchIntervalMinutes: number,
     private config: FeedReaderConfig,
@@ -128,8 +132,16 @@ export class FeedReader {
 
   start(): void {
     this.reader.read();
-    this.reader.on("item", async (item: FeedItem) => {
-      await this.handleItem(item);
+    // handleItem is async; the EventEmitter has no way to await or catch a
+    // listener's rejection, so an ordinary bad item (missing title/link)
+    // would otherwise become an unhandled rejection and crash the whole
+    // process - fatal for every other bot sharing this process.
+    this.reader.on("item", (item: FeedItem) => {
+      this.handleItem(item).catch((err) => {
+        console.log(
+          `[${new Date().toUTCString()}] - [bsky.rss FEED] [${this.botId}] Error handling item: ${err}`
+        );
+      });
     });
     this.reader.start();
   }
@@ -150,7 +162,12 @@ export class FeedReader {
     const useDate: string | undefined = this.config.dateField
       ? item[this.config.dateField]
       : (item.pubdate ?? item.published);
-    if (!useDate) return;
+    if (!useDate) {
+      console.log(
+        `[${new Date().toUTCString()}] - [bsky.rss FEED] [${this.botId}] No date provided by RSS reader for post.`
+      );
+      return;
+    }
 
     const lastCursor = this.store.readCursor();
     let embed: ParsedEmbed | undefined;
@@ -235,6 +252,9 @@ export class FeedReader {
           };
         }
       } else {
+        console.log(
+          `[${new Date().toUTCString()}] - [bsky.rss FETCH] [${this.botId}] Error fetching Open Graph data for ${item.title} (${url})`
+        );
         description = item.description ?? item.content;
         if (description && this.config.descriptionClearHTML) description = removeHTMLTags(description);
         embed = { uri: url, title: item.title, description, image, imageAlt, type: this.config.embedType };
