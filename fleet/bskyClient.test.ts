@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { XRPCError, ResponseType } from "@atproto/xrpc";
-import { classifyPostError } from "./bskyClient.ts";
+import { classifyPostError, isAlreadyExistsError } from "./bskyClient.ts";
 
 function makeXRPCError(status: number, headers?: Record<string, string>): XRPCError {
   const err = new XRPCError(status, "TestError", "test error");
@@ -47,4 +47,15 @@ test("ignores a non-numeric retry-after value and falls back to 30s", () => {
   const err = makeXRPCError(ResponseType.RateLimitExceeded, { "retry-after": "not-a-number" });
   const result = classifyPostError(err);
   assert.equal(result.retryAfterSeconds, 30);
+});
+
+test("isAlreadyExistsError is deliberately conservative — returns false for any input today", () => {
+  // No real PDS response shape has been empirically verified yet (see Task 6 in the
+  // Phase 2 plan). This test documents and locks in the intentional fail-safe default:
+  // until a real "already exists" error shape is confirmed, every createRecord failure
+  // is treated as genuinely uncertain, never as a confirmed duplicate.
+  assert.equal(isAlreadyExistsError(new Error("anything")), false);
+  assert.equal(isAlreadyExistsError(makeXRPCError(ResponseType.InvalidRequest)), false);
+  assert.equal(isAlreadyExistsError(undefined), false);
+  assert.equal(isAlreadyExistsError({ status: 400, error: "AlreadyExists" }), false);
 });

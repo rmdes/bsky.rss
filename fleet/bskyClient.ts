@@ -1,7 +1,15 @@
 import { BskyAgent, RichText, AtpSessionEvent, AtpSessionData } from "@atproto/api";
 import { XRPCError, ResponseType } from "@atproto/xrpc";
 import { BotStore } from "./botStore.ts";
-import { ParsedEmbed } from "./feedReader.ts";
+
+export interface ResolvedEmbed {
+  uri: string;
+  title: string;
+  description?: string;
+  image?: Buffer;
+  imageAlt?: string;
+  type?: string;
+}
 
 export interface PostResult {
   ok: boolean;
@@ -33,6 +41,25 @@ export function classifyPostError(error: unknown): { ratelimit: boolean; retryAf
     }
   }
   return { ratelimit: true, retryAfterSeconds: DEFAULT_RETRY_SECONDS };
+}
+
+/**
+ * Whether a createRecord failure means "a record already exists at this exact rkey" —
+ * the one case where automatic retry is safe (design spec §4.2), since the rkey makes
+ * it provably idempotent: if it already exists, this exact item was already published.
+ *
+ * com.atproto.repo.createRecord's lexicon declares no formally-typed error for this
+ * case (the only named error is InvalidSwap, for swapCommit mismatches) — so this
+ * can't be guessed, it must be verified against a real PDS response. Starts
+ * deliberately conservative: returns false unconditionally, matching the design's
+ * explicit fail-safe default ("the fail-safe default for any unrecognized createRecord
+ * error is to treat it as genuinely uncertain, not as a confirmed duplicate"). This is
+ * a complete, intentional implementation of "no signal is trusted yet" — not a stub.
+ * See fleet/verifyDuplicateDetection.ts for the empirical verification procedure that
+ * should inform updating this function once a real error shape is confirmed.
+ */
+export function isAlreadyExistsError(_error: unknown): boolean {
+  return false;
 }
 
 export class BskyClient {
@@ -80,7 +107,8 @@ export class BskyClient {
     content: string;
     languages?: string[];
     date?: Date;
-    embed?: ParsedEmbed;
+    rkey: string;
+    embed?: ResolvedEmbed;
   }): Promise<PostResult> {
     if (this.dryRun) {
       console.log(
@@ -135,10 +163,27 @@ export class BskyClient {
     };
 
     try {
-      const result = await this.agent.post(record as any);
+      const result = await this.agent.app.bsky.feed.post.create(
+        { repo: this.agent.accountDid, rkey: params.rkey },
+        record as any
+      );
       return { ok: true, uri: result.uri };
     } catch (error) {
+      if (isAlreadyExistsError(error)) {
+        console.log(
+          `[${new Date().toUTCString()}] - [bsky.rss POST] [${this.botId}] rkey ${params.rkey} already exists — treating as already published, not a duplicate`
+        );
+        return { ok: true };
+      }
       const { ratelimit, retryAfterSeconds } = classifyPostError(error);
+      if (!ratelimit) {
+        // Design spec §4.2: any outcome that isn't a confirmed success or a confirmed
+        // duplicate is uncertain — skip, never auto-retry. classifyPostError's current
+        // implementation always returns ratelimit: true as its own fail-safe default
+        // (see its own doc comment), so this branch is presently unreachable, but the
+        // policy is written for when that classification becomes more precise.
+        return { ok: false, ratelimit: false };
+      }
       return { ok: false, ratelimit, retryAfterSeconds };
     }
   }
