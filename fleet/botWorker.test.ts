@@ -208,12 +208,13 @@ test("an uncertain (non-rate-limit) failure marks the item skipped and continues
   await worker.drainOnce();
 
   // First item: uncertain failure -> skipped, not queued anymore, not published.
-  // Second item never got attempted because setNextResult only set one static
-  // response — this test only needs to prove the first item didn't stay queued and
-  // didn't block the drain loop from finishing (queueLength must reach 0 or 1, not
-  // stay stuck forever). Assert on the concrete guarantee: skipped item is gone from
-  // the queued count and store.cursor was never advanced for it.
+  // Second item: setNextResult returns the same static error for every call, so
+  // second item also fails with uncertain error. If the loop uses `continue` (correct),
+  // it attempts both items and both fail; both are skipped. If it uses `break` (bug),
+  // it stops after the first failure and never attempts the second item (still queued).
   assert.equal(store.cursor, "", "cursor must not advance for a skipped, unpublished item");
+  assert.equal(bskyClient.posted.length, 2, "both items should be attempted, proving loop continued after first uncertain failure");
+  assert.equal(worker.queueLength(), 0, "both items should be marked skipped, proving second item was processed");
   worker.stop();
 });
 

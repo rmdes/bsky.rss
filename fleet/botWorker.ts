@@ -1,4 +1,4 @@
-import { FeedReader, ParsedItem } from "./feedReader.ts";
+import { FeedReader, ParsedItem, ParsedEmbed } from "./feedReader.ts";
 import { Scheduler } from "./scheduler.ts";
 import { BskyClient, ResolvedEmbed } from "./bskyClient.ts";
 import { BotStore } from "./botStore.ts";
@@ -57,14 +57,7 @@ export class BotWorker {
 
   private async resolveEmbed(row: QueueItemRow): Promise<ResolvedEmbed | undefined> {
     if (!row.embedJson) return undefined;
-    const parsed = JSON.parse(row.embedJson) as {
-      uri: string;
-      title: string;
-      description?: string;
-      imageUrl?: string;
-      imageAlt?: string;
-      type?: string;
-    };
+    const parsed = JSON.parse(row.embedJson) as ParsedEmbed;
     const image = parsed.imageUrl ? await this.options.feedReader.resolveEmbedImage(parsed.imageUrl) : undefined;
     return {
       uri: parsed.uri,
