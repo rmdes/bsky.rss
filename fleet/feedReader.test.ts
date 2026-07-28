@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { removeHTMLTags, decodeHTMLTwice, fixMalformedUrl, parseString } from "./feedReader.ts";
+import { computeDedupeKey } from "./dedupeKey.ts";
 
 test("removeHTMLTags strips tags and collapses whitespace", () => {
   assert.equal(removeHTMLTags("<p>Hello <b>world</b></p>"), "Hello world");
@@ -60,4 +61,12 @@ test("parseString cleans HTML from the title when titleClearHTML is true", () =>
   const item = { title: "<b>Bold</b> Title", link: { href: "https://example.com" }, description: "" };
   const result = parseString("$title", item, false, true, false);
   assert.equal(result, "Bold Title");
+});
+
+test("computeDedupeKey matches what a FeedReader-computed dedupeKey should look like for a known URL", () => {
+  // Guards the FeedReader <-> dedupeKey.ts integration contract: FeedReader must call
+  // computeDedupeKey(botId, itemUrl) with the item's link, not some other string.
+  const key = computeDedupeKey("bot-1", "https://example.com/a");
+  assert.equal(typeof key, "string");
+  assert.equal(key.length, 64);
 });

@@ -4,6 +4,7 @@ import axios from "axios";
 import og from "open-graph-scraper";
 import { decode } from "html-entities";
 import { BotStore } from "./botStore.ts";
+import { computeDedupeKey } from "./dedupeKey.ts";
 
 export interface FeedItem {
   title: string;
@@ -35,7 +36,7 @@ export interface ParsedEmbed {
   uri: string;
   title: string;
   description?: string;
-  image?: Buffer;
+  imageUrl?: string;
   imageAlt?: string;
   type?: string;
 }
@@ -46,6 +47,7 @@ export interface ParsedItem {
   embed?: ParsedEmbed;
   languages: string[] | undefined;
   itemDate: string;
+  dedupeKey: string;
 }
 
 export function removeHTMLTags(htmlString: string): string {
@@ -146,7 +148,7 @@ export class FeedReader {
     this.reader.start();
   }
 
-  private async fetchImage(imageUrl: string): Promise<Buffer | undefined> {
+  async resolveEmbedImage(imageUrl: string): Promise<Buffer | undefined> {
     try {
       const response = await axios.get(imageUrl, {
         headers: { "User-Agent": this.config.ogUserAgent ?? "bsky.rss/1.0 (Open Graph Scraper)" },
@@ -169,11 +171,14 @@ export class FeedReader {
       return;
     }
 
+    const itemUrl = typeof item.link === "object" ? item.link.href : item.link;
+    const dedupeKey = computeDedupeKey(this.botId, itemUrl ?? "");
+
     const lastCursor = this.store.readCursor();
     let embed: ParsedEmbed | undefined;
 
     if (this.config.publishEmbed) {
-      const url = typeof item.link === "object" ? item.link.href : item.link;
+      const url = itemUrl;
       if (!url) throw new Error("No link provided from RSS reader to fetch Open Graph data.");
 
       // Dedup check runs before any network fetch, matching rssHandler.ts's real
@@ -185,7 +190,7 @@ export class FeedReader {
         if (new Date(useDate) <= new Date(lastCursor)) return;
       }
 
-      let image: Buffer | undefined;
+      let imageUrl: string | undefined;
       const imageKey = this.config.imageField;
       if (imageKey && Object.keys(item).includes(imageKey)) {
         const imageField = item[imageKey];
@@ -194,7 +199,7 @@ export class FeedReader {
           Object.keys(imageField ?? {}).includes("type") && !imageField.type?.startsWith("image")
         );
         if (hasUrl && isImageType) {
-          image = await this.fetchImage(imageField.url);
+          imageUrl = imageField.url;
         }
       }
 
@@ -226,8 +231,8 @@ export class FeedReader {
         .catch(() => ({ error: true }));
 
       if (!openGraphResult.error) {
-        if (!image && openGraphResult.ogImage?.[0]?.url) {
-          image = await this.fetchImage(openGraphResult.ogImage[0].url);
+        if (!imageUrl && openGraphResult.ogImage?.[0]?.url) {
+          imageUrl = openGraphResult.ogImage[0].url;
         }
         if (!description) {
           description = openGraphResult.ogDescription ?? item.description ?? item.content;
@@ -246,7 +251,7 @@ export class FeedReader {
             uri,
             title: openGraphResult.ogTitle ?? item.title,
             description,
-            image,
+            imageUrl,
             imageAlt,
             type: this.config.embedType,
           };
@@ -257,7 +262,7 @@ export class FeedReader {
         );
         description = item.description ?? item.content;
         if (description && this.config.descriptionClearHTML) description = removeHTMLTags(description);
-        embed = { uri: url, title: item.title, description, image, imageAlt, type: this.config.embedType };
+        embed = { uri: url, title: item.title, description, imageUrl, imageAlt, type: this.config.embedType };
       }
     }
 
@@ -280,6 +285,7 @@ export class FeedReader {
       embed: this.config.publishEmbed ? embed : undefined,
       languages: this.config.languages,
       itemDate: useDate,
+      dedupeKey,
     } as ParsedItem);
   }
 }
