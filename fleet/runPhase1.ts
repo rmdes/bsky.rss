@@ -40,10 +40,13 @@ async function buildWorker(config: BotWorkerConfig): Promise<BotWorker> {
     spacingWindow: 600,
     adaptiveSpacing: true,
   });
-  const bskyClient = new BskyClient(config.instanceUrl, store);
+  // Dry-run is the default so this never publishes for real until you opt in
+  // with DRY_RUN=false in the environment.
+  const bskyClient = new BskyClient(config.botId, config.instanceUrl, store, process.env.DRY_RUN !== "false");
   await bskyClient.login(config.identifier, config.appPassword);
 
   const feedReader = new FeedReader(
+    config.botId,
     new URL(config.feedUrl),
     config.fetchIntervalMinutes,
     {
@@ -69,6 +72,10 @@ async function buildWorker(config: BotWorkerConfig): Promise<BotWorker> {
   });
 }
 
+// Runs in dry-run mode by default (no real posts); set DRY_RUN=false to actually publish.
+// Do not point BOT1_/BOT2_ env vars at a bot account whose existing single-bot container
+// (the app/ entrypoint) is still running against the same account - both would post
+// independently and you'd get duplicate posts.
 async function main(): Promise<void> {
   const bot1Config = loadBotConfig("BOT1");
   const bot2Config = loadBotConfig("BOT2");
