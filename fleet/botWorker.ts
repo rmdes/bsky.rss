@@ -1,4 +1,4 @@
-import { FeedReader, ParsedItem } from "./feedReader.ts";
+import { FeedReader, ParsedItem, ParsedEmbed } from "./feedReader.ts";
 import { Scheduler } from "./scheduler.ts";
 import { BskyClient } from "./bskyClient.ts";
 import { BotStore } from "./botStore.ts";
@@ -7,6 +7,7 @@ interface QueuedItem {
   content: string;
   languages: string[] | undefined;
   itemDate: string;
+  embed?: ParsedEmbed;
 }
 
 export interface BotWorkerOptions {
@@ -49,7 +50,12 @@ export class BotWorker {
 
   private enqueue(item: ParsedItem): void {
     log(this.options.botId, "QUEUE", `Queuing item (${item.title})`);
-    this.queue.push({ content: item.content, languages: item.languages, itemDate: item.itemDate });
+    this.queue.push({
+      content: item.content,
+      languages: item.languages,
+      itemDate: item.itemDate,
+      embed: item.embed,
+    });
   }
 
   async drainOnce(): Promise<void> {
@@ -65,7 +71,11 @@ export class BotWorker {
         const item = this.queue[0]!;
         let result;
         try {
-          result = await this.options.bskyClient.post({ content: item.content, languages: item.languages });
+          result = await this.options.bskyClient.post({
+            content: item.content,
+            languages: item.languages,
+            embed: item.embed,
+          });
         } catch (err) {
           log(this.options.botId, "POST", `Unexpected error posting: ${err}`);
           break;

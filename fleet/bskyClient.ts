@@ -1,6 +1,7 @@
 import { BskyAgent, RichText, AtpSessionEvent, AtpSessionData } from "@atproto/api";
 import { XRPCError, ResponseType } from "@atproto/xrpc";
 import { BotStore } from "./botStore.ts";
+import { ParsedEmbed } from "./feedReader.ts";
 
 export interface PostResult {
   ok: boolean;
@@ -38,6 +39,7 @@ export class BskyClient {
   private agent: BskyAgent;
 
   constructor(
+    private botId: string,
     service: string,
     private store: BotStore,
     private dryRun: boolean = false
@@ -57,7 +59,9 @@ export class BskyClient {
       try {
         const resumed = await this.agent.resumeSession(persisted);
         if (resumed.success) {
-          console.log(`[${new Date().toUTCString()}] - [bsky.rss LOGIN] Resumed session for ${resumed.data.handle}`);
+          console.log(
+            `[${new Date().toUTCString()}] - [bsky.rss LOGIN] [${this.botId}] Resumed session for ${resumed.data.handle}`
+          );
           return;
         }
       } catch (e) {
@@ -67,22 +71,65 @@ export class BskyClient {
     }
     const loginResult = await this.agent.login({ identifier, password });
     if (!loginResult.success) throw new Error("Login failed (identifier/password)");
-    console.log(`[${new Date().toUTCString()}] - [bsky.rss LOGIN] Logged in as ${loginResult.data.handle}`);
+    console.log(
+      `[${new Date().toUTCString()}] - [bsky.rss LOGIN] [${this.botId}] Logged in as ${loginResult.data.handle}`
+    );
   }
 
-  async post(params: { content: string; languages?: string[]; date?: Date }): Promise<PostResult> {
+  async post(params: {
+    content: string;
+    languages?: string[];
+    date?: Date;
+    embed?: ParsedEmbed;
+  }): Promise<PostResult> {
     if (this.dryRun) {
-      console.log(`[dry-run] would publish: ${params.content}`);
+      console.log(
+        `[${new Date().toUTCString()}] - [bsky.rss POST] [${this.botId}] [dry-run] would publish: ${params.content}`
+      );
       return { ok: true, uri: "dry-run://noop" };
     }
 
     const richText = new RichText({ text: params.content });
     await richText.detectFacets(this.agent);
 
+    let uploadedBlob: unknown;
+    if (params.embed?.image) {
+      try {
+        const uploadResult = await this.agent.uploadBlob(params.embed.image, { encoding: "image/jpeg" });
+        uploadedBlob = uploadResult.data.blob;
+      } catch {
+        // No record has been created yet at this point, so it's always safe to retry.
+        return { ok: false, ratelimit: true, retryAfterSeconds: 30 };
+      }
+    }
+
+    let embed_data: unknown;
+    if (params.embed) {
+      if (params.embed.type === "image") {
+        if (uploadedBlob) {
+          embed_data = {
+            $type: "app.bsky.embed.images",
+            images: [{ image: uploadedBlob, alt: params.embed.imageAlt ?? "" }],
+          };
+        }
+      } else {
+        embed_data = {
+          $type: "app.bsky.embed.external",
+          external: {
+            uri: params.embed.uri,
+            title: params.embed.title,
+            description: params.embed.description ?? "",
+            thumb: uploadedBlob,
+          },
+        };
+      }
+    }
+
     const record = {
       $type: "app.bsky.feed.post",
       text: richText.text,
       facets: richText.facets,
+      embed: embed_data,
       langs: params.languages,
       createdAt: (params.date ?? new Date()).toISOString(),
     };
