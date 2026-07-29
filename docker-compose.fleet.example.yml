@@ -1,0 +1,20 @@
+# docker-compose.fleet.example.yml
+# Copy this to /home/skyfleet-next/docker-compose.yml during cutover (Task 9).
+# Reuses the same image the existing Dockerfile builds - only the command differs
+# from the legacy per-bot docker-compose.yml.
+services:
+  bsky-rss-fleet:
+    restart: unless-stopped
+    image: bsky.rss:fleet
+    container_name: bsky-rss-fleet
+    command: ["yarn", "fleet"]
+    environment:
+      - DRY_RUN=false
+      - FLEET_CONFIG_ROOT=/build/config
+      - FLEET_SECRETS_PATH=/build/secrets/bsky-fleet.json
+      - FLEET_DATA_ROOT=/build/data/fleet
+      - FLEET_LOCK_PATH=/build/data/fleet/fleet.pid
+    volumes:
+      - ./config:/build/config:ro
+      - ./secrets:/build/secrets:ro
+      - ./data:/build/data

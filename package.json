@@ -11,6 +11,7 @@
     "release": "sh release.sh",
     "start": "NODE_NO_WARNINGS=1 tsx ./app/index.ts",
     "dev": "tsx --watch ./app/index.ts",
+    "fleet": "NODE_NO_WARNINGS=1 tsx ./fleet/runFleet.ts",
     "docker": "bash release.sh",
     "typecheck": "tsc --noEmit"
   },
