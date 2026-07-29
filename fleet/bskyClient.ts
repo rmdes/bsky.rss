@@ -182,11 +182,8 @@ export class BskyClient {
         return { ok: true };
       }
       const { ratelimit, retryAfterSeconds } = classifyPostError(error);
-      if (!ratelimit) {
-        // Design spec §4.2: any outcome that isn't a confirmed success or a confirmed
-        // duplicate is uncertain — skip, never auto-retry.
-        return { ok: false, ratelimit: false };
-      }
+      // Design spec §4.2: any outcome that isn't a confirmed success or a confirmed
+      // duplicate is uncertain — skip, never auto-retry.
       return { ok: false, ratelimit, retryAfterSeconds };
     }
   }
