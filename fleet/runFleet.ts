@@ -9,6 +9,7 @@ import { SharedLimiters } from "./sharedLimiters.ts";
 import { installProcessSafetyNet } from "./processSafety.ts";
 import { loadFleet } from "./configLoader.ts";
 import { AuthCoordinator } from "./authCoordinator.ts";
+import { acquireLock, releaseLock } from "./pidLock.ts";
 import { formatMemoryLogLine } from "./memoryLog.ts";
 import type { FreshnessConfig } from "./freshnessPolicy.ts";
 import type { BotSpec } from "./configLoader.ts";
@@ -67,6 +68,12 @@ async function main(): Promise<void> {
   const secretsFilePath = process.env.FLEET_SECRETS_PATH ?? "./config.example/secrets/bsky-fleet.json";
   const dataRoot = process.env.FLEET_DATA_ROOT ?? "./data/fleet";
   const dryRun = process.env.DRY_RUN !== "false";
+  const lockFilePath = process.env.FLEET_LOCK_PATH ?? "./data/fleet/fleet.pid";
+  const shutdownPerBotTimeoutMs = Number(process.env.FLEET_SHUTDOWN_PER_BOT_TIMEOUT_MS ?? "10000");
+  const shutdownOverallTimeoutMs = Number(process.env.FLEET_SHUTDOWN_OVERALL_TIMEOUT_MS ?? "30000");
+  const memoryLogIntervalMs = Number(process.env.FLEET_MEMORY_LOG_INTERVAL_MS ?? "60000");
+
+  acquireLock(lockFilePath);
 
   const { fleetConfig, bots, errors } = loadFleet(configRoot, secretsFilePath, dataRoot);
 
@@ -89,6 +96,23 @@ async function main(): Promise<void> {
       ),
   });
 
+  let shuttingDown = false;
+  async function shutdown(signal: string): Promise<void> {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    log(`Received ${signal}, shutting down gracefully`);
+    coordinator.abortActivation();
+    await Promise.race([
+      coordinator.shutdownAll(shutdownPerBotTimeoutMs),
+      new Promise((resolve) => setTimeout(resolve, shutdownOverallTimeoutMs)),
+    ]);
+    releaseLock(lockFilePath);
+    log("Shutdown complete");
+    process.exit(0);
+  }
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+
   await coordinator.start();
 
   log(
@@ -97,10 +121,10 @@ async function main(): Promise<void> {
 
   if (coordinator.activeWorkers().length === 0 && bots.length > 0) {
     log("No bots activated - exiting non-zero");
+    releaseLock(lockFilePath);
     process.exit(1);
   }
 
-  const memoryLogIntervalMs = Number(process.env.FLEET_MEMORY_LOG_INTERVAL_MS ?? "60000");
   setInterval(() => log(`Memory: ${formatMemoryLogLine(process.memoryUsage())}`), memoryLogIntervalMs);
 }
 
