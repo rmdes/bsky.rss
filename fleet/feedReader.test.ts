@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { removeHTMLTags, decodeHTMLTwice, fixMalformedUrl, parseString } from "./feedReader.ts";
+import { removeHTMLTags, decodeHTMLTwice, fixMalformedUrl, parseString, textOf } from "./feedReader.ts";
 import { computeDedupeKey } from "./dedupeKey.ts";
 
 test("removeHTMLTags strips tags and collapses whitespace", () => {
@@ -69,4 +69,33 @@ test("computeDedupeKey matches what a FeedReader-computed dedupeKey should look 
   const key = computeDedupeKey("bot-1", "https://example.com/a");
   assert.equal(typeof key, "string");
   assert.equal(key.length, 64);
+});
+
+test("textOf returns a plain string unchanged", () => {
+  assert.equal(textOf("urn:uuid:AAA"), "urn:uuid:AAA");
+});
+
+test("textOf pulls .text out of the object shape feedme returns for an attributed tag", () => {
+  // feedme (feedsub's underlying parser) returns e.g. <guid isPermaLink="false">urn:uuid:AAA</guid>
+  // as { ispermalink: "false", text: "urn:uuid:AAA" }, not a plain string.
+  assert.equal(textOf({ ispermalink: "false", text: "urn:uuid:AAA" }), "urn:uuid:AAA");
+});
+
+test("textOf treats an empty string as absent so callers fall through to the next candidate", () => {
+  assert.equal(textOf(""), undefined);
+  assert.equal(textOf(undefined), undefined);
+});
+
+test("two feedme-style attributed guid objects with different text no longer collide on the same dedupeKey", () => {
+  // This is the actual bug this round fixes: item.guid ends up as an OBJECT
+  // ({ ispermalink, text }) whenever the <guid> tag carries an attribute (the
+  // standard RSS 2.0 shape). Before textOf(), both objects coerced to the identical
+  // string "[object Object]" in the dedupeKey template literal and collided.
+  const guidA = { ispermalink: "false", text: "urn:uuid:AAA" };
+  const guidB = { ispermalink: "false", text: "urn:uuid:BBB" };
+
+  const keyA = computeDedupeKey("bot-1", textOf(undefined) || textOf(guidA) || textOf(undefined) || "");
+  const keyB = computeDedupeKey("bot-1", textOf(undefined) || textOf(guidB) || textOf(undefined) || "");
+
+  assert.notEqual(keyA, keyB);
 });

@@ -66,6 +66,16 @@ export function fixMalformedUrl(urlString: string): string {
   return urlString.replace(/^https\/\//i, "https://").replace(/^http\/\//i, "http://");
 }
 
+// feedme (feedsub's underlying parser) returns a tag as a plain string only when it has
+// no attributes. A tag with attributes - e.g. RSS 2.0's <guid isPermaLink="false"> -
+// comes back as an object like { ispermalink: "false", text: "urn:uuid:..." }. Pulls the
+// actual text out of either shape; also treats an empty string as absent so a blank
+// tag (e.g. <link/>) falls through to the next candidate rather than "winning".
+export function textOf(v: unknown): string | undefined {
+  const text = v && typeof v === "object" ? (v as any).text : v;
+  return text || undefined;
+}
+
 export function parseString(
   template: string,
   item: FeedItem,
@@ -176,8 +186,16 @@ export class FeedReader {
     // from the same bot don't collide on the same dedupe key / AT-Proto rkey (§3.4 step 5
     // calls for "item link/guid"). FeedItem has no typed guid field (feedsub's shape
     // varies by feed), so this reaches for the common RSS/Atom conventions via the
-    // index signature. A feed item with none of link/guid/id is expected to be rare.
-    const dedupeKey = computeDedupeKey(this.botId, itemUrl ?? item.guid ?? item.id ?? "");
+    // index signature. The real risk isn't a feed item missing all of link/guid/id
+    // (rare) — it's standard RSS 2.0 `<guid isPermaLink="...">`: feedme (feedsub's
+    // parser) returns any tag with attributes as an object like
+    // { ispermalink: "false", text: "urn:uuid:..." }, not a plain string. Two different
+    // guids both being truthy objects would otherwise both stringify to the identical
+    // "[object Object]" and collide, so the actual text has to be pulled out explicitly.
+    const dedupeKey = computeDedupeKey(
+      this.botId,
+      textOf(itemUrl) || textOf(item.guid) || textOf(item.id) || ""
+    );
 
     const lastCursor = this.store.readCursor();
     let embed: ParsedEmbed | undefined;
