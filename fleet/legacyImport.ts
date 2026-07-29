@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, rmSync, chmodSync } from "node:fs";
 import { join, dirname, isAbsolute } from "node:path";
 import { BotStore } from "./botStore.ts";
 
@@ -197,7 +197,10 @@ export function importLegacyFleet(
   }
 
   mkdirSync(dirname(secretsFilePath), { recursive: true });
-  writeFileSync(secretsFilePath, JSON.stringify(secrets, null, 2));
+  // Real app passwords - design spec §9 calls for mode 0600, not the
+  // world-readable default writeFileSync would otherwise leave behind.
+  writeFileSync(secretsFilePath, JSON.stringify(secrets, null, 2), { mode: 0o600 });
+  chmodSync(secretsFilePath, 0o600);
 
   return { imported, errors };
 }

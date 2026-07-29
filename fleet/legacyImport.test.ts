@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, statSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseComposeEnv, resolveDataPath, importOneBot, importLegacyFleet } from "./legacyImport.ts";
@@ -312,6 +312,25 @@ test("importLegacyFleet writes all imported bots' passwords into one secrets fil
 
   const secrets = JSON.parse(readFileSync(secretsFilePath, "utf-8"));
   assert.equal(secrets["actudroit-fr"], "real-password-value");
+});
+
+test("importLegacyFleet writes the secrets file with mode 0600, including on a re-run over an existing file", (t) => {
+  const { sourceRoot, cleanup } = setupSource();
+  t.after(cleanup);
+  const targetRoot = mkdtempSync(join(tmpdir(), "legacy-import-target-"));
+  t.after(() => rmSync(targetRoot, { recursive: true, force: true }));
+
+  writeLegacyBot(sourceRoot, "actudroit-fr", RELATIVE_COMPOSE, { string: "$title" });
+  const secretsFilePath = join(targetRoot, "secrets", "bsky-fleet.json");
+
+  importLegacyFleet(sourceRoot, join(targetRoot, "config"), join(targetRoot, "data", "fleet"), secretsFilePath);
+  assert.equal(statSync(secretsFilePath).mode & 0o777, 0o600);
+
+  // Loosen it, as if some other process had touched it, then re-run - the
+  // importer must not leave a previously-tightened file world-readable.
+  chmodSync(secretsFilePath, 0o644);
+  importLegacyFleet(sourceRoot, join(targetRoot, "config"), join(targetRoot, "data", "fleet"), secretsFilePath);
+  assert.equal(statSync(secretsFilePath).mode & 0o777, 0o600);
 });
 
 test("importLegacyFleet's --only filter merges into an existing secrets file instead of overwriting it", (t) => {
