@@ -68,14 +68,12 @@ export async function createMockFeedServer(
   imageEveryNItems: number
 ): Promise<{ server: Server; port: number }> {
   const syntheticImage = await createSyntheticImage();
-  let requestCount = 0;
+  let port = 0; // set once listen() resolves, closed over by the handler below - never re-queried
 
   const server = createServer((req, res) => {
     const url = req.url ?? "";
-    const port = (server.address() as { port: number }).port;
 
     if (url === "/feed") {
-      requestCount++;
       res.writeHead(200, { "Content-Type": "application/rss+xml" });
       res.end(buildFeedXml(itemsPerPoll, port));
       return;
@@ -101,7 +99,7 @@ export async function createMockFeedServer(
   });
 
   await new Promise<void>((resolve) => server.listen(0, resolve));
-  const port = (server.address() as { port: number }).port;
+  port = (server.address() as { port: number }).port;
   return { server, port };
 }
 
