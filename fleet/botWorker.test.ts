@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { BotWorker } from "./botWorker.ts";
 import { Scheduler } from "./scheduler.ts";
@@ -74,7 +75,7 @@ class FakeBotStore {
   }
 }
 
-function makeWorker(overrides?: { feedReader?: any; bskyClient?: any; store?: any }) {
+function makeWorker(t: TestContext, overrides?: { feedReader?: any; bskyClient?: any; store?: any }) {
   const feedReader = overrides?.feedReader ?? new FakeFeedReader();
   const bskyClient = overrides?.bskyClient ?? new FakeBskyClient();
   const store = overrides?.store ?? new FakeBotStore();
@@ -88,11 +89,12 @@ function makeWorker(overrides?: { feedReader?: any; bskyClient?: any; store?: an
     runIntervalSeconds: 60,
     freshnessConfig: { maxCatchupItems: 5, maxItemAgeMinutes: 120 },
   });
+  t.after(() => worker.stop());
   return { worker, feedReader, bskyClient, store };
 }
 
-test("an emitted item is durably queued via BotStore, then drained on the next tick", async () => {
-  const { worker, bskyClient, store } = makeWorker();
+test("an emitted item is durably queued via BotStore, then drained on the next tick", async (t) => {
+  const { worker, bskyClient, store } = makeWorker(t);
   await worker.start();
   assert.equal(worker.queueLength(), 0);
 
@@ -108,12 +110,10 @@ test("an emitted item is durably queued via BotStore, then drained on the next t
   assert.equal(bskyClient.posted[0]!.content, "hello world");
   assert.equal(bskyClient.posted[0]!.rkey, "key-1");
   assert.equal(store.cursor, now);
-
-  worker.stop();
 });
 
-test("rkey passed to BskyClient.post matches the item's dedupeKey exactly", async () => {
-  const { worker, bskyClient } = makeWorker();
+test("rkey passed to BskyClient.post matches the item's dedupeKey exactly", async (t) => {
+  const { worker, bskyClient } = makeWorker(t);
   await worker.start();
   const feedReader = (worker as any).options.feedReader as FakeFeedReader;
   feedReader.emit({
@@ -125,11 +125,10 @@ test("rkey passed to BskyClient.post matches the item's dedupeKey exactly", asyn
   });
   await worker.drainOnce();
   assert.equal(bskyClient.posted[0]!.rkey, "exact-key-xyz");
-  worker.stop();
 });
 
-test("an embed's imageUrl is resolved via FeedReader.resolveEmbedImage before posting", async () => {
-  const { worker, bskyClient, feedReader } = makeWorker();
+test("an embed's imageUrl is resolved via FeedReader.resolveEmbedImage before posting", async (t) => {
+  const { worker, bskyClient, feedReader } = makeWorker(t);
   await worker.start();
   const fr = feedReader as FakeFeedReader;
   fr.emit({
@@ -144,11 +143,10 @@ test("an embed's imageUrl is resolved via FeedReader.resolveEmbedImage before po
   assert.deepEqual(fr.resolvedImageUrls, ["https://example.com/img.jpg"]);
   assert.ok(bskyClient.posted[0]!.embed?.image);
   assert.equal(bskyClient.posted[0]!.embed?.image!.toString(), "fake-image");
-  worker.stop();
 });
 
-test("an embed with no imageUrl posts with embed.image undefined, no resolve call made", async () => {
-  const { worker, bskyClient, feedReader } = makeWorker();
+test("an embed with no imageUrl posts with embed.image undefined, no resolve call made", async (t) => {
+  const { worker, bskyClient, feedReader } = makeWorker(t);
   await worker.start();
   const fr = feedReader as FakeFeedReader;
   fr.emit({
@@ -162,11 +160,10 @@ test("an embed with no imageUrl posts with embed.image undefined, no resolve cal
   await worker.drainOnce();
   assert.deepEqual(fr.resolvedImageUrls, []);
   assert.equal(bskyClient.posted[0]!.embed?.image, undefined);
-  worker.stop();
 });
 
-test("a rate-limited post leaves the row 'queued', cursor untouched", async () => {
-  const { worker, bskyClient, store } = makeWorker();
+test("a rate-limited post leaves the row 'queued', cursor untouched", async (t) => {
+  const { worker, bskyClient, store } = makeWorker(t);
   await worker.start();
   const feedReader = (worker as any).options.feedReader as FakeFeedReader;
   feedReader.emit({
@@ -181,11 +178,10 @@ test("a rate-limited post leaves the row 'queued', cursor untouched", async () =
 
   assert.equal(worker.queueLength(), 1, "item should remain queued, not be lost");
   assert.equal(store.cursor, "", "cursor must not advance for an item that was not actually published");
-  worker.stop();
 });
 
-test("an uncertain (non-rate-limit) failure marks the item skipped and continues to the next item", async () => {
-  const { worker, bskyClient, store } = makeWorker();
+test("an uncertain (non-rate-limit) failure marks the item skipped and continues to the next item", async (t) => {
+  const { worker, bskyClient, store } = makeWorker(t);
   await worker.start();
   const feedReader = (worker as any).options.feedReader as FakeFeedReader;
   const now = new Date();
@@ -215,11 +211,10 @@ test("an uncertain (non-rate-limit) failure marks the item skipped and continues
   assert.equal(store.cursor, "", "cursor must not advance for a skipped, unpublished item");
   assert.equal(bskyClient.posted.length, 2, "both items should be attempted, proving loop continued after first uncertain failure");
   assert.equal(worker.queueLength(), 0, "both items should be marked skipped, proving second item was processed");
-  worker.stop();
 });
 
-test("freshness policy skips a stale item at selection time without calling BskyClient", async () => {
-  const { worker, bskyClient } = makeWorker();
+test("freshness policy skips a stale item at selection time without calling BskyClient", async (t) => {
+  const { worker, bskyClient } = makeWorker(t);
   await worker.start();
   const feedReader = (worker as any).options.feedReader as FakeFeedReader;
   const ancient = new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(); // 24h ago
@@ -228,11 +223,10 @@ test("freshness policy skips a stale item at selection time without calling Bsky
 
   assert.equal(bskyClient.posted.length, 0, "a stale item must never reach BskyClient.post");
   assert.equal(worker.queueLength(), 0, "the stale item should be marked skipped, not left queued forever");
-  worker.stop();
 });
 
-test("multiple queued items drain in item_date order", async () => {
-  const { worker, bskyClient } = makeWorker();
+test("multiple queued items drain in item_date order", async (t) => {
+  const { worker, bskyClient } = makeWorker(t);
   await worker.start();
   const feedReader = (worker as any).options.feedReader as FakeFeedReader;
   const now = Date.now();
@@ -255,11 +249,10 @@ test("multiple queued items drain in item_date order", async () => {
     bskyClient.posted.map((p) => p.content),
     ["first", "second"]
   );
-  worker.stop();
 });
 
-test("a thrown exception from BskyClient.post does not crash drainOnce, item stays queued", async () => {
-  const { worker } = makeWorker({
+test("a thrown exception from BskyClient.post does not crash drainOnce, item stays queued", async (t) => {
+  const { worker } = makeWorker(t, {
     bskyClient: {
       post: async () => {
         throw new Error("unexpected network explosion");
@@ -272,5 +265,4 @@ test("a thrown exception from BskyClient.post does not crash drainOnce, item sta
 
   await assert.doesNotReject(() => worker.drainOnce());
   assert.equal(worker.queueLength(), 1);
-  worker.stop();
 });
