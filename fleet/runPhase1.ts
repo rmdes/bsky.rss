@@ -79,6 +79,7 @@ async function buildWorker(config: BotWorkerConfig): Promise<BotWorker> {
     store,
     runIntervalSeconds: config.runIntervalSeconds,
     freshnessConfig: { maxCatchupItems: 5, maxItemAgeMinutes: 120 },
+    perBotQueueMaxLength: 500,
   });
 }
 

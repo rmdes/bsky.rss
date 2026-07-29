@@ -13,6 +13,7 @@ export interface BotWorkerOptions {
   store: BotStore;
   runIntervalSeconds: number;
   freshnessConfig: FreshnessConfig;
+  perBotQueueMaxLength: number;
 }
 
 function log(botId: string, scope: string, message: string): void {
@@ -44,6 +45,14 @@ export class BotWorker {
   }
 
   private enqueue(item: ParsedItem): void {
+    if (this.options.store.countQueued() >= this.options.perBotQueueMaxLength) {
+      log(
+        this.options.botId,
+        "QUEUE",
+        `Queue at capacity (${this.options.perBotQueueMaxLength}), dropping item: ${item.title}`
+      );
+      return;
+    }
     const id = this.options.store.enqueue({
       title: item.title,
       content: item.content,

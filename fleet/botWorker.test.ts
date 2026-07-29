@@ -91,6 +91,7 @@ function makeWorker(t: TestContext, overrides?: { feedReader?: any; bskyClient?:
     store: store as any,
     runIntervalSeconds: 60,
     freshnessConfig: { maxCatchupItems: 5, maxItemAgeMinutes: 120 },
+    perBotQueueMaxLength: 500,
   });
   t.after(() => worker.stop());
   return { worker, feedReader, bskyClient, store };
@@ -268,4 +269,29 @@ test("a thrown exception from BskyClient.post does not crash drainOnce, item sta
 
   await assert.doesNotReject(() => worker.drainOnce());
   assert.equal(worker.queueLength(), 1);
+});
+
+test("enqueue drops a new item once the queue is at perBotQueueMaxLength, keeping the existing items", async (t) => {
+  const store = new FakeBotStore();
+  const feedReader = new FakeFeedReader();
+  const bskyClient = new FakeBskyClient();
+  const scheduler = new Scheduler({ minSpacing: 0, maxSpacing: 60, spacingWindow: 600, adaptiveSpacing: false });
+  const worker = new BotWorker({
+    botId: "test-bot",
+    feedReader: feedReader as any,
+    scheduler,
+    bskyClient: bskyClient as any,
+    store: store as any,
+    runIntervalSeconds: 60,
+    freshnessConfig: { maxCatchupItems: 5, maxItemAgeMinutes: 120 },
+    perBotQueueMaxLength: 2,
+  });
+  t.after(() => worker.stop());
+  await worker.start();
+
+  feedReader.emit({ title: "a", content: "a", languages: [], itemDate: new Date().toISOString(), dedupeKey: "k1" });
+  feedReader.emit({ title: "b", content: "b", languages: [], itemDate: new Date().toISOString(), dedupeKey: "k2" });
+  feedReader.emit({ title: "c", content: "c", languages: [], itemDate: new Date().toISOString(), dedupeKey: "k3" });
+
+  assert.equal(worker.queueLength(), 2, "the third item should be dropped, queue stays at the cap");
 });
