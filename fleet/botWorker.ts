@@ -40,6 +40,26 @@ export class BotWorker {
     if (this.intervalHandle) clearInterval(this.intervalHandle);
   }
 
+  async shutdown(timeoutMs: number): Promise<void> {
+    this.options.feedReader.stop();
+    if (this.intervalHandle) clearInterval(this.intervalHandle);
+    await this.waitForDrainToFinish(timeoutMs);
+    this.options.store.close();
+  }
+
+  private waitForDrainToFinish(timeoutMs: number): Promise<void> {
+    if (!this.queueRunning) return Promise.resolve();
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const check = setInterval(() => {
+        if (!this.queueRunning || Date.now() - start >= timeoutMs) {
+          clearInterval(check);
+          resolve();
+        }
+      }, 50);
+    });
+  }
+
   queueLength(): number {
     return this.options.store.countQueued();
   }

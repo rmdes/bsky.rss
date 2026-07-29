@@ -76,6 +76,7 @@ class FakeBotStore {
   writeCursor(date: Date): void {
     this.cursor = date.toISOString();
   }
+  close(): void {}
 }
 
 function makeWorker(t: TestContext, overrides?: { feedReader?: any; bskyClient?: any; store?: any }) {
@@ -294,4 +295,84 @@ test("enqueue drops a new item once the queue is at perBotQueueMaxLength, keepin
   feedReader.emit({ title: "c", content: "c", languages: [], itemDate: new Date().toISOString(), dedupeKey: "k3" });
 
   assert.equal(worker.queueLength(), 2, "the third item should be dropped, queue stays at the cap");
+});
+
+test("shutdown stops the FeedReader immediately, waits for an in-flight drain, then closes the store", async () => {
+  let resolvePost: () => void;
+  const slowPostPromise = new Promise<void>((resolve) => {
+    resolvePost = resolve;
+  });
+  const bskyClient = {
+    posted: [] as { content: string }[],
+    async post(params: { content: string }) {
+      await slowPostPromise;
+      this.posted.push(params);
+      return { ok: true, uri: "at://fake/1" };
+    },
+  };
+
+  let storeClosed = false;
+  const store = new FakeBotStore();
+  (store as any).close = () => {
+    storeClosed = true;
+  };
+
+  let feedReaderStopped = false;
+  const feedReader = new FakeFeedReader();
+  (feedReader as any).stop = () => {
+    feedReaderStopped = true;
+  };
+
+  const scheduler = new Scheduler({ minSpacing: 0, maxSpacing: 60, spacingWindow: 600, adaptiveSpacing: false });
+  const worker = new BotWorker({
+    botId: "test-bot",
+    feedReader: feedReader as any,
+    scheduler,
+    bskyClient: bskyClient as any,
+    store: store as any,
+    runIntervalSeconds: 60,
+    freshnessConfig: { maxCatchupItems: 5, maxItemAgeMinutes: 120 },
+    perBotQueueMaxLength: 500,
+  });
+  await worker.start();
+  feedReader.emit({ title: "t", content: "c", languages: [], itemDate: new Date().toISOString(), dedupeKey: "k" });
+
+  const drainPromise = worker.drainOnce();
+  const shutdownPromise = worker.shutdown(5000);
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(feedReaderStopped, true, "feedReader.stop() must be called immediately, not after the drain");
+  assert.equal(storeClosed, false, "store must not close while a drain is still in flight");
+
+  resolvePost!();
+  await drainPromise;
+  await shutdownPromise;
+  assert.equal(storeClosed, true, "store must close once the in-flight drain finishes");
+});
+
+test("shutdown does not wait past its timeout even if the in-flight drain never finishes", async () => {
+  const bskyClient = { post: () => new Promise<never>(() => {}) }; // never resolves
+  const store = new FakeBotStore();
+  const feedReader = new FakeFeedReader();
+  (feedReader as any).stop = () => {};
+
+  const scheduler = new Scheduler({ minSpacing: 0, maxSpacing: 60, spacingWindow: 600, adaptiveSpacing: false });
+  const worker = new BotWorker({
+    botId: "test-bot",
+    feedReader: feedReader as any,
+    scheduler,
+    bskyClient: bskyClient as any,
+    store: store as any,
+    runIntervalSeconds: 60,
+    freshnessConfig: { maxCatchupItems: 5, maxItemAgeMinutes: 120 },
+    perBotQueueMaxLength: 500,
+  });
+  await worker.start();
+  feedReader.emit({ title: "t", content: "c", languages: [], itemDate: new Date().toISOString(), dedupeKey: "k" });
+
+  worker.drainOnce(); // fire and forget - will hang forever on the never-resolving post()
+  const start = Date.now();
+  await worker.shutdown(200);
+  const elapsed = Date.now() - start;
+  assert.ok(elapsed < 500, `shutdown must not wait past its timeout, took ${elapsed}ms`);
 });

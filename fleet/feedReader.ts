@@ -161,6 +161,10 @@ export class FeedReader {
     this.reader.start();
   }
 
+  stop(): void {
+    this.reader.stop();
+  }
+
   async resolveEmbedImage(imageUrl: string): Promise<Buffer | undefined> {
     try {
       return await this.sharedLimiters.withImageLimit(async () => {
