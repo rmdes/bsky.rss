@@ -5,6 +5,7 @@ import og from "open-graph-scraper";
 import { decode } from "html-entities";
 import { BotStore } from "./botStore.ts";
 import { computeDedupeKey } from "./dedupeKey.ts";
+import { SharedLimiters } from "./sharedLimiters.ts";
 
 export interface FeedItem {
   title: string;
@@ -129,12 +130,14 @@ export class FeedReader {
     feedUrl: URL,
     fetchIntervalMinutes: number,
     private config: FeedReaderConfig,
-    private store: BotStore
+    private store: BotStore,
+    private sharedLimiters: SharedLimiters
   ) {
     this.reader = new FeedSub(String(feedUrl), {
       interval: fetchIntervalMinutes,
       emitOnStart: true,
       lastDate: this.store.readCursor() || null,
+      requestOpts: { timeout: sharedLimiters.httpTimeoutMs },
     });
   }
 
@@ -160,11 +163,15 @@ export class FeedReader {
 
   async resolveEmbedImage(imageUrl: string): Promise<Buffer | undefined> {
     try {
-      const response = await axios.get(imageUrl, {
-        headers: { "User-Agent": this.config.ogUserAgent ?? "bsky.rss/1.0 (Open Graph Scraper)" },
-        responseType: "arraybuffer",
+      return await this.sharedLimiters.withImageLimit(async () => {
+        const response = await axios.get(imageUrl, {
+          headers: { "User-Agent": this.config.ogUserAgent ?? "bsky.rss/1.0 (Open Graph Scraper)" },
+          responseType: "arraybuffer",
+          maxContentLength: this.sharedLimiters.maxImageDownloadBytes,
+          timeout: this.sharedLimiters.httpTimeoutMs,
+        });
+        return resizeImageToBuffer(response.data);
       });
-      return await resizeImageToBuffer(response.data);
     } catch {
       return undefined;
     }
@@ -239,19 +246,21 @@ export class FeedReader {
 
       const defaultUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-      const openGraphResult: any = await og({
-        url,
-        timeout: 10000,
-        fetchOptions: {
-          headers: {
-            "user-agent": this.config.ogUserAgent || defaultUserAgent,
-            accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "accept-language": "en-US,en;q=0.9",
+      const openGraphResult: any = await this.sharedLimiters.withOgLimit(() =>
+        og({
+          url,
+          timeout: this.sharedLimiters.httpTimeoutMs / 1000,
+          fetchOptions: {
+            headers: {
+              "user-agent": this.config.ogUserAgent || defaultUserAgent,
+              accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "accept-language": "en-US,en;q=0.9",
+            },
           },
-        },
-      })
-        .then((res: any) => (res.error ? { error: true } : res.result))
-        .catch(() => ({ error: true }));
+        })
+          .then((res: any) => (res.error ? { error: true } : res.result))
+          .catch(() => ({ error: true }))
+      );
 
       if (!openGraphResult.error) {
         if (!imageUrl && openGraphResult.ogImage?.[0]?.url) {

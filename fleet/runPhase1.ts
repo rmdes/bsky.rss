@@ -4,6 +4,7 @@ import { Scheduler } from "./scheduler.ts";
 import { BskyClient } from "./bskyClient.ts";
 import { FeedReader } from "./feedReader.ts";
 import { BotWorker } from "./botWorker.ts";
+import { SharedLimiters } from "./sharedLimiters.ts";
 import type { BotWorkerConfig } from "./types.ts";
 
 function loadBotConfig(prefix: string): BotWorkerConfig {
@@ -45,6 +46,13 @@ async function buildWorker(config: BotWorkerConfig): Promise<BotWorker> {
   const bskyClient = new BskyClient(config.botId, config.instanceUrl, store, process.env.DRY_RUN !== "false");
   await bskyClient.login(config.identifier, config.appPassword);
 
+  const sharedLimiters = new SharedLimiters({
+    maxConcurrentOpenGraphFetches: 6,
+    maxConcurrentImageJobs: 2,
+    maxImageDownloadBytes: 10_000_000,
+    httpTimeoutMs: 10_000,
+  });
+
   const feedReader = new FeedReader(
     config.botId,
     new URL(config.feedUrl),
@@ -59,7 +67,8 @@ async function buildWorker(config: BotWorkerConfig): Promise<BotWorker> {
       titleClearHTML: config.titleClearHTML,
       descriptionClearHTML: config.descriptionClearHTML,
     },
-    store
+    store,
+    sharedLimiters
   );
 
   return new BotWorker({

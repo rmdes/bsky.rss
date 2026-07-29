@@ -1,7 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { removeHTMLTags, decodeHTMLTwice, fixMalformedUrl, parseString, textOf } from "./feedReader.ts";
+import { createServer } from "node:http";
+import type { Server } from "node:http";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { removeHTMLTags, decodeHTMLTwice, fixMalformedUrl, parseString, textOf, FeedReader } from "./feedReader.ts";
 import { computeDedupeKey } from "./dedupeKey.ts";
+import { BotStore } from "./botStore.ts";
+import { SharedLimiters } from "./sharedLimiters.ts";
+import jimp from "jimp";
 
 test("removeHTMLTags strips tags and collapses whitespace", () => {
   assert.equal(removeHTMLTags("<p>Hello <b>world</b></p>"), "Hello world");
@@ -98,4 +106,81 @@ test("two feedme-style attributed guid objects with different text no longer col
   const keyB = computeDedupeKey("bot-1", textOf(undefined) || textOf(guidB) || textOf(undefined) || "");
 
   assert.notEqual(keyA, keyB);
+});
+
+function startFixedResponseServer(body: Buffer): Promise<{ server: Server; port: number }> {
+  return new Promise((resolve) => {
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "image/jpeg" });
+      res.end(body);
+    });
+    server.listen(0, () => {
+      const port = (server.address() as { port: number }).port;
+      resolve({ server, port });
+    });
+  });
+}
+
+test("resolveEmbedImage returns undefined when the response exceeds maxImageDownloadBytes", async (t) => {
+  const { server, port } = await startFixedResponseServer(Buffer.alloc(2000));
+  t.after(() => server.close());
+
+  const dir = mkdtempSync(join(tmpdir(), "feedreader-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const store = new BotStore(join(dir, "state.sqlite"));
+  t.after(() => store.close());
+
+  const sharedLimiters = new SharedLimiters({
+    maxConcurrentOpenGraphFetches: 1,
+    maxConcurrentImageJobs: 1,
+    maxImageDownloadBytes: 1000,
+    httpTimeoutMs: 5000,
+  });
+
+  const reader = new FeedReader(
+    "test-bot",
+    new URL(`http://127.0.0.1:${port}/feed.xml`),
+    5,
+    { string: "$title" },
+    store,
+    sharedLimiters
+  );
+
+  const result = await reader.resolveEmbedImage(`http://127.0.0.1:${port}/image.jpg`);
+  assert.equal(result, undefined);
+});
+
+test("resolveEmbedImage succeeds when the response is within maxImageDownloadBytes", async (t) => {
+  // Must be real, decodable JPEG bytes: resolveEmbedImage feeds the response body
+  // through jimp to resize it, and jimp rejects arbitrary/zero-filled bytes as
+  // "Could not find MIME for Buffer" regardless of whether the size cap passed.
+  const image = await jimp.create(2, 2, 0xff0000ff);
+  const imageBuffer = await image.getBufferAsync(jimp.MIME_JPEG);
+
+  const { server, port } = await startFixedResponseServer(imageBuffer);
+  t.after(() => server.close());
+
+  const dir = mkdtempSync(join(tmpdir(), "feedreader-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const store = new BotStore(join(dir, "state.sqlite"));
+  t.after(() => store.close());
+
+  const sharedLimiters = new SharedLimiters({
+    maxConcurrentOpenGraphFetches: 1,
+    maxConcurrentImageJobs: 1,
+    maxImageDownloadBytes: 10_000_000,
+    httpTimeoutMs: 5000,
+  });
+
+  const reader = new FeedReader(
+    "test-bot",
+    new URL(`http://127.0.0.1:${port}/feed.xml`),
+    5,
+    { string: "$title" },
+    store,
+    sharedLimiters
+  );
+
+  const result = await reader.resolveEmbedImage(`http://127.0.0.1:${port}/image.jpg`);
+  assert.ok(result, "a within-cap image should resolve to a Buffer, not undefined");
 });
