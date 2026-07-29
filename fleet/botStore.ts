@@ -97,6 +97,12 @@ export class BotStore {
     this.db.prepare(`INSERT OR IGNORE INTO seen_items (value, seen_at) VALUES (?, ?)`).run(value, now);
   }
 
+  listSeenValues(): { value: string; seenAt: string }[] {
+    return this.db
+      .prepare(`SELECT value, seen_at as seenAt FROM seen_items ORDER BY seen_at ASC`)
+      .all() as { value: string; seenAt: string }[];
+  }
+
   cleanupOldSeenValues(maxAgeHours: number): void {
     const cutoff = new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString();
     this.db.prepare(`DELETE FROM seen_items WHERE seen_at < ?`).run(cutoff);

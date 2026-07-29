@@ -253,3 +253,18 @@ test("a queued item survives closing and reopening the store against the same fi
   store2.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("listSeenValues returns every seen value with its recorded timestamp", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "botstore-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const store = new BotStore(join(dir, "state.sqlite"));
+  t.after(() => store.close());
+
+  store.writeSeenValue("https://example.com/a");
+  store.writeSeenValue("https://example.com/b");
+
+  const rows = store.listSeenValues();
+  const values = rows.map((r) => r.value).sort();
+  assert.deepEqual(values, ["https://example.com/a", "https://example.com/b"]);
+  assert.ok(rows.every((r) => typeof r.seenAt === "string" && r.seenAt.length > 0));
+});
