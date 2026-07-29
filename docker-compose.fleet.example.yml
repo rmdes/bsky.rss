@@ -5,9 +5,11 @@
 services:
   bsky-rss-fleet:
     restart: unless-stopped
+    build: .
     image: bsky.rss:fleet
     container_name: bsky-rss-fleet
     command: ["yarn", "fleet"]
+    stop_grace_period: 45s
     environment:
       - DRY_RUN=false
       - FLEET_CONFIG_ROOT=/build/config

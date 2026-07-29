@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { BotStore } from "./botStore.ts";
 import { parseComposeEnv, resolveDataPath } from "./legacyImport.ts";
@@ -25,6 +25,10 @@ export function exportOneBot(legacySourceRoot: string, dataRoot: string, botId: 
   mkdirSync(dataPath, { recursive: true });
 
   const dbPath = join(dataRoot, "bots", botId, "state.sqlite");
+  if (!existsSync(dbPath)) {
+    throw new Error(`no fleet state found at ${dbPath} - refusing to export (would fabricate an empty store)`);
+  }
+
   const store = new BotStore(dbPath);
   try {
     const session = store.readSession();
@@ -38,8 +42,10 @@ export function exportOneBot(legacySourceRoot: string, dataRoot: string, botId: 
     }
 
     const seenValues = store.listSeenValues();
-    const lines = seenValues.map((row) => `${row.seenAt}|${row.value}`);
-    writeFileSync(join(dataPath, "db.txt"), lines.length > 0 ? lines.join("\n") + "\n" : "");
+    if (seenValues.length > 0) {
+      const lines = seenValues.map((row) => `${row.seenAt}|${row.value}`);
+      writeFileSync(join(dataPath, "db.txt"), lines.join("\n") + "\n");
+    }
   } finally {
     store.close();
   }

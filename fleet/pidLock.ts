@@ -16,6 +16,7 @@ export function isLockedByLiveProcess(lockFilePath: string): boolean {
   if (!existsSync(lockFilePath)) return false;
   const pid = Number(readFileSync(lockFilePath, "utf-8").trim());
   if (!Number.isInteger(pid) || pid <= 0) return false;
+  if (pid === process.pid) return false;
   return isProcessAlive(pid);
 }
 

@@ -168,14 +168,7 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
   });
 
   for (const worker of workers) worker.stop();
-  // BotWorker.stop() only clears its own drain interval - it never stops the
-  // FeedReader's underlying FeedSub poller (FeedReader exposes no stop() of its own),
-  // which otherwise keeps its own setInterval alive and the process running forever.
-  // ponytail: reaches into FeedReader's TS-private `reader` handle rather than adding
-  // a public stop() to FeedReader/BotWorker (out of scope for this task, and would
-  // require updating botWorker.test.ts's FakeFeedReader too). Upgrade path: add a real
-  // FeedReader.stop() and have BotWorker.stop() call it, for every fleet shutdown too.
-  for (const feedReader of feedReaders) (feedReader as any).reader?.stop();
+  for (const feedReader of feedReaders) feedReader.stop();
   // Give any drain/handleItem call already in flight when stop() was called (the
   // interval firing async work has no way to be awaited from the outside) a moment
   // to settle before the stores go away underneath it - otherwise it logs a stray

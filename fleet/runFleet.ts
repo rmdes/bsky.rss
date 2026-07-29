@@ -74,6 +74,7 @@ async function main(): Promise<void> {
   const memoryLogIntervalMs = Number(process.env.FLEET_MEMORY_LOG_INTERVAL_MS ?? "60000");
 
   acquireLock(lockFilePath);
+  process.on("exit", () => releaseLock(lockFilePath));
 
   const { fleetConfig, bots, errors } = loadFleet(configRoot, secretsFilePath, dataRoot);
 

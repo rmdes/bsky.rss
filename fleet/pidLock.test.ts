@@ -21,9 +21,9 @@ test("acquireLock writes this process's own PID and does not throw", (t) => {
   assert.equal(readFileSync(lockPath, "utf-8").trim(), String(process.pid));
 });
 
-test("acquireLock throws when the lock file holds a live process's PID", (t) => {
+test("acquireLock throws when the lock file holds another live process's PID", (t) => {
   const lockPath = tempLockPath(t);
-  writeFileSync(lockPath, String(process.pid)); // this test process is definitely alive
+  writeFileSync(lockPath, String(process.ppid)); // the parent process is alive for the duration of this test
   assert.throws(() => acquireLock(lockPath), /live process/);
 });
 
@@ -38,9 +38,9 @@ test("acquireLock succeeds and overwrites a stale lock from a dead PID", (t) => 
   assert.equal(readFileSync(lockPath, "utf-8").trim(), String(process.pid));
 });
 
-test("isLockedByLiveProcess reflects a live lock and releaseLock clears it", (t) => {
+test("isLockedByLiveProcess reflects a lock held by another live process, and releaseLock clears it", (t) => {
   const lockPath = tempLockPath(t);
-  acquireLock(lockPath);
+  writeFileSync(lockPath, String(process.ppid)); // simulates a lock held by some other live process
   assert.equal(isLockedByLiveProcess(lockPath), true);
   releaseLock(lockPath);
   assert.equal(existsSync(lockPath), false);
@@ -50,4 +50,10 @@ test("isLockedByLiveProcess reflects a live lock and releaseLock clears it", (t)
 test("releaseLock is a no-op when no lock file exists", (t) => {
   const lockPath = tempLockPath(t);
   assert.doesNotThrow(() => releaseLock(lockPath));
+});
+
+test("isLockedByLiveProcess is false when the lock file holds this process's own PID", (t) => {
+  const lockPath = tempLockPath(t);
+  writeFileSync(lockPath, String(process.pid));
+  assert.equal(isLockedByLiveProcess(lockPath), false);
 });

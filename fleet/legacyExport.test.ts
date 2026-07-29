@@ -93,3 +93,24 @@ test("exportLegacyFleet isolates one bot's export failure without affecting the 
   assert.equal(result.errors.length, 1);
   assert.equal(result.errors[0]!.botId, "bot-bad");
 });
+
+test("exportOneBot refuses to export a bot with no fleet state, leaving legacy db.txt untouched", (t) => {
+  const legacySourceRoot = mkdtempSync(join(tmpdir(), "legacy-export-source-"));
+  t.after(() => rmSync(legacySourceRoot, { recursive: true, force: true }));
+  const dataRoot = mkdtempSync(join(tmpdir(), "legacy-export-data-"));
+  t.after(() => rmSync(dataRoot, { recursive: true, force: true }));
+
+  const legacyDataPath = setupLegacyBotDir(legacySourceRoot, "no-fleet-state");
+  const originalDbTxt = "2026-07-01T00:00:00.000Z|https://example.com/real-history\n";
+  writeFileSync(join(legacyDataPath, "db.txt"), originalDbTxt);
+  // Deliberately no state.sqlite under dataRoot/bots/no-fleet-state/ - the fleet never ran this bot.
+
+  const result = exportLegacyFleet(legacySourceRoot, dataRoot, ["no-fleet-state"]);
+
+  assert.equal(result.exported.length, 0);
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0]!.botId, "no-fleet-state");
+
+  const dbTxtAfter = readFileSync(join(legacyDataPath, "db.txt"), "utf-8");
+  assert.equal(dbTxtAfter, originalDbTxt);
+});
