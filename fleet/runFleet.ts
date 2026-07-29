@@ -119,7 +119,11 @@ async function main(): Promise<void> {
     `Fleet started: ${coordinator.activeWorkers().length} active, ${coordinator.activationFailures().length} failed`
   );
 
-  if (coordinator.activeWorkers().length === 0 && bots.length > 0) {
+  // A SIGTERM arriving before any bot has activated resolves coordinator.start()
+  // (via abortActivation's interrupted stagger wait) at nearly the same moment
+  // shutdown() is already tearing things down - defer to shutdown()'s own exit
+  // path rather than racing it with a second, contradictory process.exit() call.
+  if (!shuttingDown && coordinator.activeWorkers().length === 0 && bots.length > 0) {
     log("No bots activated - exiting non-zero");
     releaseLock(lockFilePath);
     process.exit(1);
