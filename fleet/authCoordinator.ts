@@ -11,19 +11,18 @@ function log(botId: string, message: string): void {
   console.log(`[${new Date().toUTCString()}] - [bsky.rss AUTH] [${botId}] ${message}`);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export class AuthCoordinator {
   private workers: BotWorker[] = [];
   private failures: { botId: string; error: string }[] = [];
+  private aborted = false;
+  private abortController: AbortController | null = null;
 
   constructor(private options: AuthCoordinatorOptions) {}
 
   async start(): Promise<void> {
     const { bots, staggerSeconds, activateBot } = this.options;
     for (let i = 0; i < bots.length; i++) {
+      if (this.aborted) break;
       const spec = bots[i]!;
       try {
         const worker = await activateBot(spec);
@@ -33,8 +32,25 @@ export class AuthCoordinator {
         this.failures.push({ botId: spec.botId, error: String(err) });
         log(spec.botId, `Failed to activate, skipping: ${err}`);
       }
-      if (i < bots.length - 1) await sleep(staggerSeconds * 1000);
+      if (this.aborted) break;
+      if (i < bots.length - 1) await this.interruptibleSleep(staggerSeconds * 1000);
     }
+  }
+
+  abortActivation(): void {
+    this.aborted = true;
+    this.abortController?.abort();
+  }
+
+  private interruptibleSleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      this.abortController = new AbortController();
+      const timer = setTimeout(resolve, ms);
+      this.abortController.signal.addEventListener("abort", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
   }
 
   activeWorkers(): BotWorker[] {
@@ -45,7 +61,7 @@ export class AuthCoordinator {
     return this.failures;
   }
 
-  stopAll(): void {
-    for (const worker of this.workers) worker.stop();
+  async shutdownAll(timeoutMs: number): Promise<void> {
+    await Promise.all(this.workers.map((worker) => worker.shutdown(timeoutMs)));
   }
 }

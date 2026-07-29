@@ -100,18 +100,58 @@ test("does not wait after the last bot", async () => {
   assert.ok(elapsedMs < staggerSeconds * 1000, "a single bot must not incur a trailing stagger wait");
 });
 
-test("stopAll stops every active worker", async () => {
+test("abortActivation stops the loop before activating any not-yet-activated bot", async () => {
+  const specs = [makeSpec("bot-1"), makeSpec("bot-2"), makeSpec("bot-3")];
+  const coordinator = new AuthCoordinator({
+    bots: specs,
+    staggerSeconds: 0.05,
+    activateBot: async (spec) => fakeWorker(spec.botId),
+  });
+
+  const startPromise = coordinator.start();
+  await new Promise((resolve) => setTimeout(resolve, 20)); // after bot-1 activates, mid-stagger
+  coordinator.abortActivation();
+  await startPromise;
+
+  assert.ok(coordinator.activeWorkers().length < 3, "abort must prevent at least one remaining bot from activating");
+});
+
+test("abortActivation interrupts an in-progress stagger wait immediately rather than after the full delay", async () => {
   const specs = [makeSpec("bot-1"), makeSpec("bot-2")];
-  const stopped: string[] = [];
+  const coordinator = new AuthCoordinator({
+    bots: specs,
+    staggerSeconds: 5, // long enough that a real remaining wait would fail this test's timing
+    activateBot: async (spec) => fakeWorker(spec.botId),
+  });
+
+  const start = Date.now();
+  const startPromise = coordinator.start();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  coordinator.abortActivation();
+  await startPromise;
+  const elapsed = Date.now() - start;
+
+  assert.ok(elapsed < 1000, `abort should interrupt the stagger wait immediately, took ${elapsed}ms`);
+});
+
+test("shutdownAll calls shutdown on every active worker in parallel with the given timeout", async () => {
+  const specs = [makeSpec("bot-1"), makeSpec("bot-2")];
+  const shutdownCalls: { botId: string; timeoutMs: number }[] = [];
   const coordinator = new AuthCoordinator({
     bots: specs,
     staggerSeconds: 0,
     activateBot: async (spec) =>
-      ({ botId: spec.botId, stop: () => stopped.push(spec.botId) } as unknown as BotWorker),
+      ({
+        botId: spec.botId,
+        shutdown: async (timeoutMs: number) => {
+          shutdownCalls.push({ botId: spec.botId, timeoutMs });
+        },
+      } as unknown as BotWorker),
   });
 
   await coordinator.start();
-  coordinator.stopAll();
+  await coordinator.shutdownAll(1234);
 
-  assert.deepEqual(stopped.sort(), ["bot-1", "bot-2"]);
+  assert.equal(shutdownCalls.length, 2);
+  assert.ok(shutdownCalls.every((c) => c.timeoutMs === 1234));
 });
