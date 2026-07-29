@@ -39,7 +39,7 @@ export class BotStore {
         embed_json TEXT,
         languages_json TEXT,
         item_date TEXT NOT NULL,
-        dedupe_key TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL UNIQUE,
         status TEXT NOT NULL DEFAULT 'queued',
         enqueued_at TEXT NOT NULL,
         published_at TEXT
@@ -107,7 +107,7 @@ export class BotStore {
     const now = new Date().toISOString();
     const result = this.db
       .prepare(
-        `INSERT INTO queue_items (title, content, embed_json, languages_json, item_date, dedupe_key, status, enqueued_at)
+        `INSERT OR IGNORE INTO queue_items (title, content, embed_json, languages_json, item_date, dedupe_key, status, enqueued_at)
          VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)`
       )
       .run(item.title, item.content, item.embedJson, item.languagesJson, item.itemDate, item.dedupeKey, now);
