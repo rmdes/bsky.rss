@@ -1,4 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 export interface QueueItemRow {
   id: number;
@@ -17,6 +19,10 @@ export class BotStore {
   private db: DatabaseSync;
 
   constructor(dbPath: string) {
+    // configLoader computes nested per-bot paths (dataRoot/bots/<botId>/state.sqlite)
+    // that won't exist on a fresh checkout - create the parent dir so DatabaseSync
+    // doesn't fail with "unable to open database file".
+    mkdirSync(dirname(dbPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS session (

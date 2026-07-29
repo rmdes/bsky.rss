@@ -1,0 +1,12 @@
+{
+  "staggerSeconds": 30,
+  "runIntervalSeconds": 60,
+  "freshness": { "maxCatchupItems": 5, "maxItemAgeMinutes": 120 },
+  "sharedLimiters": {
+    "maxConcurrentOpenGraphFetches": 6,
+    "maxConcurrentImageJobs": 2,
+    "maxImageDownloadBytes": 10000000,
+    "httpTimeoutMs": 10000
+  },
+  "perBotQueueMaxLength": 500
+}

@@ -1,0 +1,15 @@
+{
+  "string": "$title - $link",
+  "publishEmbed": true,
+  "embedType": "card",
+  "languages": ["en"],
+  "truncate": true,
+  "dateField": "pubdate",
+  "descriptionClearHTML": true,
+  "removeDuplicate": true,
+  "titleClearHTML": true,
+  "adaptiveSpacing": true,
+  "spacingWindow": 600,
+  "minSpacing": 1,
+  "maxSpacing": 60
+}

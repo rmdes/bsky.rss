@@ -1,0 +1,9 @@
+{
+  "id": "example-bot-2",
+  "enabled": true,
+  "identifier": "example-bot-2.bsky.social",
+  "instanceUrl": "https://bsky.social",
+  "feedUrl": "https://example.com/feed-2.xml",
+  "secretKey": "example-bot-2",
+  "fetchIntervalMinutes": 5
+}
