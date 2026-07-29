@@ -172,7 +172,12 @@ export class FeedReader {
     }
 
     const itemUrl = typeof item.link === "object" ? item.link.href : item.link;
-    const dedupeKey = computeDedupeKey(this.botId, itemUrl ?? "");
+    // Fall back to a guid-like field before giving up, so two distinct link-less items
+    // from the same bot don't collide on the same dedupe key / AT-Proto rkey (§3.4 step 5
+    // calls for "item link/guid"). FeedItem has no typed guid field (feedsub's shape
+    // varies by feed), so this reaches for the common RSS/Atom conventions via the
+    // index signature. A feed item with none of link/guid/id is expected to be rare.
+    const dedupeKey = computeDedupeKey(this.botId, itemUrl ?? item.guid ?? item.id ?? "");
 
     const lastCursor = this.store.readCursor();
     let embed: ParsedEmbed | undefined;
