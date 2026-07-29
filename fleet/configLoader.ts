@@ -69,6 +69,9 @@ function loadOneBot(
 ): BotSpec {
   const botDir = join(configRoot, "bots", botId);
   const bot = JSON.parse(readFileSync(join(botDir, "bot.json"), "utf-8")) as BotJson;
+  if (bot.id !== botId) {
+    throw new Error(`bot.json id "${bot.id}" does not match directory name "${botId}"`);
+  }
   const configJson = JSON.parse(readFileSync(join(botDir, "config.json"), "utf-8")) as Record<string, unknown>;
 
   const appPassword = secrets[bot.secretKey];

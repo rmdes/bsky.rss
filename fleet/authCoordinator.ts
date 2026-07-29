@@ -38,7 +38,7 @@ export class AuthCoordinator {
   }
 
   activeWorkers(): BotWorker[] {
-    return this.workers;
+    return [...this.workers];
   }
 
   activationFailures(): { botId: string; error: string }[] {

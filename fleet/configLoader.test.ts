@@ -173,6 +173,33 @@ test("loadFleet reports one bad bot directory as an error without dropping the o
   assert.equal(errors[0]!.botId, "bot-bad");
 });
 
+test("loadFleet reports a bot.json id that doesn't match its directory name as an error", (t) => {
+  const { configRoot, secretsFilePath, dataRoot, cleanup } = setupFleet();
+  t.after(cleanup);
+
+  writeBot(
+    configRoot,
+    "bot-a",
+    {
+      id: "bot-different",
+      enabled: true,
+      identifier: "bot-a.bsky.social",
+      instanceUrl: "https://bsky.social",
+      feedUrl: "https://example.com/a.xml",
+      secretKey: "bot-a",
+      fetchIntervalMinutes: 5,
+    },
+    { string: "$title", languages: ["en"] }
+  );
+  writeFileSync(secretsFilePath, JSON.stringify({ "bot-a": "pw" }));
+
+  const { bots, errors } = loadFleet(configRoot, secretsFilePath, dataRoot);
+  assert.equal(bots.length, 0);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0]!.botId, "bot-a");
+  assert.match(errors[0]!.error, /does not match directory name/);
+});
+
 test("loadFleet reports a bot whose secretKey has no entry in the secrets file as an error", (t) => {
   const { configRoot, secretsFilePath, dataRoot, cleanup } = setupFleet();
   t.after(cleanup);

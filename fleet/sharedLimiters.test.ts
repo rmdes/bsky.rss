@@ -6,6 +6,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+test("ConcurrencyLimiter throws when constructed with a non-positive max", () => {
+  assert.throws(() => new ConcurrencyLimiter(0), /max must be >= 1/);
+});
+
 test("ConcurrencyLimiter never lets more than `max` callbacks run at once", async () => {
   const limiter = new ConcurrencyLimiter(2);
   let active = 0;

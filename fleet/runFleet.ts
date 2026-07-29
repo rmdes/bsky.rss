@@ -25,30 +25,35 @@ async function buildWorker(
   perBotQueueMaxLength: number
 ): Promise<BotWorker> {
   const store = new BotStore(spec.dbPath);
-  const bskyClient = new BskyClient(spec.botId, spec.instanceUrl, store, dryRun);
-  await bskyClient.login(spec.identifier, spec.appPassword);
+  try {
+    const bskyClient = new BskyClient(spec.botId, spec.instanceUrl, store, dryRun);
+    await bskyClient.login(spec.identifier, spec.appPassword);
 
-  const feedReader = new FeedReader(
-    spec.botId,
-    new URL(spec.feedUrl),
-    spec.fetchIntervalMinutes,
-    spec.feedReaderConfig,
-    store,
-    sharedLimiters
-  );
+    const feedReader = new FeedReader(
+      spec.botId,
+      new URL(spec.feedUrl),
+      spec.fetchIntervalMinutes,
+      spec.feedReaderConfig,
+      store,
+      sharedLimiters
+    );
 
-  const worker = new BotWorker({
-    botId: spec.botId,
-    feedReader,
-    scheduler: new Scheduler(spec.schedulerConfig),
-    bskyClient,
-    store,
-    runIntervalSeconds,
-    freshnessConfig,
-    perBotQueueMaxLength,
-  });
-  await worker.start();
-  return worker;
+    const worker = new BotWorker({
+      botId: spec.botId,
+      feedReader,
+      scheduler: new Scheduler(spec.schedulerConfig),
+      bskyClient,
+      store,
+      runIntervalSeconds,
+      freshnessConfig,
+      perBotQueueMaxLength,
+    });
+    await worker.start();
+    return worker;
+  } catch (err) {
+    store.close();
+    throw err;
+  }
 }
 
 // Runs in dry-run mode by default (no real posts); set DRY_RUN=false to actually publish.
@@ -88,6 +93,11 @@ async function main(): Promise<void> {
   log(
     `Fleet started: ${coordinator.activeWorkers().length} active, ${coordinator.activationFailures().length} failed`
   );
+
+  if (coordinator.activeWorkers().length === 0 && bots.length > 0) {
+    log("No bots activated - exiting non-zero");
+    process.exit(1);
+  }
 }
 
 main().catch((err) => {

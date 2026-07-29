@@ -2,7 +2,9 @@ export class ConcurrencyLimiter {
   private active = 0;
   private readonly queue: Array<() => void> = [];
 
-  constructor(private readonly max: number) {}
+  constructor(private readonly max: number) {
+    if (max < 1) throw new Error(`ConcurrencyLimiter max must be >= 1, got ${max}`);
+  }
 
   async run<T>(fn: () => Promise<T>): Promise<T> {
     await this.acquire();
