@@ -9,6 +9,7 @@ import { SharedLimiters } from "./sharedLimiters.ts";
 import { installProcessSafetyNet } from "./processSafety.ts";
 import { loadFleet } from "./configLoader.ts";
 import { AuthCoordinator } from "./authCoordinator.ts";
+import { formatMemoryLogLine } from "./memoryLog.ts";
 import type { FreshnessConfig } from "./freshnessPolicy.ts";
 import type { BotSpec } from "./configLoader.ts";
 
@@ -98,6 +99,9 @@ async function main(): Promise<void> {
     log("No bots activated - exiting non-zero");
     process.exit(1);
   }
+
+  const memoryLogIntervalMs = Number(process.env.FLEET_MEMORY_LOG_INTERVAL_MS ?? "60000");
+  setInterval(() => log(`Memory: ${formatMemoryLogLine(process.memoryUsage())}`), memoryLogIntervalMs);
 }
 
 main().catch((err) => {
