@@ -183,13 +183,14 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
   await new Promise((resolve) => setTimeout(resolve, 500));
   for (const store of stores) store.close();
   server.close();
+  server.closeAllConnections(); // force-close any still-open sockets rather than waiting on them
   rmSync(tmpDir, { recursive: true, force: true });
 
   const steadyStateWindow = samples.slice(Math.floor(samples.length / 2));
   const steadyStateRssBytes = Math.round(
     steadyStateWindow.reduce((a, b) => a + b, 0) / steadyStateWindow.length
   );
-  const peakRssBytes = Math.max(...samples);
+  const peakRssBytes = samples.reduce((max, sample) => Math.max(max, sample), 0);
 
   return { steadyStateRssBytes, peakRssBytes, sampleCount: samples.length };
 }
