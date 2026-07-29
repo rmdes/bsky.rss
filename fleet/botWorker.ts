@@ -44,8 +44,7 @@ export class BotWorker {
   }
 
   private enqueue(item: ParsedItem): void {
-    log(this.options.botId, "QUEUE", `Queuing item (${item.title})`);
-    this.options.store.enqueue({
+    const id = this.options.store.enqueue({
       title: item.title,
       content: item.content,
       embedJson: item.embed ? JSON.stringify(item.embed) : null,
@@ -53,6 +52,11 @@ export class BotWorker {
       itemDate: item.itemDate,
       dedupeKey: item.dedupeKey,
     });
+    if (id === 0) {
+      log(this.options.botId, "QUEUE", `Duplicate item ignored (already queued or previously published): ${item.title}`);
+      return;
+    }
+    log(this.options.botId, "QUEUE", `Queuing item (${item.title})`);
   }
 
   private async resolveEmbed(row: QueueItemRow): Promise<ResolvedEmbed | undefined> {

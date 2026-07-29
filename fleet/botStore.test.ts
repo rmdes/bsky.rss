@@ -118,6 +118,31 @@ test("enqueue/listQueued/setQueueItemStatus drive an item through its lifecycle"
   cleanup(store, dir);
 });
 
+test("enqueue with a repeated dedupeKey is ignored by the UNIQUE constraint - returns 0, does not add a second row", () => {
+  const { store, dir } = makeStore();
+  const firstId = store.enqueue({
+    title: "first",
+    content: "c",
+    embedJson: null,
+    languagesJson: null,
+    itemDate: "2026-01-01T00:00:00.000Z",
+    dedupeKey: "dup-key",
+  });
+  assert.notEqual(firstId, 0);
+
+  const secondId = store.enqueue({
+    title: "second, same dedupeKey",
+    content: "c",
+    embedJson: null,
+    languagesJson: null,
+    itemDate: "2026-01-02T00:00:00.000Z",
+    dedupeKey: "dup-key",
+  });
+  assert.equal(secondId, 0);
+  assert.equal(store.countQueued(), 1);
+  cleanup(store, dir);
+});
+
 test("listQueued only returns rows with status 'queued', ordered oldest item_date first", () => {
   const { store, dir } = makeStore();
   store.enqueue({

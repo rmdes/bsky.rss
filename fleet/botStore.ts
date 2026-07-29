@@ -111,6 +111,11 @@ export class BotStore {
          VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)`
       )
       .run(item.title, item.content, item.embedJson, item.languagesJson, item.itemDate, item.dedupeKey, now);
+    // A UNIQUE dedupe_key collision makes INSERT OR IGNORE a no-op: result.changes is 0,
+    // and lastInsertRowid still reflects this connection's PREVIOUS successful insert
+    // (an unrelated row), not this attempt. Return 0 rather than handing back that
+    // real-but-wrong id, so callers can tell a genuine duplicate-drop from a real insert.
+    if (result.changes === 0) return 0;
     return Number(result.lastInsertRowid);
   }
 

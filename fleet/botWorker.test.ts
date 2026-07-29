@@ -50,6 +50,9 @@ class FakeBotStore {
     itemDate: string;
     dedupeKey: string;
   }): number {
+    // Match the real BotStore's UNIQUE(dedupe_key) contract: a repeat dedupeKey is
+    // silently ignored and reported back as 0, not a real row id.
+    if (this.rows.some((r) => r.dedupeKey === item.dedupeKey)) return 0;
     const id = this.nextId++;
     this.rows.push({
       id,
