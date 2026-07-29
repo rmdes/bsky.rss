@@ -69,6 +69,7 @@ async function buildWorker(config: BotWorkerConfig): Promise<BotWorker> {
     bskyClient,
     store,
     runIntervalSeconds: config.runIntervalSeconds,
+    freshnessConfig: { maxCatchupItems: 5, maxItemAgeMinutes: 120 },
   });
 }
 
