@@ -25,6 +25,12 @@ const DEFAULT_RETRY_SECONDS = 30;
  * against headers that Object.fromEntries(response.headers.entries()) always lowercases
  * (Fetch API spec), so that check can never match; and it only recognizes HTTP 504
  * (UpstreamTimeout), never the actual 429 (RateLimitExceeded) status. Both are fixed here.
+ *
+ * Only a genuinely recognized 429/504 XRPCError is classified as a rate limit. Every
+ * other error (a plain Error, a non-XRPCError exception, an XRPCError with some other
+ * status) falls through to `ratelimit: false` — a genuinely uncertain outcome, per
+ * design spec §4.2: anything that isn't a confirmed success or a confirmed duplicate
+ * must be marked skipped, never auto-retried forever.
  */
 export function classifyPostError(error: unknown): { ratelimit: boolean; retryAfterSeconds: number } {
   if (error && typeof error === "object" && (error as any).constructor?.name === XRPCError.name) {
@@ -40,7 +46,7 @@ export function classifyPostError(error: unknown): { ratelimit: boolean; retryAf
       return { ratelimit: true, retryAfterSeconds };
     }
   }
-  return { ratelimit: true, retryAfterSeconds: DEFAULT_RETRY_SECONDS };
+  return { ratelimit: false, retryAfterSeconds: DEFAULT_RETRY_SECONDS };
 }
 
 /**
@@ -178,10 +184,7 @@ export class BskyClient {
       const { ratelimit, retryAfterSeconds } = classifyPostError(error);
       if (!ratelimit) {
         // Design spec §4.2: any outcome that isn't a confirmed success or a confirmed
-        // duplicate is uncertain — skip, never auto-retry. classifyPostError's current
-        // implementation always returns ratelimit: true as its own fail-safe default
-        // (see its own doc comment), so this branch is presently unreachable, but the
-        // policy is written for when that classification becomes more precise.
+        // duplicate is uncertain — skip, never auto-retry.
         return { ok: false, ratelimit: false };
       }
       return { ok: false, ratelimit, retryAfterSeconds };

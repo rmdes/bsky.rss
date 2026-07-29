@@ -30,16 +30,16 @@ test("falls back to 30s when a rate-limit status has no retry-after header", () 
   assert.equal(result.retryAfterSeconds, 30);
 });
 
-test("falls back to 30s for a non-rate-limit XRPCError, matching today's catch-all behavior", () => {
+test("a non-rate-limit XRPCError is an uncertain outcome, not a rate limit", () => {
   const err = makeXRPCError(ResponseType.InvalidRequest, { "retry-after": "999" });
   const result = classifyPostError(err);
-  assert.equal(result.ratelimit, true);
+  assert.equal(result.ratelimit, false);
   assert.equal(result.retryAfterSeconds, 30);
 });
 
-test("falls back to 30s for a non-XRPCError exception (network error, etc.)", () => {
+test("a non-XRPCError exception (network error, etc.) is an uncertain outcome, not a rate limit", () => {
   const result = classifyPostError(new Error("ECONNRESET"));
-  assert.equal(result.ratelimit, true);
+  assert.equal(result.ratelimit, false);
   assert.equal(result.retryAfterSeconds, 30);
 });
 
