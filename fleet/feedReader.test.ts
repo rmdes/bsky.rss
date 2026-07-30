@@ -108,6 +108,40 @@ test("two feedme-style attributed guid objects with different text no longer col
   assert.notEqual(keyA, keyB);
 });
 
+test("start() attaches an error listener so a feed-fetch failure is logged per-bot, not an uncaught exception", (t) => {
+  // Found live in production: FeedSub (a Node EventEmitter) throws an
+  // 'error' event as an uncaught exception by default when nothing is
+  // listening for it - only caught, previously, by the process-wide safety
+  // net rather than handled here. Reproduces by emitting 'error' directly
+  // on the real underlying FeedSub instance after start().
+  const dir = mkdtempSync(join(tmpdir(), "feedreader-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const store = new BotStore(join(dir, "state.sqlite"));
+  t.after(() => store.close());
+
+  const sharedLimiters = new SharedLimiters({
+    maxConcurrentOpenGraphFetches: 1,
+    maxConcurrentImageJobs: 1,
+    maxImageDownloadBytes: 10_000_000,
+    httpTimeoutMs: 5000,
+  });
+
+  const reader = new FeedReader(
+    "test-bot",
+    new URL("http://127.0.0.1:1/feed.xml"), // unroutable port, never actually fetched in this test
+    5,
+    { string: "$title" },
+    store,
+    sharedLimiters
+  );
+  t.after(() => reader.stop());
+  reader.start();
+
+  assert.doesNotThrow(() => {
+    (reader as any).reader.emit("error", new Error("unable to verify the first certificate"));
+  });
+});
+
 function startFixedResponseServer(body: Buffer): Promise<{ server: Server; port: number }> {
   return new Promise((resolve) => {
     const server = createServer((_req, res) => {

@@ -146,6 +146,17 @@ export class FeedReader {
   }
 
   start(): void {
+    // feedsub's FeedSub is a Node EventEmitter; an 'error' event with no
+    // listener throws as an uncaught exception by default (a classic
+    // EventEmitter gotcha), previously only caught by the process-wide
+    // safety net rather than handled per-bot here - a feed-fetch failure
+    // (a broken TLS cert chain, DNS failure, timeout, etc.) must not be
+    // allowed to fall through to that global handler as the primary defense.
+    this.reader.on("error", (err: Error) => {
+      console.log(
+        `[${new Date().toUTCString()}] - [bsky.rss FEED] [${this.botId}] Error fetching feed: ${err}`
+      );
+    });
     this.reader.read();
     // handleItem is async; the EventEmitter has no way to await or catch a
     // listener's rejection, so an ordinary bad item (missing title/link)
