@@ -3,7 +3,7 @@
   "version": "2.2.0",
   "description": "A configurable RSS poster for Bluesky",
   "main": "index.js",
-  "repository": "https://github.com/milanmdev/bsky.rss.git",
+  "repository": "https://github.com/rmdes/bsky.rss.git",
   "author": "Milan Mehra <milan@milanm.org>",
   "license": "MIT",
   "scripts": {
