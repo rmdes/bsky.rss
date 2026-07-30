@@ -23,12 +23,12 @@
     "feedsub": "^0.7.8",
     "html-entities": "2.6.0",
     "jimp": "^0.22.12",
-    "open-graph-scraper": "6.11.0"
+    "open-graph-scraper": "6.11.0",
+    "tsx": "4.22.2"
   },
   "devDependencies": {
     "@types/node": "24.12.4",
     "gts": "7.0.0",
-    "tsx": "4.22.2",
     "typescript": "6.0.3",
     "underscore-cli": "^0.2.19"
   },
