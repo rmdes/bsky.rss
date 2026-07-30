@@ -177,7 +177,12 @@ To move a legacy deployment to fleet mode:
    `/home/skyfleet-next/docker-compose.yml` (it already sets
    `FLEET_CONFIG_ROOT`, `FLEET_SECRETS_PATH`, `FLEET_DATA_ROOT`, and
    `FLEET_LOCK_PATH` to the container-internal `/build/...` paths, matching
-   the `./config`, `./secrets`, `./data` volume mounts), then:
+   the `./config`, `./secrets`, `./data` volume mounts). Check `DRY_RUN` in
+   that file before starting - it defaults to dry-run mode
+   (`process.env.DRY_RUN !== "false"` in `fleet/runFleet.ts`), so the whole
+   pipeline runs (feed poll, Open Graph scrape, image fetch/resize) except
+   the final publish, which just logs what it would have posted. Set
+   `DRY_RUN=false` once you've confirmed the dry run looks right, then:
    ```bash
    docker compose up -d
    ```

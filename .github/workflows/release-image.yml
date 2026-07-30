@@ -16,6 +16,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Run tests
+        run: ./node_modules/.bin/tsx --test fleet/*.test.ts
+
       - name: Extract version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"

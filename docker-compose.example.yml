@@ -1,7 +1,7 @@
 services:
   bsky-rss:
     restart: always
-    image: ghcr.io/milanmdev/bsky.rss
+    image: ghcr.io/rmdes/bsky.rss
     environment:
       - APP_PASSWORD=
       - INSTANCE_URL=

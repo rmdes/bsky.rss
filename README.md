@@ -16,7 +16,7 @@ version: "3"
 services:
   bsky-rss:
     restart: always
-    image: ghcr.io/milanmdev/bsky.rss
+    image: ghcr.io/rmdes/bsky.rss
     environment:
       - APP_PASSWORD=
       - INSTANCE_URL=
@@ -35,7 +35,7 @@ Refer to the [Environment Variables & Configuration File](#environment-variables
 1. Clone the repository
 
 ```bash
-git clone github.com/milanmdev/bsky.rss
+git clone github.com/rmdes/bsky.rss
 ```
 
 2. Install the dependencies
