@@ -5,6 +5,11 @@ A configurable RSS poster for Bluesky
 > [!IMPORTANT]  
 > Version 2 introduces many new features as well as changes to the configuration of the app. Consult the [migration guide](documentation/v1-to-v2.md) for more information.
 
+This app runs in two modes:
+
+- **Single-bot mode** (this README) - one Bluesky account per container/process. Start here if you're running one bot.
+- **Fleet mode** - many independent bots running out of a single process, instead of one container per bot. See the [Fleet mode](#fleet-mode) section below.
+
 # Setup
 
 ## Docker
@@ -118,6 +123,17 @@ Here's an example of the `config.json` file:
 - `maxSpacing`: Maximum number of seconds between posts when adaptive spacing is enabled.
 
 A `docker-compose.yml` file can be found in the root directory as `docker-compose.example.yml`, which you can use to set up the RSS poster using Docker.
+
+# Fleet mode
+
+If you want to run many bots (different accounts, different feeds) at once, fleet mode runs them all as independent workers inside a single process instead of one container per bot - the same image, just a different entry point (`yarn fleet` / `fleet/runFleet.ts` instead of `yarn start` / `app/index.ts`) and a different `command:` in your compose file.
+
+Fleet mode gives each bot its own config, its own SQLite-backed dedup/session state, and a staggered login schedule, while sharing fleet-wide rate limits (Open Graph scraping, image processing) across all bots so N bots polling concurrently doesn't spawn unbounded work.
+
+Two ways to get started:
+
+- **Deploying, not building** - use the [`bsky-rss-fleet-template`](https://github.com/rmdes/bsky-rss-fleet-template) repo. It's a `docker-compose.yml` and example config tree that pulls the prebuilt image from `ghcr.io/rmdes/bsky.rss`, no source checkout needed.
+- **Building from this repo, migrating an existing single-bot setup, or rolling back** - see [`documentation/fleet.md`](documentation/fleet.md) for the architecture, the legacy importer/exporter, and the full cutover sequence.
 
 # License
 
