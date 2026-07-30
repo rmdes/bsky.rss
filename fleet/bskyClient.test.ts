@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { XRPCError, ResponseType } from "@atproto/xrpc";
-import { classifyPostError, isAlreadyExistsError } from "./bskyClient.ts";
+import { classifyPostError, isAlreadyExistsError, toAtprotoRkey } from "./bskyClient.ts";
 
 function makeXRPCError(status: number, headers?: Record<string, string>): XRPCError {
   const err = new XRPCError(status, "TestError", "test error");
@@ -58,4 +58,35 @@ test("isAlreadyExistsError is deliberately conservative — returns false for an
   assert.equal(isAlreadyExistsError(makeXRPCError(ResponseType.InvalidRequest)), false);
   assert.equal(isAlreadyExistsError(undefined), false);
   assert.equal(isAlreadyExistsError({ status: 400, error: "AlreadyExists" }), false);
+});
+
+// The real AT-Proto TID regex, copied verbatim from @atproto/syntax's tid.ts
+// (TID_REGEX) rather than imported, so this test doesn't depend on an
+// unlisted transitive package - this is the actual server-side validation
+// rule that rejected a raw dedupeKey in production with "Invalid TID string".
+const REAL_ATPROTO_TID_REGEX = /^[234567abcdefghij][234567abcdefghijklmnopqrstuvwxyz]{12}$/;
+
+test("toAtprotoRkey produces a string matching AT-Proto's real TID format", () => {
+  const rkey = toAtprotoRkey("any-dedupe-key-value");
+  assert.equal(rkey.length, 13);
+  assert.match(rkey, REAL_ATPROTO_TID_REGEX);
+});
+
+test("toAtprotoRkey is deterministic - same input always produces the same rkey", () => {
+  const a = toAtprotoRkey("bot-1|https://example.com/article");
+  const b = toAtprotoRkey("bot-1|https://example.com/article");
+  assert.equal(a, b);
+});
+
+test("toAtprotoRkey produces different rkeys for different inputs", () => {
+  const a = toAtprotoRkey("item-a");
+  const b = toAtprotoRkey("item-b");
+  assert.notEqual(a, b);
+});
+
+test("toAtprotoRkey matches the real TID format across many varied inputs, not just one lucky case", () => {
+  for (let i = 0; i < 200; i++) {
+    const rkey = toAtprotoRkey(`dedupe-key-${i}-${"x".repeat(i % 50)}`);
+    assert.match(rkey, REAL_ATPROTO_TID_REGEX, `failed for input index ${i}: got "${rkey}"`);
+  }
 });

@@ -1,6 +1,32 @@
+import { createHash } from "node:crypto";
 import { BskyAgent, RichText, AtpSessionEvent, AtpSessionData } from "@atproto/api";
 import { XRPCError, ResponseType } from "@atproto/xrpc";
 import { BotStore } from "./botStore.ts";
+
+const TID_CHARSET = "234567abcdefghijklmnopqrstuvwxyz";
+const TID_FIRST_CHAR_CHARSET = "234567abcdefghij";
+
+/**
+ * AT-Proto requires the rkey for an app.bsky.feed.post record to be a valid
+ * TID: 13 characters matching ^[234567abcdefghij][234567abcdefghijklmnopqrstuvwxyz]{12}$
+ * (verified directly against @atproto/syntax's real TID_REGEX and against a live
+ * PDS response - a raw string like a sha256 hex digest is rejected with
+ * "Invalid record key for app.bsky.feed.post: Invalid TID string"). The
+ * validation is purely syntactic (no timestamp-plausibility check), so a
+ * deterministic hash-derived TID satisfies it while preserving the same
+ * idempotency guarantee as the original dedupeKey - same item always maps to
+ * the same rkey. dedupeKey itself is unchanged everywhere else (local SQLite
+ * uniqueness has no format constraint); only the value actually sent to the
+ * PDS needs this conversion.
+ */
+export function toAtprotoRkey(dedupeKey: string): string {
+  const hash = createHash("sha256").update(dedupeKey).digest();
+  let rkey = TID_FIRST_CHAR_CHARSET[hash[0]! % TID_FIRST_CHAR_CHARSET.length]!;
+  for (let i = 1; i < 13; i++) {
+    rkey += TID_CHARSET[hash[i]! % TID_CHARSET.length]!;
+  }
+  return rkey;
+}
 
 export interface ResolvedEmbed {
   uri: string;
@@ -170,7 +196,7 @@ export class BskyClient {
 
     try {
       const result = await this.agent.app.bsky.feed.post.create(
-        { repo: this.agent.accountDid, rkey: params.rkey },
+        { repo: this.agent.accountDid, rkey: toAtprotoRkey(params.rkey) },
         record as any
       );
       return { ok: true, uri: result.uri };
