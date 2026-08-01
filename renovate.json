@@ -1,6 +1,62 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:base"
-  ]
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":preserveSemverRanges"
+  ],
+  "packageRules": [
+    {
+      "description": "Automerge non-major updates",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
+    },
+    {
+      "description": "Group ATProto packages together",
+      "matchPackagePatterns": ["^@atproto/"],
+      "groupName": "ATProto packages",
+      "automerge": true
+    },
+    {
+      "description": "Group TypeScript related packages",
+      "matchPackagePatterns": ["^@types/", "typescript", "tsx", "gts"],
+      "groupName": "TypeScript tooling",
+      "automerge": true
+    },
+    {
+      "description": "Update Docker base images weekly",
+      "matchDatasources": ["docker"],
+      "schedule": ["before 6am on monday"],
+      "automerge": true
+    },
+    {
+      "description": "Require manual review for major updates",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["dependencies", "major-update"]
+    },
+    {
+      "description": "Pin GitHub Actions to commit SHA for security",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "automerge": true,
+    "assignees": ["@rmdes"]
+  },
+  "timezone": "UTC",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies"],
+  "commitMessagePrefix": "chore(deps):",
+  "prConcurrentLimit": 5,
+  "prCreation": "immediate",
+  "rebaseWhen": "behind-base-branch",
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "🤖 Dependency Updates",
+  "assignees": ["rmdes"]
 }
