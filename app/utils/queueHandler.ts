@@ -1,5 +1,6 @@
 import bsky from "./bskyHandler";
 import db from "./dbHandler";
+import health from "./healthHandler";
 
 let queue: QueueItems[] = [];
 let rateLimited: boolean = false;
@@ -63,6 +64,7 @@ async function runQueue() {
       queueSnapshot.length
     } items`
   );
+  health.updateActivity();
   if (rateLimited) return { ratelimit: true };
   if (queueSnapshot.length > 0) {
     queueRunning = true;

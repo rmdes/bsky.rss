@@ -57,6 +57,25 @@ yarn install
 yarn start
 ```
 
+## One-Click Cloud Deployments
+
+Deploy bsky.rss to the cloud with minimal setup. These platforms offer easy deployment with persistent storage and automatic health checks:
+
+### Recommended Platforms
+
+- **[Fly.io](documentation/DEPLOYMENT.md#flyio)** - Best price/performance (~$5-10/month)
+- **[Railway](documentation/DEPLOYMENT.md#railway)** - Easiest setup with GitHub integration
+- **[Render](documentation/DEPLOYMENT.md#render)** - Free tier available for testing
+- **[DigitalOcean App Platform](documentation/DEPLOYMENT.md#digitalocean-app-platform)** - For existing DO users
+
+**📖 [Full Deployment Guide](documentation/DEPLOYMENT.md)** - Complete step-by-step instructions for all platforms
+
+All cloud deployments include:
+- ✅ Automatic health checks
+- ✅ Persistent storage for configuration
+- ✅ Auto-deploy from GitHub
+- ✅ Built-in monitoring and logs
+
 # Environment Variables & Configuration File
 
 ## Environment Variables

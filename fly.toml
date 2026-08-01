@@ -1,0 +1,54 @@
+# fly.toml - Fly.io deployment configuration for bsky.rss
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = 'bsky-rss'
+primary_region = 'iad'
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  INSTANCE_URL = "https://bsky.social"
+  HEALTH_CHECK_PORT = "8080"
+
+# Persistent storage for configuration and state files
+[mounts]
+  source = "bsky_data"
+  destination = "/build/data"
+  initial_size = "1gb"
+
+# HTTP service configuration
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["http", "tls"]
+
+  # Health check endpoint
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+  # TCP check as backup
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "5s"
+
+# VM resources
+[[vm]]
+  memory = '256mb'
+  cpu_kind = 'shared'
+  cpus = 1

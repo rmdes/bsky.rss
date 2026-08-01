@@ -1,0 +1,36 @@
+# render.yaml - Render deployment configuration for bsky.rss
+# See https://render.com/docs/blueprint-spec for full spec
+
+services:
+  - type: worker
+    name: bsky-rss
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+
+    # Environment variables
+    envVars:
+      - key: INSTANCE_URL
+        value: https://bsky.social
+      - key: HEALTH_CHECK_PORT
+        value: 8080
+      - key: IDENTIFIER
+        sync: false  # Set this in Render dashboard (required)
+      - key: APP_PASSWORD
+        sync: false  # Set this in Render dashboard (required)
+      - key: FETCH_URL
+        sync: false  # Set this in Render dashboard (required)
+      - key: FETCH_INTERVAL
+        value: 5
+
+    # Persistent disk for data storage
+    disk:
+      name: bsky-data
+      mountPath: /build/data
+      sizeGB: 1
+
+    # Health check configuration
+    healthCheckPath: /health
+
+    # Auto-deploy from main branch
+    autoDeploy: true

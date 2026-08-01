@@ -2,6 +2,7 @@ import process from "process";
 import bsky from "./utils/bskyHandler";
 import reader from "./utils/rssHandler";
 import queue from "./utils/queueHandler";
+import health from "./utils/healthHandler";
 
 require("dotenv").config();
 
@@ -17,6 +18,9 @@ else fetch_interval = parseFloat(process.env.FETCH_INTERVAL);
 main();
 async function main() {
   try {
+    /* Start health check endpoint */
+    health.start();
+
     /* Initialize Bluesky/Atproto API */
     await bsky.init(String(process.env.INSTANCE_URL));
     await bsky.login({
@@ -37,6 +41,12 @@ async function main() {
     await reader.start();
     await reader.launch();
     await queue.start();
+
+    /* Mark application as ready */
+    health.markReady();
+    console.log(
+      `[${new Date().toUTCString()}] - [bsky.rss APP] Application is ready and healthy`
+    );
   } catch (e) {
     if (e == "Error: Rate Limit Exceeded") {
       console.log(

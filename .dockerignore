@@ -1,7 +1,63 @@
-.env
-data
-node_modules
-docker-compose.example.yml
+# Git
+.git
+.gitignore
+.gitattributes
 
+# CI/CD
+.github
+
+# Documentation
+README.md
+documentation/
+*.md
+
+# Node modules (installed in container)
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Environment and secrets
+.env
+.env.*
+*.local
+
+# Data directory (mounted as volume)
+data/config.json
+data/last.txt
+data/persist.json
+data/db.txt
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+test/
+tests/
+*.test.js
+*.spec.js
+coverage/
+
+# Build artifacts
+dist/
+build/
+*.log
+
+# Deployment configs (not needed in image)
+docker-compose*.yml
+fly.toml
+railway.toml
+render.yaml
+.do/
+
+# Scripts
+release.sh
+scripts/
+
+# Misc
 .yarn/cache
 .yarn/install-state.gz

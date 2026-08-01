@@ -1,0 +1,20 @@
+# railway.toml - Railway deployment configuration for bsky.rss
+# See https://docs.railway.app/reference/config-as-code for more information
+
+[build]
+  builder = "DOCKERFILE"
+  dockerfilePath = "Dockerfile"
+
+[deploy]
+  startCommand = "yarn start"
+  restartPolicyType = "ON_FAILURE"
+  restartPolicyMaxRetries = 10
+  healthcheckPath = "/health"
+  healthcheckTimeout = 100
+
+# Environment variables (set these in Railway dashboard or via railway.app)
+# - IDENTIFIER (required)
+# - APP_PASSWORD (required)
+# - FETCH_URL (required)
+# - INSTANCE_URL (defaults to https://bsky.social)
+# - FETCH_INTERVAL (defaults to 5 minutes)
