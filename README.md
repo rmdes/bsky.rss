@@ -10,11 +10,28 @@ This app runs in two modes:
 - **Single-bot mode** (this README) - one Bluesky account per container/process. Start here if you're running one bot.
 - **Fleet mode** - many independent bots running out of a single process, instead of one container per bot. See the [Fleet mode](#fleet-mode) section below.
 
-# Setup
+# Deployment
 
-## Docker
+Choose your preferred deployment method:
 
-Copy this `docker-compose.yml` file to your Docker host and edit the environment variables:
+## Cloud Platforms (Managed)
+
+Deploy with one command and let the platform handle infrastructure:
+
+- **[Fly.io](documentation/DEPLOYMENT.md#flyio)** - Best price/performance (~$5-10/month)
+- **[Railway](documentation/DEPLOYMENT.md#railway)** - Easiest setup with GitHub integration (~$5/month)
+- **[Render](documentation/DEPLOYMENT.md#render)** - Free tier available, great for testing
+- **[DigitalOcean App Platform](documentation/DEPLOYMENT.md#digitalocean-app-platform)** - For existing DO users ($5/month)
+
+**📖 [Full Deployment Guide](documentation/DEPLOYMENT.md)** · **🔄 [Platform Comparison](documentation/PLATFORM-COMPARISON.md)**
+
+## Self-Hosted
+
+Run on your own infrastructure:
+
+### Docker (Recommended for self-hosting)
+
+Copy this `docker-compose.yml` file to your Docker host:
 
 ```yml
 version: "3"
@@ -24,57 +41,34 @@ services:
     image: ghcr.io/rmdes/bsky.rss
     environment:
       - APP_PASSWORD=
-      - INSTANCE_URL=
+      - INSTANCE_URL=https://bsky.social
       - FETCH_URL=
       - IDENTIFIER=
     volumes:
       - /your/data/directory:/build/data
 ```
 
-You will need to create a mount for `/build/data` to a directory on your host machine. This is where the `config.json` file will be stored.
+Mount `/build/data` to a directory on your host for persistent storage.
 
-Refer to the [Environment Variables & Configuration File](#environment-variables--configuration-file) section for more information on the environment variables and how to set up the configuration file.
+See [Deployment Guide - Docker](documentation/DEPLOYMENT.md#docker-self-hosted) for details.
 
-## Manual
+### Manual / Development
 
-1. Clone the repository
+For local development or custom setups:
 
 ```bash
 git clone github.com/rmdes/bsky.rss
-```
-
-2. Install the dependencies
-
-```bash
+cd bsky.rss
 yarn install
-```
-
-3. Create a `.env` file in the root directory of the project and refer to the [Environment Variables & Configuration File](#environment-variables--configuration-file) section to configure the environment variables and the configuration file.
-
-4. Run the bot
-
-```bash
+cp .env.example .env  # Edit with your credentials
 yarn start
 ```
 
-## One-Click Cloud Deployments
+See [Environment Variables](#environment-variables--configuration-file) below for configuration.
 
-Deploy bsky.rss to the cloud with minimal setup. These platforms offer easy deployment with persistent storage and automatic health checks:
+---
 
-### Recommended Platforms
-
-- **[Fly.io](documentation/DEPLOYMENT.md#flyio)** - Best price/performance (~$5-10/month)
-- **[Railway](documentation/DEPLOYMENT.md#railway)** - Easiest setup with GitHub integration
-- **[Render](documentation/DEPLOYMENT.md#render)** - Free tier available for testing
-- **[DigitalOcean App Platform](documentation/DEPLOYMENT.md#digitalocean-app-platform)** - For existing DO users
-
-**📖 [Full Deployment Guide](documentation/DEPLOYMENT.md)** - Complete step-by-step instructions for all platforms
-
-All cloud deployments include:
-- ✅ Automatic health checks
-- ✅ Persistent storage for configuration
-- ✅ Auto-deploy from GitHub
-- ✅ Built-in monitoring and logs
+**Not sure which to choose?** See the [Platform Comparison Guide](documentation/PLATFORM-COMPARISON.md) for recommendations based on your needs.
 
 # Environment Variables & Configuration File
 

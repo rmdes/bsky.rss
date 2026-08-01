@@ -1,15 +1,20 @@
 # Deployment Guide
 
-This guide covers deploying bsky.rss on various platforms. All platforms support the same Docker-based application with minimal configuration changes.
+This guide covers all deployment options for bsky.rss. Choose the platform that best fits your needs - whether you want managed cloud hosting or prefer to self-host.
 
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
-- [Platform Guides](#platform-guides)
-  - [Fly.io](#flyio) (Recommended - Best price/performance)
-  - [Railway](#railway) (Easiest setup)
-  - [Render](#render) (Best free tier)
-  - [DigitalOcean App Platform](#digitalocean-app-platform)
+- [Quick Decision Guide](#quick-decision-guide)
+- [Deployment Options](#deployment-options)
+  - [Managed Cloud Platforms](#managed-cloud-platforms)
+    - [Fly.io](#flyio) - Best price/performance
+    - [Railway](#railway) - Easiest setup
+    - [Render](#render) - Free tier available
+    - [DigitalOcean App Platform](#digitalocean-app-platform)
+  - [Self-Hosted Options](#self-hosted-options)
+    - [Docker (Self-Hosted)](#docker-self-hosted) - Full control
+    - [Manual / Development](#manual-development)
 - [Configuration](#configuration)
 - [Monitoring](#monitoring)
 - [Troubleshooting](#troubleshooting)
@@ -36,9 +41,38 @@ Before deploying, you'll need:
 
 ---
 
-## Platform Guides
+## Quick Decision Guide
 
-### Fly.io
+**Choose a managed cloud platform if you want:**
+- ✅ Zero infrastructure management
+- ✅ Automatic health checks and monitoring
+- ✅ Built-in scaling and reliability
+- ✅ GitHub auto-deploy
+- 💰 ~$5-10/month
+
+**Choose self-hosted Docker if you want:**
+- ✅ Full control over infrastructure
+- ✅ Run on existing servers
+- ✅ No recurring platform fees
+- ✅ Custom networking/security
+- 💰 Just your server costs
+
+**Choose manual setup if you're:**
+- 🔧 Developing or debugging
+- 🔧 Running locally for testing
+- 🔧 Need custom modifications
+
+**📊 [Full Platform Comparison](PLATFORM-COMPARISON.md)** - Detailed feature matrix and recommendations
+
+---
+
+## Deployment Options
+
+### Managed Cloud Platforms
+
+Cloud platforms handle all infrastructure, monitoring, and scaling for you.
+
+#### Fly.io
 
 **Best for:** Production deployments with excellent price/performance ratio (~$5-10/month)
 
@@ -290,6 +324,283 @@ Edit `fly.toml` to:
 
 - Basic plan: $5/month
 - Professional: $12/month
+
+---
+
+### Self-Hosted Options
+
+Run bsky.rss on your own infrastructure for full control.
+
+#### Docker (Self-Hosted)
+
+**Best for:** Self-hosting with full control, existing Docker infrastructure
+
+Docker is the recommended way to self-host bsky.rss. It provides isolation, easy updates, and consistent behavior across environments.
+
+##### Prerequisites
+- Docker and Docker Compose installed
+- A server or machine to run the container
+- Access to configure persistent storage
+
+##### Deployment Steps
+
+1. **Create a docker-compose.yml file**
+
+   ```yml
+   version: "3"
+   services:
+     bsky-rss:
+       restart: always
+       image: ghcr.io/rmdes/bsky.rss:latest
+       environment:
+         - IDENTIFIER=your-bluesky-username
+         - APP_PASSWORD=your-app-password
+         - FETCH_URL=https://example.com/feed.xml
+         - INSTANCE_URL=https://bsky.social
+         - FETCH_INTERVAL=5
+         - HEALTH_CHECK_PORT=8080
+       volumes:
+         - ./data:/build/data
+       ports:
+         - "8080:8080"  # Optional: expose health check
+   ```
+
+2. **Create the data directory**
+
+   ```bash
+   mkdir -p data
+   cp data/config.example.json data/config.json
+   # Edit data/config.json with your preferences
+   ```
+
+3. **Start the container**
+
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Check status**
+
+   ```bash
+   docker-compose logs -f
+   curl http://localhost:8080/health
+   ```
+
+##### Updating
+
+Pull the latest image and restart:
+
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+##### Using a Specific Version
+
+Pin to a specific version tag instead of `latest`:
+
+```yml
+image: ghcr.io/rmdes/bsky.rss:v2.2.0
+```
+
+Available tags:
+- `latest` - Latest stable release
+- `v2.2.0` - Specific version
+- `main-<commit>` - Bleeding edge from main branch
+
+##### Docker Run (Without Compose)
+
+```bash
+docker run -d \
+  --name bsky-rss \
+  --restart unless-stopped \
+  -e IDENTIFIER="your-username" \
+  -e APP_PASSWORD="your-password" \
+  -e FETCH_URL="https://feed.xml" \
+  -e INSTANCE_URL="https://bsky.social" \
+  -v $(pwd)/data:/build/data \
+  -p 8080:8080 \
+  ghcr.io/rmdes/bsky.rss:latest
+```
+
+##### Building from Source
+
+To build your own image:
+
+```bash
+git clone https://github.com/rmdes/bsky.rss.git
+cd bsky.rss
+docker build -t bsky-rss:custom .
+# Update docker-compose.yml to use bsky-rss:custom
+```
+
+##### Reverse Proxy (Optional)
+
+Expose the health check endpoint through your reverse proxy (nginx, Caddy, Traefik):
+
+**Nginx example:**
+```nginx
+location /health {
+    proxy_pass http://localhost:8080/health;
+    proxy_set_header Host $host;
+}
+```
+
+**Caddy example:**
+```
+example.com {
+    reverse_proxy /health localhost:8080
+}
+```
+
+##### Pros
+- ✅ Full control over infrastructure
+- ✅ Run on existing servers
+- ✅ No platform fees
+- ✅ Easy updates via image pulls
+- ✅ Isolated environment
+
+##### Cons
+- ❌ You manage monitoring and uptime
+- ❌ Manual scaling
+- ❌ Self-managed backups
+- ❌ Requires server maintenance
+
+---
+
+#### Manual / Development
+
+**Best for:** Local development, testing, debugging, custom modifications
+
+Run bsky.rss directly on your machine without Docker.
+
+##### Prerequisites
+- Node.js 22+ (LTS recommended)
+- Yarn package manager
+- Git
+
+##### Setup Steps
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/rmdes/bsky.rss.git
+   cd bsky.rss
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   yarn install
+   ```
+
+3. **Configure environment**
+
+   Create a `.env` file:
+
+   ```bash
+   IDENTIFIER=your-bluesky-username
+   APP_PASSWORD=your-app-password
+   FETCH_URL=https://example.com/feed.xml
+   INSTANCE_URL=https://bsky.social
+   FETCH_INTERVAL=5
+   HEALTH_CHECK_PORT=8080
+   ```
+
+4. **Set up configuration**
+
+   ```bash
+   cp data/config.example.json data/config.json
+   # Edit data/config.json with your preferences
+   ```
+
+5. **Run the application**
+
+   ```bash
+   # Production mode
+   yarn start
+
+   # Development mode (with auto-reload)
+   yarn dev
+   ```
+
+6. **Check health**
+
+   ```bash
+   curl http://localhost:8080/health
+   ```
+
+##### Development Workflow
+
+**Running tests:**
+```bash
+yarn typecheck
+```
+
+**Building for production:**
+```bash
+# The app runs with tsx, no build step needed
+yarn start
+```
+
+**Debugging:**
+- Use `yarn dev` for auto-reload on file changes
+- Check logs in console output
+- Inspect `data/` directory for state files
+
+##### Running as a System Service
+
+**systemd service (Linux):**
+
+Create `/etc/systemd/system/bsky-rss.service`:
+
+```ini
+[Unit]
+Description=bsky.rss - RSS to Bluesky poster
+After=network.target
+
+[Service]
+Type=simple
+User=bsky
+WorkingDirectory=/home/bsky/bsky.rss
+ExecStart=/usr/bin/yarn start
+Restart=always
+RestartSec=10
+Environment="NODE_ENV=production"
+EnvironmentFile=/home/bsky/bsky.rss/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+```bash
+sudo systemctl enable bsky-rss
+sudo systemctl start bsky-rss
+sudo systemctl status bsky-rss
+```
+
+**PM2 (Node.js process manager):**
+
+```bash
+npm install -g pm2
+pm2 start "yarn start" --name bsky-rss
+pm2 save
+pm2 startup  # Follow instructions
+```
+
+##### Pros
+- ✅ Direct access to code
+- ✅ Easy debugging
+- ✅ Fast iteration during development
+- ✅ No Docker overhead
+- ✅ Full customization
+
+##### Cons
+- ❌ Manual dependency management
+- ❌ Environment-specific issues
+- ❌ Requires process management for production
+- ❌ More complex deployment
 
 ---
 

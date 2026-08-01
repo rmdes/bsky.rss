@@ -4,29 +4,40 @@ Quick reference to help you choose the right deployment platform for bsky.rss.
 
 ## Quick Decision Matrix
 
+**Choose Docker (Self-Hosted) if:**
+- ✅ You have existing server infrastructure
+- ✅ You want full control and no platform fees
+- ✅ You're comfortable managing servers
+- ✅ You need custom networking or security
+- 💰 Only pay for your server costs
+
 **Choose Fly.io if:**
-- ✅ You want the best price/performance
+- ✅ You want managed hosting with best price/performance
 - ✅ You're comfortable with CLI tools
 - ✅ You need reliable persistent storage
 - ✅ You want global edge deployment
+- 💰 ~$5-10/month
 
 **Choose Railway if:**
-- ✅ You want the easiest setup
+- ✅ You want the easiest managed setup
 - ✅ You prefer GitHub auto-deploy
 - ✅ You value developer experience
 - ✅ You want built-in metrics
+- 💰 ~$5/month
 
 **Choose Render if:**
 - ✅ You want a free tier for testing
 - ✅ You're okay with cold starts (free tier)
 - ✅ You prefer web UI over CLI
 - ✅ You need simple blueprints
+- 💰 Free tier or $7/month
 
 **Choose DigitalOcean if:**
 - ✅ You're already using DigitalOcean
 - ✅ You want predictable pricing
 - ✅ You're familiar with DO's ecosystem
-- ❌ Note: Limited persistent storage for workers
+- ⚠️ Note: Limited persistent storage for workers
+- 💰 $5/month
 
 ---
 
@@ -34,12 +45,13 @@ Quick reference to help you choose the right deployment platform for bsky.rss.
 
 ### Pricing
 
-| Platform | Free Tier | Paid Starting | Best Value |
-|----------|-----------|---------------|------------|
-| **Fly.io** | $5 credit | ~$5-10/month | ⭐⭐⭐⭐⭐ |
-| **Railway** | No | $5/month | ⭐⭐⭐⭐ |
-| **Render** | Yes* | $7/month | ⭐⭐⭐ |
-| **DigitalOcean** | No | $5/month | ⭐⭐⭐⭐ |
+| Platform | Free Tier | Paid Starting | Infrastructure Cost | Best Value |
+|----------|-----------|---------------|---------------------|------------|
+| **Docker (Self-Hosted)** | - | Server costs only | Your own | ⭐⭐⭐⭐⭐ |
+| **Fly.io** | $5 credit | ~$5-10/month | Managed | ⭐⭐⭐⭐⭐ |
+| **Railway** | No | $5/month | Managed | ⭐⭐⭐⭐ |
+| **Render** | Yes* | $7/month | Managed | ⭐⭐⭐ |
+| **DigitalOcean** | No | $5/month | Managed | ⭐⭐⭐⭐ |
 
 *Render free tier has limitations (spins down after 15min inactivity)
 
@@ -47,28 +59,28 @@ Quick reference to help you choose the right deployment platform for bsky.rss.
 
 ### Features
 
-| Feature | Fly.io | Railway | Render | DigitalOcean |
-|---------|--------|---------|--------|--------------|
-| **Persistent Storage** | ✅ Volumes | ✅ Volumes | ✅ Disks | ❌ Limited |
-| **Auto-deploy (GitHub)** | Via Actions | ✅ Built-in | ✅ Built-in | ✅ Built-in |
-| **Health Checks** | ✅ | ✅ | ✅ | ✅ |
-| **Custom Domains** | ✅ | ✅ | ✅ | ✅ |
-| **Global CDN** | ✅ | ✅ | ✅ | ✅ |
-| **Metrics Dashboard** | ✅ | ✅ | ✅ | ✅ |
-| **Log Streaming** | ✅ | ✅ | ✅ | ✅ |
-| **CLI Tool** | ✅ Excellent | ✅ Good | ❌ No | ✅ Good |
-| **Web UI** | ✅ | ✅ Excellent | ✅ Good | ✅ Good |
+| Feature | Docker | Fly.io | Railway | Render | DigitalOcean |
+|---------|--------|--------|---------|--------|--------------|
+| **Persistent Storage** | ✅ Your disk | ✅ Volumes | ✅ Volumes | ✅ Disks | ❌ Limited |
+| **Auto-deploy** | Manual/CI | Via Actions | ✅ GitHub | ✅ GitHub | ✅ GitHub |
+| **Health Checks** | Manual | ✅ | ✅ | ✅ | ✅ |
+| **Custom Domains** | Your config | ✅ | ✅ | ✅ | ✅ |
+| **Metrics Dashboard** | DIY | ✅ | ✅ | ✅ | ✅ |
+| **Log Streaming** | Manual | ✅ | ✅ | ✅ | ✅ |
+| **Infrastructure Mgmt** | ❌ You manage | ✅ Managed | ✅ Managed | ✅ Managed | ✅ Managed |
+| **Full Control** | ✅ Complete | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited |
 
 ---
 
 ### Setup Complexity
 
-| Platform | Setup Time | Ease of Use | Configuration |
-|----------|-----------|-------------|---------------|
-| **Fly.io** | 10-15 min | ⭐⭐⭐⭐ | CLI + TOML file |
-| **Railway** | 5-10 min | ⭐⭐⭐⭐⭐ | GitHub + Web UI |
-| **Render** | 10-15 min | ⭐⭐⭐⭐ | GitHub + YAML |
-| **DigitalOcean** | 15-20 min | ⭐⭐⭐ | YAML or Web UI |
+| Platform | Setup Time | Ease of Use | Configuration | Ongoing Maintenance |
+|----------|-----------|-------------|---------------|-------------------|
+| **Docker** | 5 min | ⭐⭐⭐⭐⭐ | Compose file | Manual updates |
+| **Fly.io** | 10-15 min | ⭐⭐⭐⭐ | CLI + TOML | Auto-updates |
+| **Railway** | 5-10 min | ⭐⭐⭐⭐⭐ | GitHub + UI | Auto-updates |
+| **Render** | 10-15 min | ⭐⭐⭐⭐ | GitHub + YAML | Auto-updates |
+| **DigitalOcean** | 15-20 min | ⭐⭐⭐ | YAML/UI | Auto-updates |
 
 ---
 
@@ -97,6 +109,26 @@ Quick reference to help you choose the right deployment platform for bsky.rss.
 ---
 
 ### Developer Experience
+
+#### Docker (Self-Hosted)
+**Pros:**
+- Full control over infrastructure
+- No platform lock-in
+- Use existing servers/VPS
+- Custom networking and security
+- No recurring platform fees
+- Direct access to logs and debugging
+
+**Cons:**
+- Manual server management
+- Self-managed monitoring and backups
+- Requires infrastructure knowledge
+- Manual scaling
+- You handle uptime
+
+**Best for:** DevOps engineers, self-hosting enthusiasts, teams with existing infrastructure
+
+---
 
 #### Fly.io
 **Pros:**
@@ -165,17 +197,16 @@ Quick reference to help you choose the right deployment platform for bsky.rss.
 ## Use Case Recommendations
 
 ### 🏠 Personal Bot (1 account)
-**Recommendation:** Railway or Render (free tier)
-- Simple setup
-- Low/no cost
-- Easy monitoring
+**Recommendation:** Docker (if you have a server) or Render (free tier)
+- **Docker:** Free if you have existing server, full control
+- **Render:** No server needed, free tier with limitations
+- Both are simple to set up
 
 ### 🏢 Production Bot (reliable uptime needed)
-**Recommendation:** Fly.io
-- Best performance
-- Reliable storage
-- Global deployment
-- Cost-effective at scale
+**Recommendation:** Fly.io or Docker (with monitoring)
+- **Fly.io:** Managed infrastructure, global edge, built-in monitoring
+- **Docker:** Full control, custom setup, your own monitoring
+- Both offer reliable uptime if configured correctly
 
 ### 🧪 Testing/Development
 **Recommendation:** Render (free tier)
@@ -190,10 +221,10 @@ Quick reference to help you choose the right deployment platform for bsky.rss.
 - Cost-effective scaling
 
 ### 💰 Budget-conscious
-**Recommendation:** Fly.io ($5/month)
-- Best value
-- No hidden costs
-- Free outbound transfer
+**Recommendation:** Docker (self-hosted) or Fly.io
+- **Docker:** Free if you have a server (VPS ~$5/month)
+- **Fly.io:** Best managed value at ~$5-10/month
+- Both have transparent costs
 
 ### 🎓 Learning/Experimenting
 **Recommendation:** Render (free tier)
@@ -230,42 +261,53 @@ If you outgrow one platform, here's how to migrate:
 
 ### Small Bot (256MB RAM, 1 CPU)
 
-| Platform | Monthly Cost | Notes |
-|----------|--------------|-------|
-| **Fly.io** | ~$5-7 | Includes storage & egress |
-| **Railway** | ~$5 | Usage-based |
-| **Render** | $7 | Fixed pricing |
-| **DigitalOcean** | $5 | Basic plan |
+| Platform | Monthly Cost | What You Pay For | Notes |
+|----------|--------------|------------------|-------|
+| **Docker (VPS)** | ~$3-5 | Server only | Hetzner, DigitalOcean droplet, etc. |
+| **Docker (existing)** | $0 | Nothing | If you already have a server |
+| **Fly.io** | ~$5-7 | Platform + resources | Includes storage & egress |
+| **Railway** | ~$5 | Platform + resources | Usage-based |
+| **Render** | $0 or $7 | Platform + resources | Free tier or paid |
+| **DigitalOcean** | $5 | Platform + resources | Basic plan |
 
 ### Medium Bot (512MB RAM, 1 CPU)
 
-| Platform | Monthly Cost | Notes |
-|----------|--------------|-------|
-| **Fly.io** | ~$10-12 | Better value at this tier |
-| **Railway** | ~$10 | Usage-based |
-| **Render** | $19 | Professional plan |
-| **DigitalOcean** | $12 | Professional plan |
+| Platform | Monthly Cost | What You Pay For | Notes |
+|----------|--------------|------------------|-------|
+| **Docker (VPS)** | ~$5-10 | Server only | Slightly larger VPS |
+| **Fly.io** | ~$10-12 | Platform + resources | Better value at this tier |
+| **Railway** | ~$10 | Platform + resources | Usage-based |
+| **Render** | $19 | Platform + resources | Professional plan |
+| **DigitalOcean** | $12 | Platform + resources | Professional plan |
 
-**💡 Tip:** Start with Render's free tier for testing, then move to Fly.io or Railway for production.
+**💡 Tip:** 
+- **Most economical:** Docker on a cheap VPS ($3-5/month)
+- **Best managed value:** Fly.io ($5-10/month)
+- **Easiest setup:** Railway ($5/month) or Render (free tier)
 
 ---
 
 ## Still Undecided?
 
+**Start with Docker if:**
+- You already have a server or VPS
+- You want full control and zero platform fees
+- You're comfortable managing infrastructure
+
 **Start with Railway if:**
-- You want to be running in < 10 minutes
+- You want managed hosting in < 10 minutes
 - You prefer GUI over CLI
-- You don't mind paying $5/month
+- $5/month is worth not managing servers
 
 **Start with Fly.io if:**
-- You want the best long-term value
+- You want best managed value long-term
 - You're comfortable with command line
 - You need global edge deployment
 
 **Start with Render if:**
 - You want to test for free first
-- You're okay with occasional cold starts
-- You don't need 24/7 uptime yet
+- You're okay with occasional cold starts (free tier)
+- You prefer web UI configuration
 
 ---
 
