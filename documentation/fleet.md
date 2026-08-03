@@ -46,6 +46,50 @@ that `CLAUDE.md` is gitignored and machine-local; if you don't have one, run
 Claude Code's `/init` or write your own rather than assuming this document
 duplicates it.
 
+## Operations visibility
+
+Set `FLEET_LOG_LEVEL` to `summary`, `verbose`, or `debug` to choose the
+fleet-wide startup log level. It defaults to `summary`.
+
+- `summary` records lifecycle, activation and configuration failures, feed
+  failure/recovery transitions, rate-limit, uncertain-post, and unexpected
+  posting events, plus one aggregate interval summary every five minutes. It
+  omits per-item queue, post, duplicate, and Open Graph lines.
+- `verbose` includes `summary` and adds queued, duplicate, policy-skipped,
+  successful-post, and Open Graph fallback events.
+- `debug` includes `verbose` and adds raw external error detail, stack traces,
+  timing, and limiter activity. **Treat debug output as private:** it may
+  contain feed URLs, titles, and post text.
+
+The fleet writes a private status snapshot at
+`<FLEET_DATA_ROOT>/status.json`; it writes temporary log overrides at
+`<FLEET_DATA_ROOT>/log-overrides.json`. Both files use mode `0600`. Status
+counters are process-lifetime values and reset when the fleet restarts.
+
+Use the aggregate status view, or include safe per-bot facts with `--bots`:
+
+```bash
+yarn fleet:status
+yarn fleet:status --bots
+```
+
+A feed in `failing` state describes that upstream feed's latest poll; it is
+not by itself a fleet-wide failure. Open Graph RSS fallback is counted
+separately and can still result in a successful post.
+
+Use temporary per-bot overrides when investigating one bot:
+
+```bash
+yarn fleet:log set <bot-id> debug --for 15m
+yarn fleet:log set <bot-id> verbose --for 30m
+yarn fleet:log list
+yarn fleet:log clear <bot-id>
+```
+
+Overrides expire automatically and return that bot to `FLEET_LOG_LEVEL`. The
+log CLI only reads status and override data, or changes the override document;
+it does not restart the fleet, reload configuration, or control processes.
+
 ## Legacy import
 
 `fleet/importLegacyFleet.ts` migrates an existing per-bot legacy deployment
