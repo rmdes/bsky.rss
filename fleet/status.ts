@@ -64,7 +64,10 @@ export function formatFleetStatus(
 ): string {
   const now = options.now ?? new Date();
   const heartbeatAge = elapsedMilliseconds(snapshot.heartbeatAt, now);
-  const uptime = formatDuration(elapsedMilliseconds(snapshot.startedAt, now));
+  const uptimeEnd = snapshot.phase === "stopping" || heartbeatAge > staleAfterMilliseconds
+    ? new Date(snapshot.heartbeatAt)
+    : now;
+  const uptime = formatDuration(elapsedMilliseconds(snapshot.startedAt, uptimeEnd));
   const heartbeat = formatDuration(heartbeatAge);
   const phase = phaseLabel(snapshot.phase, heartbeatAge);
   const lines = [`Fleet ${phase} ${uptime} · heartbeat ${heartbeat} ago`];
@@ -126,10 +129,8 @@ function formatBotStatus(bot: FleetBotStatus): string {
   );
   return [
     `Bot ${bot.botId}`,
-    `activation=${bot.activationState}`,
     `feed=${bot.feedState}`,
     `lastFeedSuccess=${bot.lastFeedSuccessAt ?? "n/a"}`,
-    `lastFeedFailure=${bot.lastFeedFailureAt ?? "n/a"}`,
     `consecutiveFailures=${formatInteger(bot.consecutiveFeedFailures)}`,
     `failureCategory=${bot.lastFeedFailureCategory ?? "n/a"}`,
     `lastPostSuccess=${bot.lastPostSuccessAt ?? "n/a"}`,
@@ -141,7 +142,6 @@ function formatBotStatus(bot: FleetBotStatus): string {
 }
 
 function phaseLabel(phase: FleetPhase, heartbeatAge: number): string {
-  if (phase === "stopping") return "stopping";
   if (heartbeatAge > staleAfterMilliseconds) return `stale (last reported ${phase})`;
   return phase;
 }

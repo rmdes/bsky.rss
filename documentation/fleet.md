@@ -52,13 +52,17 @@ Set `FLEET_LOG_LEVEL` to `summary`, `verbose`, or `debug` to choose the
 fleet-wide startup log level. It defaults to `summary`.
 
 - `summary` records lifecycle, activation and configuration failures, feed
-  failure/recovery transitions, rate-limit, uncertain-post, and unexpected
-  posting events, plus one aggregate interval summary every five minutes. It
-  omits per-item queue, post, duplicate, and Open Graph lines.
+  failure/recovery transitions, rate-limit, image-upload deferral,
+  uncertain-post, and unexpected posting events, plus one aggregate interval
+  summary every five minutes. It omits per-item queue, post, duplicate, and
+  Open Graph lines.
 - `verbose` includes `summary` and adds queued, duplicate, policy-skipped,
   successful-post, and Open Graph fallback events.
-- `debug` includes `verbose` and adds raw external error detail, stack traces,
-  timing, and limiter activity. **Treat debug output as private:** it may
+- `debug` includes `verbose` and adds sanitized external error detail and stack
+  traces, transient durations, and shared-limiter wait/acquire/release
+  activity. Credential-bearing URL userinfo, Authorization/Bearer material,
+  and secret-like password, app-password, token, access, refresh, session, and
+  secret values are redacted. **Treat debug output as private:** it may still
   contain feed URLs, titles, and post text.
 
 The fleet writes a private status snapshot at
@@ -77,6 +81,15 @@ A feed in `failing` state describes that upstream feed's latest poll; it is
 not by itself a fleet-wide failure. Open Graph RSS fallback is counted
 separately and can still result in a successful post.
 
+A blob/image upload failure happens before record creation. It is reported as
+a non-rate-limit deferral: the row remains queued, the current drain stops,
+and the existing scheduler deadline defers another attempt for 30 seconds.
+Actual 429/504 rate-limit handling remains separate.
+
+Status staleness applies to every last-reported phase, including `stopping`.
+For a stale snapshot or a final `stopping` snapshot, displayed uptime is capped
+at the last heartbeat rather than increasing after the process stopped.
+
 Use temporary per-bot overrides when investigating one bot:
 
 ```bash
@@ -90,9 +103,23 @@ yarn fleet:log clear <bot-id>
 The `set` duration must be a positive whole number followed by `s`, `m`, or
 `h` (for example, `15m` or `30m`).
 
-Overrides expire automatically and return that bot to `FLEET_LOG_LEVEL`. The
-log CLI only reads status and override data, or changes the override document;
-it does not restart the fleet, reload configuration, or control processes.
+Overrides expire automatically and return that bot to `FLEET_LOG_LEVEL`.
+Every command validates the document structure first, prunes expired entries,
+then checks active entries against bot IDs from the current `status.json`.
+Consequently, an expired entry for a removed bot is discarded, but an active
+unknown-bot entry invalidates the whole document. Repair/remove that active
+entry manually, or wait for its structurally valid expiry; until then the
+running watcher retains its last valid in-memory overrides. `list` uses the
+same status-backed authority and never treats document keys as bot authority.
+
+Malformed JSON or validation content produces one retained-state warning.
+Operational filesystem failures (for example permissions or a directory at
+the override path) remain distinct and produce the runtime's safe observation
+warning plus sanitized debug detail.
+
+The log CLI only reads status and override data, or changes the override
+document; it does not restart the fleet, reload configuration, or control
+processes.
 
 ## Legacy import
 

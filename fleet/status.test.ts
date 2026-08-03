@@ -148,14 +148,50 @@ test("marks a heartbeat older than 150 seconds stale while 150 seconds remains c
   assert.match(stale, /heartbeat 2m 31s ago/);
 });
 
-test("renders a stopping snapshot explicitly", () => {
-  const output = formatFleetStatus(statusFixture({ phase: "stopping" }), {
+test("a current stopping snapshot preserves stopping and caps final uptime at its heartbeat", () => {
+  const output = formatFleetStatus(statusFixture({
+    phase: "stopping",
+    startedAt: "2026-08-03T11:00:00.000Z",
+    heartbeatAt: "2026-08-03T11:59:42.000Z",
+  }), {
     showBots: false,
     now,
   });
 
-  assert.match(output, /^Fleet stopping /);
+  assert.match(output, /^Fleet stopping 59m 42s · heartbeat 18s ago/);
   assert.doesNotMatch(output, /^Fleet stale/);
+});
+
+test("a stale stopping snapshot reports stale while preserving its last stopping phase", () => {
+  const output = formatFleetStatus(statusFixture({
+    phase: "stopping",
+    startedAt: "2026-08-03T11:00:00.000Z",
+    heartbeatAt: "2026-08-03T11:57:29.000Z",
+  }), {
+    showBots: false,
+    now,
+  });
+
+  assert.match(
+    output,
+    /^Fleet stale \(last reported stopping\) 57m 29s · heartbeat 2m 31s ago/
+  );
+});
+
+test("a stale snapshot's uptime remains fixed at its last heartbeat", () => {
+  const snapshot = statusFixture({
+    startedAt: "2026-08-03T11:00:00.000Z",
+    heartbeatAt: "2026-08-03T11:57:29.000Z",
+  });
+
+  const first = formatFleetStatus(snapshot, { showBots: false, now });
+  const later = formatFleetStatus(snapshot, {
+    showBots: false,
+    now: new Date("2026-08-03T13:00:00.000Z"),
+  });
+
+  assert.match(first, /^Fleet stale \(last reported running\) 57m 29s /);
+  assert.match(later, /^Fleet stale \(last reported running\) 57m 29s /);
 });
 
 test("zero denominators render n/a without NaN or Infinity", () => {
@@ -175,7 +211,7 @@ test("zero denominators render n/a without NaN or Infinity", () => {
   assert.doesNotMatch(output, /NaN|Infinity/);
 });
 
-test("bot rows render only approved operational fields", () => {
+test("bot rows render the exact approved operational-field allowlist", () => {
   const snapshot = statusFixture();
   Object.assign(snapshot.botStates[0]!, {
     feedUrl: "https://private.example/feed.xml",
@@ -188,27 +224,30 @@ test("bot rows render only approved operational fields", () => {
 
   const output = formatFleetStatus(snapshot, { showBots: true, now });
 
-  assert.match(output, /Bot bot-safe/);
-  assert.match(output, /activation=active/);
-  assert.match(output, /feed=failing/);
-  assert.match(output, /lastFeedSuccess=2026-08-03T11:54:00.000Z/);
-  assert.match(output, /consecutiveFailures=3/);
-  assert.match(output, /failureCategory=http-500/);
-  assert.match(output, /lastPostSuccess=2026-08-03T11:45:00.000Z/);
-  assert.match(output, /queueDepth=4/);
-  assert.match(output, /feedPollSucceeded=10/);
-  assert.match(output, /feedPollFailed=3/);
-  assert.match(output, /openGraphAttempted=2/);
-  assert.match(output, /openGraphSucceeded=1/);
-  assert.match(output, /openGraphFallback=1/);
-  assert.match(output, /queued=5/);
-  assert.match(output, /policySkipped=1/);
-  assert.match(output, /postSucceeded=4/);
-  assert.match(output, /postUncertain=1/);
-  assert.match(output, /postDeferred=2/);
-  assert.match(output, /postException=3/);
-  assert.match(output, /effectiveLogLevel=debug/);
-  assert.match(output, /logOverrideExpiresAt=2026-08-03T12:15:00.000Z/);
+  const botLine = output.split("\n").find((line) => line.startsWith("Bot bot-safe"));
+  assert.equal(botLine, [
+    "Bot bot-safe",
+    "feed=failing",
+    "lastFeedSuccess=2026-08-03T11:54:00.000Z",
+    "consecutiveFailures=3",
+    "failureCategory=http-500",
+    "lastPostSuccess=2026-08-03T11:45:00.000Z",
+    "queueDepth=4",
+    "feedPollSucceeded=10",
+    "feedPollFailed=3",
+    "openGraphAttempted=2",
+    "openGraphSucceeded=1",
+    "openGraphFallback=1",
+    "queued=5",
+    "policySkipped=1",
+    "postSucceeded=4",
+    "postUncertain=1",
+    "postDeferred=2",
+    "postException=3",
+    "effectiveLogLevel=debug",
+    "logOverrideExpiresAt=2026-08-03T12:15:00.000Z",
+  ].join(" · "));
+  assert.doesNotMatch(output, /activation=|lastFeedFailure=/);
   assert.doesNotMatch(
     output,
     /private\.example|private\.handle|private title|private content|private raw login failure|private-token/

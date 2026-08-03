@@ -124,17 +124,29 @@ export class FleetOperationsRuntime {
   }
 
   private writeIntervalSummary(): void {
-    const states = this.operationalStates();
-    const current = sumBotCounters(states);
-    const previous = this.previousCounters ?? current;
-    this.previousCounters = current;
-    const activeWorkers = this.options.coordinator.activeWorkers();
-    this.options.logger.summary("FLEET", formatFleetIntervalSummary({
-      delta: subtractBotCounters(current, previous),
-      queueDepth: activeWorkers.reduce((total, worker) => total + worker.queueLength(), 0),
-      feedsFailing: states.filter((state) => state.feedState === "failing").length,
-      rssBytes: this.options.memoryUsage().rss,
-    }));
+    try {
+      const states = this.operationalStates();
+      const current = sumBotCounters(states);
+      const previous = this.previousCounters ?? current;
+      const activeWorkers = this.options.coordinator.activeWorkers();
+      this.options.logger.summary("FLEET", formatFleetIntervalSummary({
+        delta: subtractBotCounters(current, previous),
+        queueDepth: activeWorkers.reduce((total, worker) => total + worker.queueLength(), 0),
+        feedsFailing: states.filter((state) => state.feedState === "failing").length,
+        rssBytes: this.options.memoryUsage().rss,
+      }));
+      this.previousCounters = current;
+    } catch (error) {
+      try {
+        this.options.logger.summary(
+          "FLEET",
+          "Interval summary failed; fleet execution continues"
+        );
+        this.options.logger.debug("FLEET", formatDebugError(error));
+      } catch {
+        // A failing log sink cannot be allowed to escape its timer callback.
+      }
+    }
   }
 
   private operationalStates(): BotOperationalSnapshot[] {

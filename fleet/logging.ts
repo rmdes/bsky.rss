@@ -29,8 +29,38 @@ export function parseFleetLogLevel(value: string | undefined): FleetLogLevel {
 }
 
 export function formatDebugError(error: unknown): string {
-  if (!(error instanceof Error)) return String(error);
-  return [error.name, error.message, error.stack].filter(Boolean).join("\n");
+  if (!(error instanceof Error)) return redactDebugText(String(error));
+  return [error.name, error.message, error.stack]
+    .filter(Boolean)
+    .map((value) => redactDebugText(value as string))
+    .join("\n");
+}
+
+function redactDebugText(value: string): string {
+  const redacted = "[REDACTED]";
+  const secretKey = [
+    "app[_-]?password",
+    "password",
+    "token",
+    "access(?:[_-]?(?:jwt|token))?",
+    "refresh(?:[_-]?(?:jwt|token))?",
+    "session(?:[_-]?(?:id|token))?",
+    "(?:client[_-]?)?secret",
+  ].join("|");
+  const secretValue = new RegExp(
+    `(\\b(?:${secretKey})\\b\\s*[:=]\\s*)` +
+      `(?:\\{[^}\\r\\n]*\\}|\\[[^\\]\\r\\n]*\\]|"[^"]*"|'[^']*'|[^\\s,;&}\\]]+)`,
+    "gi"
+  );
+
+  return value
+    .replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^/\s@]+@/gi, `$1${redacted}@`)
+    .replace(
+      /\b(authorization)\s*[:=]\s*(?:(?:bearer|basic)\s+)?[^\s,;]+/gi,
+      `$1: ${redacted}`
+    )
+    .replace(/\b(bearer)\s+[a-z0-9._~+/=-]+/gi, `$1 ${redacted}`)
+    .replace(secretValue, `$1${redacted}`);
 }
 
 export class FleetLogger {

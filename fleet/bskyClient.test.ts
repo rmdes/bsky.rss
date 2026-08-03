@@ -163,6 +163,42 @@ test("resumed-session summary omits the handle and retains the successful short-
   assert.doesNotMatch(records[0]!.message, /resumed-private|secret|identifier|password/);
 });
 
+test("caught session-resume errors and login durations are debug-only for the selected bot", async () => {
+  const records: FleetLogRecord[] = [];
+  const logger = new FleetLogger({
+    defaultLevel: "summary",
+    sink: (_line, record) => records.push(record),
+  });
+  logger.replaceOverrides(new Map([
+    ["debug-bot", { level: "debug", expiresAt: "2099-01-01T00:00:00.000Z" }],
+  ]));
+  const makeSessionClient = (botId: string, secret: string) => {
+    const store = {
+      readSession: () => ({ accessJwt: secret }),
+      writeSession: () => undefined,
+    };
+    const client = new BskyClient(botId, "https://bsky.social", store as any, logger);
+    (client as any).agent = {
+      resumeSession: async () => {
+        throw new Error(`resume rejected token=${secret}`);
+      },
+      login: async () => ({ success: true, data: { handle: `${botId}.example` } }),
+    };
+    return client;
+  };
+
+  await makeSessionClient("debug-bot", "debug-session-secret").login("id", "password");
+  await makeSessionClient("quiet-bot", "quiet-session-secret").login("id", "password");
+
+  const debug = records.filter((record) => record.level === "debug");
+  assert.ok(debug.length >= 3);
+  assert.ok(debug.every((record) => record.botId === "debug-bot"));
+  assert.ok(debug.some((record) => /session resume failed/i.test(record.message)));
+  assert.ok(debug.some((record) => /session resume completed in \d+ms/i.test(record.message)));
+  assert.ok(debug.some((record) => /password login completed in \d+ms/i.test(record.message)));
+  assert.ok(debug.every((record) => !/debug-session-secret|quiet-session-secret/.test(record.message)));
+});
+
 test("dry-run post content is verbose and absent at summary", async () => {
   const summary = makeClient("summary", true);
   assert.deepEqual(await summary.client.post({ content: "private dry-run content", rkey: "key" }), {
@@ -179,6 +215,71 @@ test("dry-run post content is verbose and absent at summary", async () => {
   assert.equal(verbose.records.length, 1);
   assert.equal(verbose.records[0]!.level, "verbose");
   assert.match(verbose.records[0]!.message, /private dry-run content/);
+});
+
+test("a blob upload failure returns a distinct pre-record deferral with debug detail", async () => {
+  const runtime = makeClient("debug");
+  (runtime.client as any).agent = {
+    uploadBlob: async () => {
+      throw new Error("image transport failed");
+    },
+  };
+
+  const result = await runtime.client.post({
+    content: "plain content",
+    rkey: "upload-failure",
+    embed: {
+      uri: "https://example.test/article",
+      title: "Example",
+      image: Buffer.from("image"),
+      type: "image",
+    },
+  });
+
+  assert.deepEqual(result, {
+    ok: false,
+    deferralReason: "upload-failure",
+    retryAfterSeconds: 30,
+  });
+  assert.ok(runtime.records.some(
+    (record) => record.level === "debug" &&
+      /blob upload failed/i.test(record.message) &&
+      record.message.includes("image transport failed")
+  ));
+  assert.ok(runtime.records.some(
+    (record) => record.level === "debug" && /blob upload completed in \d+ms/i.test(record.message)
+  ));
+});
+
+test("a classified create-record failure emits sanitized debug detail and duration", async () => {
+  const runtime = makeClient("debug");
+  (runtime.client as any).agent = {
+    accountDid: "did:plc:test",
+    app: {
+      bsky: {
+        feed: {
+          post: {
+            create: async () => {
+              throw new Error("create failed token=create-record-secret");
+            },
+          },
+        },
+      },
+    },
+  };
+
+  assert.deepEqual(
+    await runtime.client.post({ content: "plain content", rkey: "create-failure" }),
+    { ok: false, ratelimit: false, retryAfterSeconds: 30 }
+  );
+  assert.ok(runtime.records.some(
+    (record) => record.level === "debug" &&
+      /create record failed/i.test(record.message) &&
+      !record.message.includes("create-record-secret")
+  ));
+  assert.ok(runtime.records.some(
+    (record) => record.level === "debug" && /create record completed in \d+ms/i.test(record.message)
+  ));
 });
 
 test("an existing-rkey post message is verbose and cannot leak the rkey at summary", async () => {

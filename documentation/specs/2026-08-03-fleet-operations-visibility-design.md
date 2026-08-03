@@ -66,7 +66,9 @@ Counters begin at process start and reset on restart.
 - Feed polls: successful and failed.
 - Open Graph: attempted, successful, and fallback used.
 - Queue: newly queued, current depth, and policy-skipped.
-- Posting: successful, uncertain, rate-limit deferred, and exception.
+- Posting: successful, uncertain, deferred, and exception. Deferred includes
+  both actual rate limits and safe pre-record image-upload failures, with a
+  distinct reason so the latter is never reported as rate limiting.
 - Activation: configured, active, failed, and invalid configuration.
 
 Per-bot state also records the last successful poll, last failed poll, consecutive feed failures, last successful post, current queue depth, and effective log level.
@@ -83,7 +85,7 @@ The process writes `<FLEET_DATA_ROOT>/status.json` every minute.
 - Exclude feed URLs, account handles, titles, post content, credentials, sessions, and raw errors.
 - Mark the snapshot `stopping` before graceful worker shutdown.
 
-A snapshot-write failure logs one operational warning and never stops or blocks a bot. After an unexpected exit, the final complete snapshot remains but becomes stale because its heartbeat stops advancing.
+A snapshot-write failure logs one operational warning and never stops or blocks a bot. After an unexpected exit, the final complete snapshot remains but becomes stale because its heartbeat stops advancing. Staleness applies to every phase, including `stopping`; stale output preserves the last reported phase, and stale or final `stopping` uptime is capped at `heartbeatAt` rather than growing with CLI wall time.
 
 ## Status CLI
 
@@ -99,7 +101,7 @@ Queue      14 waiting · 111 policy-skipped
 Memory     241 MB RSS
 ```
 
-The CLI handles missing, malformed, stale, current, and `stopping` snapshots explicitly. Zero denominators render as unavailable rather than `NaN`.
+The CLI handles missing, malformed, current, stale, current-`stopping`, and stale-`stopping` snapshots explicitly. Zero denominators render as unavailable rather than `NaN`.
 
 `--bots` adds one row per bot containing only:
 
@@ -110,15 +112,17 @@ The CLI handles missing, malformed, stale, current, and `stopping` snapshots exp
 - queue depth and process-lifetime counters; and
 - effective log level and override expiry.
 
+Activation state and the last-failure timestamp remain internal snapshot facts; they are not part of the exact `--bots` output allowlist.
+
 ## Log levels
 
-`FLEET_LOG_LEVEL` sets the fleet-wide startup default. Accepted values are `summary`, `verbose`, and `debug`. The default is `summary`; an invalid value fails startup with the accepted choices.
+`FLEET_LOG_LEVEL` sets the fleet-wide startup default. Accepted values are `summary`, `verbose`, and `debug`. The default is `summary`; an invalid value fails startup through the generic safe startup-failure summary without echoing the supplied value or a raw stack.
 
 ### `summary`
 
 - Startup, activation, configuration failures, shutdown, and process exceptions.
 - First feed-unavailable transition and subsequent recovery.
-- Rate-limit, uncertain-post, and unexpected posting events.
+- Rate-limit, upload-failure deferral, uncertain-post, and unexpected posting events.
 - One aggregate interval summary every five minutes.
 - No per-item queue, post, duplicate, or Open Graph lines.
 - No separate one-minute memory lines; memory is part of the summary.
@@ -137,9 +141,9 @@ Includes `summary` plus each queued, duplicate, policy-skipped, successfully pos
 
 ### `debug`
 
-Includes `verbose` plus raw external error details, stack traces, timing, and limiter activity needed for diagnosis. Debug output may contain private feed URLs, titles, and post text, so startup or override activation prints a privacy warning.
+Includes `verbose` plus sanitized external error details and stack traces, transient durations, and shared-limiter wait/acquire/release activity needed for diagnosis. Debug output may contain private feed URLs, titles, and post text, so startup or override activation prints a privacy warning.
 
-Credentials, sessions, tokens, app passwords, and complete configuration objects are never passed to the logger at any level.
+Credential-bearing URL userinfo, Authorization/Bearer material, and secret-like password, app-password, token, access, refresh, session, and secret values are redacted from debug messages and stacks. Credentials, sessions, tokens, app passwords, arbitrary error properties, and complete configuration objects are never passed through as logger data at any level.
 
 ## Temporary per-bot log overrides
 
@@ -160,16 +164,20 @@ Rules:
 
 - `set` requires a positive duration so elevated logging cannot be forgotten indefinitely.
 - Unknown bot IDs, invalid levels, and invalid durations make no change.
+- Every entry's structure, level, and timestamp is validated first. Expired entries are then pruned before bot authority is checked, so an expired override for a removed bot is discarded while an active unknown-bot entry invalidates the whole document.
+- `list`, `set`, and `clear` each read the override document once and use the current `status.json` bot IDs as authority; document keys never authorize themselves.
 - Expired overrides automatically fall back to `FLEET_LOG_LEVEL`.
 - Enable, expire, and clear actions produce one administrative log line.
 - A malformed manual edit is ignored with one warning; the last valid in-memory state remains until it expires or a valid file replaces it.
+- Operational filesystem failures such as permission errors or a directory at the file path are not labeled malformed; they reach the runtime's safe observer warning and sanitized debug detail.
+- An active unknown-bot entry requires manual removal/correction, or waiting until that structurally valid entry expires. Until then the all-or-nothing document remains invalid and the watcher retains its last valid in-memory state.
 - The control channel changes logging only. It cannot reload configuration, start or stop bots, or change publishing behavior.
 
 ## Lifecycle and failure isolation
 
 Status timers start before `AuthCoordinator.start()` completes so the CLI remains useful throughout the long staggered activation period.
 
-Every minute, the process writes current state. Every five minutes, it logs deltas since the previous summary rather than misleading lifetime totals. Status and logging failures are isolated from worker execution.
+Every minute, the process writes current state. Every five minutes, it logs deltas since the previous successfully emitted summary rather than misleading lifetime totals. Queue/memory observation and summary-sink failures are isolated, emit a safe warning plus sanitized debug detail where possible, and do not advance the counter baseline, so the next successful summary retains the whole interval.
 
 Observability code must not write queue rows, cursors, sessions, or bot configuration. It must not influence feed polling, scheduling, freshness selection, posting, retry decisions, or shutdown ordering.
 
@@ -183,29 +191,35 @@ All behavior changes use focused tests before implementation.
 - First failure, repeated failure suppression, and recovery.
 - Safe feed-error classification.
 - Exact feed, Open Graph, queue, skip, and posting counters.
+- Confirmed-success and uncertain post counters are recorded before fallible local queue mutations, so known external outcomes remain exact even if SQLite mutation fails.
 - Open Graph fallback still produces the same post input.
-- Interval summaries use deltas and handle zero attempts.
+- Image-upload failure keeps the row queued, stops draining, and defers for 30 seconds without claiming a rate limit; real 429/504 handling is unchanged.
+- Interval summaries use deltas, handle zero attempts, retain deltas after observation/emission failure, and advance their baseline only after successful emission.
 
 ### Logging tests
 
 - `summary`, `verbose`, and `debug` include exactly their intended messages.
 - Summary output excludes URLs, titles, content, and raw errors.
-- Credentials, sessions, and complete configuration objects never reach any level.
-- One debug bot does not increase logging for the other 58 synthetic bots.
+- Embedded credentials are redacted from both error messages and stacks, and every runtime error sink is audited rather than relying only on object-property filtering.
+- Caught session-resume, image-upload, classified create-record, Open Graph, and image-download failures emit sanitized debug detail and duration.
+- Shared limiter contention emits wait/acquire/release diagnostics through the existing limiter path.
+- One debug bot does not increase caught-error, timing, or limiter logging for the other 58 synthetic bots.
 
 ### Snapshot and CLI tests
 
 - Atomic replacement and mode `0600`.
-- Missing, malformed, current, stale, and `stopping` snapshots.
-- Aggregate default output and privacy-limited `--bots` output.
+- Missing, malformed, current, stale, current-`stopping`, and stale-`stopping` snapshots, including stable final uptime.
+- Aggregate default output and the exact privacy-limited `--bots` allowlist.
 - Accurate 59-bot startup counts using injected time rather than a real stagger delay.
+- Shutdown during authentication staggering does not emit `Fleet started` after shutdown has begun.
 
 ### Override tests
 
 - Set, detect, expire, list, and clear without restart.
 - Only the selected bot changes level.
-- Unknown bots and invalid levels/durations make no change.
-- Malformed and partial files do not affect publishing or replace valid in-memory state.
+- Expired unknown bots prune before authority validation, while active unknown bots invalidate the document without mutation.
+- `list` uses status-backed authority and one coherent override read.
+- Malformed and partial files do not affect publishing or replace valid in-memory state; operational filesystem errors remain distinct.
 - Injected time tests expiry without real waiting.
 
 ### Regression acceptance

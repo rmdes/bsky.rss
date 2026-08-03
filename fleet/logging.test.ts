@@ -115,3 +115,51 @@ test("formatDebugError exposes only Error name message and stack", () => {
   assert.match(formatted, /at test/);
   assert.doesNotMatch(formatted, /config-secret|header-secret|session-secret|password-secret/);
 });
+
+test("formatDebugError redacts embedded credentials from both message and stack", () => {
+  const error = new Error(
+    "request failed for https://alice:url-password@api.example.test/post?token=query-token " +
+    "Authorization: Bearer auth-token password=message-password " +
+    "appPassword='message-app-password' accessJwt=message-access " +
+    "refresh_token=message-refresh session=message-session clientSecret=message-secret"
+  );
+  error.name = "CredentialError";
+  error.stack = [
+    "CredentialError: ECONNRESET while retrying",
+    "    at retryRequest (https://bob:stack-password@api.example.test/retry)",
+    "    Authorization=Basic stack-authorization",
+    "    Bearer stack-bearer token=stack-token access_token=stack-access",
+  ].join("\n");
+
+  const formatted = formatDebugError(error);
+
+  for (const secret of [
+    "alice",
+    "url-password",
+    "query-token",
+    "auth-token",
+    "message-password",
+    "message-app-password",
+    "message-access",
+    "message-refresh",
+    "message-session",
+    "message-secret",
+    "bob",
+    "stack-password",
+    "stack-authorization",
+    "stack-bearer",
+    "stack-token",
+    "stack-access",
+  ]) {
+    assert.doesNotMatch(formatted, new RegExp(secret));
+  }
+  assert.match(formatted, /CredentialError/);
+  assert.match(formatted, /request failed/);
+  assert.match(formatted, /api\.example\.test/);
+  assert.match(formatted, /ECONNRESET/);
+  assert.match(formatted, /retryRequest/);
+  assert.match(formatted, /\[REDACTED\]/);
+
+  assert.doesNotMatch(formatDebugError("Bearer primitive-secret after timeout"), /primitive-secret/);
+  assert.match(formatDebugError("Bearer primitive-secret after timeout"), /after timeout/);
+});

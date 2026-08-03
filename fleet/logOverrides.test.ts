@@ -69,6 +69,23 @@ test("readValidOverrides returns active overrides and treats absence as an empty
   );
 });
 
+test("readValidOverrides prunes a structurally valid expired override before bot authority checks", (t) => {
+  const path = join(tempDirectory(t), "log-overrides.json");
+  writeFileSync(path, JSON.stringify({
+    "removed-bot": {level: "debug", expiresAt: "2026-08-03T11:59:59.999Z"},
+    "bot-a": {level: "verbose", expiresAt: "2026-08-03T12:05:00.000Z"},
+  }));
+
+  assert.deepEqual(
+    [...readValidOverrides(
+      path,
+      new Set(["bot-a"]),
+      new Date("2026-08-03T12:00:00.000Z")
+    )],
+    [["bot-a", {level: "verbose", expiresAt: "2026-08-03T12:05:00.000Z"}]]
+  );
+});
+
 test("readValidOverrides rejects an entire document when any entry is invalid", (t) => {
   const path = join(tempDirectory(t), "log-overrides.json");
   const knownBotIds = new Set(["bot-a", "bot-b"]);
@@ -77,6 +94,10 @@ test("readValidOverrides rejects an entire document when any entry is invalid", 
     {"bot-a": valid, "unknown-bot": valid},
     {"bot-a": valid, "bot-b": {level: "trace", expiresAt: valid.expiresAt}},
     {"bot-a": valid, "bot-b": {
+      level: "trace",
+      expiresAt: "2026-08-03T11:59:59.999Z",
+    }},
+    {"bot-a": valid, "removed-bot": {
       level: "trace",
       expiresAt: "2026-08-03T11:59:59.999Z",
     }},
@@ -254,4 +275,23 @@ test("watcher warns once for malformed rewrites, retains state, and still expire
   writeFileSync(path, "{not-json");
   watcher.poll();
   assert.equal(records.filter((record) => /malformed.*ignored/i.test(record.message)).length, 2);
+});
+
+test("watcher rethrows operational filesystem read failures instead of calling them malformed", (t) => {
+  const path = tempDirectory(t);
+  const records: FleetLogRecord[] = [];
+  const watcher = new LogOverrideWatcher({
+    path,
+    knownBotIds: new Set(["bot-a"]),
+    logger: new FleetLogger({
+      defaultLevel: "debug",
+      sink: (_line, record) => records.push(record),
+    }),
+  });
+
+  assert.throws(
+    () => watcher.poll(),
+    (error: any) => error?.code === "EISDIR" || error?.code === "EACCES"
+  );
+  assert.equal(records.some((record) => /malformed/i.test(record.message)), false);
 });

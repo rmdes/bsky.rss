@@ -202,6 +202,7 @@ export class FeedReader {
   }
 
   async resolveEmbedImage(imageUrl: string): Promise<Buffer | undefined> {
+    const startedAt = Date.now();
     try {
       return await this.sharedLimiters.withImageLimit(async () => {
         const response = await axios.get(imageUrl, {
@@ -211,9 +212,20 @@ export class FeedReader {
           timeout: this.sharedLimiters.httpTimeoutMs,
         });
         return resizeImageToBuffer(response.data);
-      });
-    } catch {
+      }, { logger: this.runtime.logger, botId: this.botId });
+    } catch (error) {
+      this.runtime.logger.debug(
+        "FETCH",
+        `Image download failed\n${formatDebugError(error)}`,
+        this.botId
+      );
       return undefined;
+    } finally {
+      this.runtime.logger.debug(
+        "TIMING",
+        `Image download completed in ${Math.max(0, Date.now() - startedAt)}ms`,
+        this.botId
+      );
     }
   }
 
@@ -364,6 +376,7 @@ export class FeedReader {
     url: string,
     userAgent: string
   ): Promise<OpenGraphFetchOutcome> {
+    const startedAt = Date.now();
     try {
       const result = await this.sharedLimiters.withOgLimit(async () => {
         if (this.runtime.fetchOpenGraph) {
@@ -381,13 +394,19 @@ export class FeedReader {
           },
         });
         return response.error ? { error: response.error } : response.result;
-      });
+      }, { logger: this.runtime.logger, botId: this.botId });
       if (result && typeof result === "object" && "error" in result && (result as any).error) {
         return { ok: false, error: (result as any).error };
       }
       return { ok: true, result };
     } catch (error) {
       return { ok: false, error };
+    } finally {
+      this.runtime.logger.debug(
+        "TIMING",
+        `Open Graph fetch completed in ${Math.max(0, Date.now() - startedAt)}ms`,
+        this.botId
+      );
     }
   }
 }

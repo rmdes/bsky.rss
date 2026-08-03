@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { BskyAgent, RichText, AtpSessionEvent, AtpSessionData } from "@atproto/api";
 import { XRPCError, ResponseType } from "@atproto/xrpc";
 import { BotStore } from "./botStore.ts";
-import { FleetLogger } from "./logging.ts";
+import { FleetLogger, formatDebugError } from "./logging.ts";
 
 const TID_CHARSET = "234567abcdefghijklmnopqrstuvwxyz";
 const TID_FIRST_CHAR_CHARSET = "234567abcdefghij";
@@ -42,6 +42,7 @@ export interface PostResult {
   ok: boolean;
   uri?: string;
   ratelimit?: boolean;
+  deferralReason?: "upload-failure";
   retryAfterSeconds?: number;
 }
 
@@ -118,6 +119,7 @@ export class BskyClient {
   async login(identifier: string, password: string): Promise<void> {
     const persisted = this.store.readSession<AtpSessionData>();
     if (persisted) {
+      const resumeStartedAt = Date.now();
       try {
         const resumed = await this.agent.resumeSession(persisted);
         if (resumed.success) {
@@ -125,12 +127,25 @@ export class BskyClient {
           this.logger.verbose("LOGIN", `Resumed session for ${resumed.data.handle}`, this.botId);
           return;
         }
-      } catch (e) {
+      } catch (error) {
         // resumeSession throws on any failure (expired token, network error, etc.)
         // Fall through to password login below
+        this.logger.debug(
+          "LOGIN",
+          `Session resume failed\n${formatDebugError(error)}`,
+          this.botId
+        );
+      } finally {
+        this.logDuration("Session resume", resumeStartedAt);
       }
     }
-    const loginResult = await this.agent.login({ identifier, password });
+    const loginStartedAt = Date.now();
+    let loginResult;
+    try {
+      loginResult = await this.agent.login({ identifier, password });
+    } finally {
+      this.logDuration("Password login", loginStartedAt);
+    }
     if (!loginResult.success) throw new Error("Login failed (identifier/password)");
     this.logger.summary("LOGIN", "Logged in", this.botId);
     this.logger.verbose("LOGIN", `Logged in as ${loginResult.data.handle}`, this.botId);
@@ -149,16 +164,29 @@ export class BskyClient {
     }
 
     const richText = new RichText({ text: params.content });
-    await richText.detectFacets(this.agent);
+    const facetStartedAt = Date.now();
+    try {
+      await richText.detectFacets(this.agent);
+    } finally {
+      this.logDuration("Facet detection", facetStartedAt);
+    }
 
     let uploadedBlob: unknown;
     if (params.embed?.image) {
+      const uploadStartedAt = Date.now();
       try {
         const uploadResult = await this.agent.uploadBlob(params.embed.image, { encoding: "image/jpeg" });
         uploadedBlob = uploadResult.data.blob;
-      } catch {
+      } catch (error) {
         // No record has been created yet at this point, so it's always safe to retry.
-        return { ok: false, ratelimit: true, retryAfterSeconds: 30 };
+        this.logger.debug(
+          "POST",
+          `Blob upload failed\n${formatDebugError(error)}`,
+          this.botId
+        );
+        return { ok: false, deferralReason: "upload-failure", retryAfterSeconds: 30 };
+      } finally {
+        this.logDuration("Blob upload", uploadStartedAt);
       }
     }
 
@@ -193,6 +221,7 @@ export class BskyClient {
       createdAt: (params.date ?? new Date()).toISOString(),
     };
 
+    const createStartedAt = Date.now();
     try {
       const result = await this.agent.app.bsky.feed.post.create(
         { repo: this.agent.accountDid, rkey: toAtprotoRkey(params.rkey) },
@@ -200,6 +229,11 @@ export class BskyClient {
       );
       return { ok: true, uri: result.uri };
     } catch (error) {
+      this.logger.debug(
+        "POST",
+        `Create record failed\n${formatDebugError(error)}`,
+        this.botId
+      );
       if (this.alreadyExistsClassifier(error)) {
         this.logger.verbose(
           "POST",
@@ -212,6 +246,13 @@ export class BskyClient {
       // Design spec §4.2: any outcome that isn't a confirmed success or a confirmed
       // duplicate is uncertain — skip, never auto-retry.
       return { ok: false, ratelimit, retryAfterSeconds };
+    } finally {
+      this.logDuration("Create record", createStartedAt);
     }
+  }
+
+  private logDuration(operation: string, startedAt: number): void {
+    const elapsed = Math.max(0, Date.now() - startedAt);
+    this.logger.debug("TIMING", `${operation} completed in ${elapsed}ms`, this.botId);
   }
 }

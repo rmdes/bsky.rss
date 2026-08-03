@@ -12,7 +12,7 @@ import { AuthCoordinator } from "./authCoordinator.ts";
 import { acquireLock, releaseLock } from "./pidLock.ts";
 import { BotOperations } from "./botOperations.ts";
 import { FleetOperationsRuntime } from "./fleetOperationsRuntime.ts";
-import { FleetLogger, parseFleetLogLevel } from "./logging.ts";
+import { FleetLogger, formatDebugError, parseFleetLogLevel } from "./logging.ts";
 import { overridesPath } from "./logOverrides.ts";
 import { statusPath } from "./status.ts";
 import type { FreshnessConfig } from "./freshnessPolicy.ts";
@@ -66,9 +66,24 @@ async function buildWorker(
 // Runs in dry-run mode by default (no real posts); set DRY_RUN=false to actually publish.
 // Point FLEET_CONFIG_ROOT/FLEET_SECRETS_PATH/FLEET_DATA_ROOT at a real config tree
 // (see config.example/ for the shape) before running against real bot accounts.
+let startupLogger = new FleetLogger({ defaultLevel: "summary" });
+
+export function reportFleetStarted(
+  logger: FleetLogger,
+  counts: { active: number; failed: number },
+  shuttingDown: boolean
+): void {
+  if (shuttingDown) return;
+  logger.summary(
+    "FLEET",
+    `Fleet started: ${counts.active} active, ${counts.failed} failed`
+  );
+}
+
 async function main(): Promise<void> {
   const logLevel = parseFleetLogLevel(process.env.FLEET_LOG_LEVEL);
   const logger = new FleetLogger({ defaultLevel: logLevel });
+  startupLogger = logger;
   installProcessSafetyNet(logger);
   if (logLevel === "debug") {
     logger.summary(
@@ -93,7 +108,7 @@ async function main(): Promise<void> {
   logger.summary("FLEET", `Loaded ${bots.length} bot(s), ${errors.length} config error(s)`);
   for (const error of errors) {
     logger.summary("CONFIG", "Config invalid", error.botId);
-    logger.debug("CONFIG", error.error, error.botId);
+    logger.debug("CONFIG", formatDebugError(error.error), error.botId);
   }
 
   const sharedLimiters = new SharedLimiters(fleetConfig.sharedLimiters);
@@ -157,10 +172,10 @@ async function main(): Promise<void> {
   await coordinator.start();
   if (!shuttingDown) operationsRuntime.markRunning();
 
-  logger.summary(
-    "FLEET",
-    `Fleet started: ${coordinator.activeWorkers().length} active, ${coordinator.activationFailures().length} failed`
-  );
+  reportFleetStarted(logger, {
+    active: coordinator.activeWorkers().length,
+    failed: coordinator.activationFailures().length,
+  }, shuttingDown);
 
   // A SIGTERM arriving before any bot has activated resolves coordinator.start()
   // (via abortActivation's interrupted stagger wait) at nearly the same moment
@@ -173,7 +188,10 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    startupLogger.summary("FATAL", "Fleet startup failed");
+    startupLogger.debug("FATAL", formatDebugError(error));
+    process.exit(1);
+  });
+}

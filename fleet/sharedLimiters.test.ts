@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ConcurrencyLimiter, SharedLimiters } from "./sharedLimiters.ts";
+import { FleetLogger, type FleetLogRecord } from "./logging.ts";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -84,4 +85,54 @@ test("SharedLimiters.withOgLimit enforces maxConcurrentOpenGraphFetches independ
 
   await Promise.all([ogTask(), ogTask(), ogTask()]);
   assert.equal(ogPeak, 1);
+});
+
+test("shared limiter contention diagnostics honor per-bot debug overrides", async () => {
+  const records: FleetLogRecord[] = [];
+  const logger = new FleetLogger({
+    defaultLevel: "summary",
+    sink: (_line, record) => records.push(record),
+  });
+  logger.replaceOverrides(new Map([
+    ["debug-bot", { level: "debug", expiresAt: "2099-01-01T00:00:00.000Z" }],
+  ]));
+  const limiters = new SharedLimiters({
+    maxConcurrentOpenGraphFetches: 1,
+    maxConcurrentImageJobs: 1,
+    maxImageDownloadBytes: 10_000_000,
+    httpTimeoutMs: 10_000,
+  });
+  let releaseQuiet!: () => void;
+  let quietEntered!: () => void;
+  const quietHasEntered = new Promise<void>((resolve) => {
+    quietEntered = resolve;
+  });
+  const quietGate = new Promise<void>((resolve) => {
+    releaseQuiet = resolve;
+  });
+
+  const quiet = limiters.withImageLimit(async () => {
+    quietEntered();
+    await quietGate;
+  }, { logger, botId: "quiet-bot" });
+  await quietHasEntered;
+  const debug = limiters.withImageLimit(async () => undefined, {
+    logger,
+    botId: "debug-bot",
+  });
+
+  assert.deepEqual(records.map((record) => record.message), [
+    "Image waiting for shared limiter capacity",
+  ]);
+  releaseQuiet();
+  await Promise.all([quiet, debug]);
+
+  assert.deepEqual(records.map((record) => record.message), [
+    "Image waiting for shared limiter capacity",
+    "Image acquired shared limiter",
+    "Image released shared limiter",
+  ]);
+  assert.ok(records.every(
+    (record) => record.level === "debug" && record.botId === "debug-bot"
+  ));
 });

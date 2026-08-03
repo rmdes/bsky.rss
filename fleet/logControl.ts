@@ -1,4 +1,3 @@
-import {readFileSync} from "node:fs";
 import {basename} from "node:path";
 import type {FleetLogLevel, FleetLogOverride} from "./logging.ts";
 import {
@@ -23,7 +22,8 @@ export function runLogControl(
   const path = overridesPath(options.dataRoot);
 
   if (args.length === 1 && args[0] === "list") {
-    return formatOverrides(readOverridesForList(path, now), now);
+    const knownBotIds = currentBotIds(options.dataRoot);
+    return formatOverrides(readValidOverrides(path, knownBotIds, now), now);
   }
 
   if (args.length === 5 && args[0] === "set" && args[3] === "--for") {
@@ -68,26 +68,6 @@ function parseLevel(value: string | undefined): FleetLogLevel {
   throw new Error("Invalid log level; expected summary, verbose, or debug");
 }
 
-function readOverridesForList(
-  path: string,
-  now: Date
-): ReadonlyMap<string, FleetLogOverride> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
-  } catch (error) {
-    if (hasErrorCode(error, "ENOENT")) return new Map();
-    if (error instanceof SyntaxError) {
-      throw new Error(`Invalid log override document at ${path}: malformed JSON`);
-    }
-    throw error;
-  }
-  if (!isRecord(parsed)) {
-    throw new Error(`Invalid log override document at ${path}: expected an object`);
-  }
-  return readValidOverrides(path, new Set(Object.keys(parsed)), now);
-}
-
 function formatOverrides(
   overrides: ReadonlyMap<string, FleetLogOverride>,
   now: Date
@@ -113,14 +93,6 @@ function formatDuration(milliseconds: number): string {
     minutes > 0 ? `${minutes}m` : "",
     seconds > 0 ? `${seconds}s` : "",
   ].filter(Boolean).join(" ");
-}
-
-function hasErrorCode(error: unknown, expected: string): boolean {
-  return isRecord(error) && error.code === expected;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function main(): void {

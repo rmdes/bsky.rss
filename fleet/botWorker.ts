@@ -162,6 +162,17 @@ export class BotWorker {
         }
 
         if (!result.ok) {
+          if (result.deferralReason === "upload-failure") {
+            const retryAfterSeconds = result.retryAfterSeconds ?? 30;
+            this.options.operations.recordPostDeferred();
+            this.options.scheduler.setRateLimitDeadline(retryAfterSeconds);
+            this.options.logger.summary(
+              "POST",
+              `Blob upload failed; posting deferred for ${retryAfterSeconds} seconds`,
+              this.botId
+            );
+            break;
+          }
           if (result.ratelimit) {
             this.options.operations.recordPostDeferred();
             this.options.scheduler.setRateLimitDeadline(result.retryAfterSeconds ?? 30);
@@ -173,15 +184,15 @@ export class BotWorker {
             break;
           }
           // Uncertain, non-rate-limit outcome: skip this one item, keep draining the rest.
-          this.options.store.setQueueItemStatus(row.id, "skipped");
           this.options.operations.recordPostUncertain();
+          this.options.store.setQueueItemStatus(row.id, "skipped");
           this.options.logger.summary("POST", "Uncertain result for item; skipped without retry", this.botId);
           this.options.logger.verbose("POST", `Uncertain result for item, skipping without retry (${row.title})`, this.botId);
           continue;
         }
 
-        this.options.store.setQueueItemStatus(row.id, "published");
         this.options.operations.recordPostSuccess();
+        this.options.store.setQueueItemStatus(row.id, "published");
         this.options.scheduler.recordPost();
         this.options.store.writeCursor(new Date(row.itemDate));
         this.options.logger.verbose("POST", `Posted item (${row.content.slice(0, 40)})`, this.botId);

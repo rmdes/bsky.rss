@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   existsSync,
   mkdtempSync,
@@ -7,6 +8,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import {syncBuiltinESMExports} from "node:module";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {test, type TestContext} from "node:test";
@@ -95,6 +97,7 @@ test("set accepts every log level, computes expiry, and writes mode 0600", (t) =
 
 test("list prints active bot ID, level, expiry, and remaining duration without rewriting", (t) => {
   const dataRoot = tempDirectory(t);
+  writeStatus(dataRoot);
   const path = overridesPath(dataRoot);
   writeOverrides(path, new Map([
     ["bot-b", {level: "verbose", expiresAt: "2026-08-03T12:01:30.000Z"}],
@@ -112,6 +115,7 @@ test("list prints active bot ID, level, expiry, and remaining duration without r
 
 test("list filters an override expiring exactly now and does not mutate the file", (t) => {
   const dataRoot = tempDirectory(t);
+  writeStatus(dataRoot);
   const path = overridesPath(dataRoot);
   writeOverrides(path, new Map([
     ["bot-a", {level: "debug", expiresAt: fixedNow.toISOString()}],
@@ -163,6 +167,81 @@ test("set and clear prune expired entries during every successful mutation", (t)
   });
 });
 
+test("mutations prune an expired override for a removed bot before authority validation", (t) => {
+  const dataRoot = tempDirectory(t);
+  writeStatus(dataRoot);
+  const path = overridesPath(dataRoot);
+  writeOverrides(path, new Map([
+    ["removed-bot", {level: "debug", expiresAt: "2026-08-03T11:59:59.999Z"}],
+    ["bot-a", {level: "summary", expiresAt: "2026-08-03T12:10:00.000Z"}],
+  ]));
+
+  runLogControl(["set", "bot-b", "verbose", "--for", "30s"], {
+    dataRoot,
+    now: () => fixedNow,
+  });
+
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
+    "bot-a": {level: "summary", expiresAt: "2026-08-03T12:10:00.000Z"},
+    "bot-b": {level: "verbose", expiresAt: "2026-08-03T12:00:30.000Z"},
+  });
+});
+
+test("active unknown overrides invalidate list and mutations without changing the document", (t) => {
+  const dataRoot = tempDirectory(t);
+  writeStatus(dataRoot);
+  const path = overridesPath(dataRoot);
+  writeOverrides(path, new Map([
+    ["removed-bot", {level: "debug", expiresAt: "2026-08-03T12:10:00.000Z"}],
+  ]));
+  const original = readFileSync(path, "utf8");
+  const originalInode = statSync(path).ino;
+
+  for (const args of [
+    ["list"],
+    ["set", "bot-a", "debug", "--for", "15m"],
+    ["clear", "bot-a"],
+  ]) {
+    assert.throws(
+      () => runLogControl(args, {dataRoot, now: () => fixedNow}),
+      /unknown bot removed-bot/i
+    );
+    assert.equal(readFileSync(path, "utf8"), original);
+    assert.equal(statSync(path).ino, originalInode);
+  }
+});
+
+test("list uses one coherent override read with status-backed authority", (t) => {
+  const dataRoot = tempDirectory(t);
+  writeStatus(dataRoot);
+  const path = overridesPath(dataRoot);
+  writeOverrides(path, new Map([
+    ["bot-a", {level: "debug", expiresAt: "2026-08-03T12:15:00.000Z"}],
+  ]));
+  const originalReadFileSync = fs.readFileSync;
+  let overrideReadObserved = false;
+  fs.readFileSync = ((file: any, ...args: any[]) => {
+    const source = originalReadFileSync(file, ...args as [any]);
+    if (String(file) === path && !overrideReadObserved) {
+      overrideReadObserved = true;
+      writeOverrides(path, new Map([
+        ["bot-b", {level: "verbose", expiresAt: "2026-08-03T12:10:00.000Z"}],
+      ]));
+    }
+    return source;
+  }) as typeof fs.readFileSync;
+  syncBuiltinESMExports();
+
+  try {
+    const output = runLogControl(["list"], {dataRoot, now: () => fixedNow});
+    assert.match(output, /bot-a.*debug/i);
+    assert.doesNotMatch(output, /bot-b/);
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+    syncBuiltinESMExports();
+  }
+});
+
 test("rejected syntax, levels, durations, and bot IDs never mutate overrides", (t) => {
   const dataRoot = tempDirectory(t);
   writeStatus(dataRoot);
@@ -190,11 +269,12 @@ test("rejected syntax, levels, durations, and bot IDs never mutate overrides", (
   }
 });
 
-test("missing or malformed status rejects set and clear without creating or replacing overrides", (t) => {
+test("missing or malformed status rejects list, set, and clear without creating or replacing overrides", (t) => {
   const dataRoot = tempDirectory(t);
   const path = overridesPath(dataRoot);
 
   for (const args of [
+    ["list"],
     ["set", "bot-a", "debug", "--for", "15m"],
     ["clear", "bot-a"],
   ]) {
@@ -209,6 +289,7 @@ test("missing or malformed status rejects set and clear without creating or repl
   const original = readFileSync(path, "utf8");
   const originalInode = statSync(path).ino;
   for (const args of [
+    ["list"],
     ["set", "bot-a", "debug", "--for", "15m"],
     ["clear", "bot-a"],
   ]) {

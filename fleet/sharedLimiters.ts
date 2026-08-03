@@ -1,3 +1,12 @@
+import type { FleetLogger } from "./logging.ts";
+
+type LimiterEvent = "waiting" | "acquired" | "released";
+
+export interface LimiterDebugContext {
+  logger: FleetLogger;
+  botId: string;
+}
+
 export class ConcurrencyLimiter {
   private active = 0;
   private readonly queue: Array<() => void> = [];
@@ -6,12 +15,29 @@ export class ConcurrencyLimiter {
     if (max < 1) throw new Error(`ConcurrencyLimiter max must be >= 1, got ${max}`);
   }
 
-  async run<T>(fn: () => Promise<T>): Promise<T> {
+  async run<T>(
+    fn: () => Promise<T>,
+    observe?: (event: LimiterEvent) => void
+  ): Promise<T> {
+    if (this.active >= this.max) this.notify(observe, "waiting");
     await this.acquire();
+    this.notify(observe, "acquired");
     try {
       return await fn();
     } finally {
       this.release();
+      this.notify(observe, "released");
+    }
+  }
+
+  private notify(
+    observe: ((event: LimiterEvent) => void) | undefined,
+    event: LimiterEvent
+  ): void {
+    try {
+      observe?.(event);
+    } catch {
+      // Diagnostics cannot change limiter acquisition or release behavior.
     }
   }
 
@@ -55,11 +81,24 @@ export class SharedLimiters {
     this.maxImageDownloadBytes = config.maxImageDownloadBytes;
   }
 
-  withOgLimit<T>(fn: () => Promise<T>): Promise<T> {
-    return this.ogLimiter.run(fn);
+  withOgLimit<T>(fn: () => Promise<T>, debug?: LimiterDebugContext): Promise<T> {
+    return this.ogLimiter.run(fn, limiterObserver("Open Graph", debug));
   }
 
-  withImageLimit<T>(fn: () => Promise<T>): Promise<T> {
-    return this.imageLimiter.run(fn);
+  withImageLimit<T>(fn: () => Promise<T>, debug?: LimiterDebugContext): Promise<T> {
+    return this.imageLimiter.run(fn, limiterObserver("Image", debug));
   }
+}
+
+function limiterObserver(
+  operation: string,
+  debug: LimiterDebugContext | undefined
+): ((event: LimiterEvent) => void) | undefined {
+  if (!debug) return undefined;
+  return (event) => {
+    const message = event === "waiting"
+      ? `${operation} waiting for shared limiter capacity`
+      : `${operation} ${event} shared limiter`;
+    debug.logger.debug("LIMITER", message, debug.botId);
+  };
 }

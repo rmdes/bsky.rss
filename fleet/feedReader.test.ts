@@ -243,6 +243,9 @@ test("a successful Open Graph fetch records success", async (t) => {
 
   assert.equal(runtime.operations.snapshot().counters.openGraphSucceeded, 1);
   assert.equal(runtime.operations.snapshot().counters.openGraphFallback, 0);
+  assert.ok(runtime.records.some(
+    (record) => record.level === "debug" && /Open Graph fetch completed in \d+ms/.test(record.message)
+  ));
   assert.deepEqual(emitted, [
     {
       title: "RSS title",
@@ -409,6 +412,7 @@ test("resolveEmbedImage returns undefined when the response exceeds maxImageDown
     httpTimeoutMs: 5000,
   });
 
+  const runtime = createRuntime();
   const reader = new FeedReader(
     "test-bot",
     new URL(`http://127.0.0.1:${port}/feed.xml`),
@@ -416,11 +420,17 @@ test("resolveEmbedImage returns undefined when the response exceeds maxImageDown
     { string: "$title" },
     store,
     sharedLimiters,
-    createRuntime()
+    runtime
   );
 
   const result = await reader.resolveEmbedImage(`http://127.0.0.1:${port}/image.jpg`);
   assert.equal(result, undefined);
+  assert.ok(runtime.records.some(
+    (record) => record.level === "debug" && /image download failed/i.test(record.message)
+  ));
+  assert.ok(runtime.records.some(
+    (record) => record.level === "debug" && /image download completed in \d+ms/i.test(record.message)
+  ));
 });
 
 test("resolveEmbedImage succeeds when the response is within maxImageDownloadBytes", async (t) => {

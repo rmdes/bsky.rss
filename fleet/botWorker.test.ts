@@ -216,6 +216,55 @@ test("a rate-limited post leaves the row queued and records one deferred outcome
   assert.equal(worker.operationalSnapshot().counters.postUncertain, 0);
 });
 
+test("an upload-failure deferral stays queued, pauses once, and never claims rate limiting", async (t) => {
+  let deferredForSeconds: number | undefined;
+  const scheduler = {
+    isEligibleNow: () => true,
+    setRateLimitDeadline: (seconds: number) => {
+      deferredForSeconds = seconds;
+    },
+    recordPost: () => undefined,
+  };
+  const { worker, bskyClient, feedReader, records } = makeWorker(t, {
+    scheduler,
+    logLevel: "summary",
+  });
+  await worker.start();
+  const itemDate = new Date();
+  feedReader.emit({
+    title: "first",
+    content: "upload will fail",
+    languages: [],
+    itemDate: itemDate.toISOString(),
+    dedupeKey: "upload-failure-1",
+  });
+  feedReader.emit({
+    title: "second",
+    content: "must remain queued",
+    languages: [],
+    itemDate: new Date(itemDate.getTime() + 1_000).toISOString(),
+    dedupeKey: "upload-failure-2",
+  });
+  bskyClient.setNextResult({
+    ok: false,
+    deferralReason: "upload-failure",
+    retryAfterSeconds: 30,
+  });
+
+  await worker.drainOnce();
+
+  assert.equal(bskyClient.posted.length, 1);
+  assert.equal(worker.queueLength(), 2);
+  assert.equal(deferredForSeconds, 30);
+  assert.equal(worker.operationalSnapshot().counters.postDeferred, 1);
+  assert.equal(worker.operationalSnapshot().counters.postUncertain, 0);
+  assert.deepEqual(
+    records.filter((record) => record.level === "summary").map((record) => record.message),
+    ["Blob upload failed; posting deferred for 30 seconds"]
+  );
+  assert.doesNotMatch(records[0]!.message, /rate limit/i);
+});
+
 test("an uncertain failure skips each attempted item and records each outcome exactly once", async (t) => {
   const { worker, bskyClient, store } = makeWorker(t);
   await worker.start();
@@ -249,6 +298,53 @@ test("an uncertain failure skips each attempted item and records each outcome ex
   assert.equal(worker.queueLength(), 0, "both items should be marked skipped, proving second item was processed");
   assert.equal(worker.operationalSnapshot().counters.postUncertain, 2);
   assert.equal(worker.operationalSnapshot().counters.postDeferred, 0);
+});
+
+test("a confirmed external success is counted before a failing local published mutation", async (t) => {
+  const store = new FakeBotStore();
+  store.setQueueItemStatus = (_id, status) => {
+    if (status === "published") throw new Error("local published mutation failed");
+  };
+  const { worker, feedReader } = makeWorker(t, { store });
+  await worker.start();
+  feedReader.emit({
+    title: "confirmed",
+    content: "externally published",
+    languages: [],
+    itemDate: new Date().toISOString(),
+    dedupeKey: "confirmed-outcome",
+  });
+
+  await assert.rejects(() => worker.drainOnce(), /local published mutation failed/);
+
+  assert.equal(worker.queueLength(), 1);
+  assert.equal(worker.operationalSnapshot().counters.postSucceeded, 1);
+  assert.equal(worker.operationalSnapshot().counters.postUncertain, 0);
+  assert.equal(store.cursor, "");
+});
+
+test("an uncertain external outcome is counted before a failing local skipped mutation", async (t) => {
+  const store = new FakeBotStore();
+  store.setQueueItemStatus = (_id, status) => {
+    if (status === "skipped") throw new Error("local skipped mutation failed");
+  };
+  const { worker, feedReader, bskyClient } = makeWorker(t, { store });
+  await worker.start();
+  feedReader.emit({
+    title: "uncertain",
+    content: "external outcome known",
+    languages: [],
+    itemDate: new Date().toISOString(),
+    dedupeKey: "uncertain-outcome",
+  });
+  bskyClient.setNextResult({ ok: false, ratelimit: false });
+
+  await assert.rejects(() => worker.drainOnce(), /local skipped mutation failed/);
+
+  assert.equal(worker.queueLength(), 1);
+  assert.equal(worker.operationalSnapshot().counters.postUncertain, 1);
+  assert.equal(worker.operationalSnapshot().counters.postSucceeded, 0);
+  assert.equal(store.cursor, "");
 });
 
 test("freshness policy skips a stale item at selection time without calling BskyClient", async (t) => {

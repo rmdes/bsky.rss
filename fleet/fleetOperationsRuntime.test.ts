@@ -187,6 +187,129 @@ test("the 5-second, 60-second, and 5-minute timers perform only their own action
   assert.deepEqual(timers.cleared.sort((a, b) => a - b), [1, 2, 3]);
 });
 
+test("a failed queue or memory observation retains every delta for the next summary", async (t) => {
+  for (const failurePoint of ["queue", "memory"] as const) {
+    await t.test(failurePoint, (t) => {
+      const directory = tempDirectory(t);
+      const timers = new FakeTimers();
+      const records: FleetLogRecord[] = [];
+      const operation = new BotOperations("bot-a");
+      let failNextObservation = false;
+      const worker = {
+        botId: "bot-a",
+        queueLength: () => {
+          if (failurePoint === "queue" && failNextObservation) {
+            failNextObservation = false;
+            throw new Error("private queue observation detail");
+          }
+          return 7;
+        },
+      } as BotWorker;
+      const runtime = new FleetOperationsRuntime({
+        timers,
+        now: () => new Date("2026-08-03T12:00:00.000Z"),
+        memoryUsage: () => {
+          if (failurePoint === "memory" && failNextObservation) {
+            failNextObservation = false;
+            throw new Error("private memory observation detail");
+          }
+          return { rss: 241 * 1024 * 1024, heapUsed: 80 * 1024 * 1024 };
+        },
+        paths: {
+          status: join(directory, "status.json"),
+          overrides: join(directory, "log-overrides.json"),
+        },
+        logger: new FleetLogger({
+          defaultLevel: "debug",
+          sink: (_line, record) => records.push(record),
+        }),
+        operations: new Map([["bot-a", operation]]),
+        coordinator: {
+          activeWorkers: () => [worker],
+          activationFailures: () => [],
+        },
+        configInvalidCount: 0,
+      });
+      runtime.start();
+      operation.recordPostSuccess();
+      failNextObservation = true;
+
+      assert.doesNotThrow(() => timers.fire(300_000));
+      assert.ok(records.some(
+        (record) => record.level === "summary" &&
+          record.message === "Interval summary failed; fleet execution continues"
+      ));
+      assert.ok(records.some(
+        (record) => record.level === "debug" && record.message.includes(`${failurePoint} observation detail`)
+      ));
+
+      operation.recordPostSuccess();
+      records.length = 0;
+      timers.fire(300_000);
+      assert.match(
+        records.find((record) => record.message.startsWith("5m:"))?.message ?? "",
+        /posts 2\/2 ok/
+      );
+      runtime.stop();
+    });
+  }
+});
+
+test("a failed summary emission retains every delta for the next successful emission", (t) => {
+  const directory = tempDirectory(t);
+  const timers = new FakeTimers();
+  const records: FleetLogRecord[] = [];
+  const operation = new BotOperations("bot-a");
+  let failNextEmission = false;
+  const logger = new FleetLogger({
+    defaultLevel: "debug",
+    sink: (_line, record) => {
+      if (failNextEmission && record.scope === "FLEET" && record.message.startsWith("5m:")) {
+        failNextEmission = false;
+        throw new Error("private summary sink detail");
+      }
+      records.push(record);
+    },
+  });
+  const runtime = new FleetOperationsRuntime({
+    timers,
+    now: () => new Date("2026-08-03T12:00:00.000Z"),
+    memoryUsage: () => ({ rss: 241 * 1024 * 1024, heapUsed: 80 * 1024 * 1024 }),
+    paths: {
+      status: join(directory, "status.json"),
+      overrides: join(directory, "log-overrides.json"),
+    },
+    logger,
+    operations: new Map([["bot-a", operation]]),
+    coordinator: {
+      activeWorkers: () => [fakeWorker("bot-a", 7)],
+      activationFailures: () => [],
+    },
+    configInvalidCount: 0,
+  });
+  runtime.start();
+  operation.recordPostSuccess();
+  failNextEmission = true;
+
+  assert.doesNotThrow(() => timers.fire(300_000));
+  assert.ok(records.some(
+    (record) => record.level === "summary" &&
+      record.message === "Interval summary failed; fleet execution continues"
+  ));
+  assert.ok(records.some(
+    (record) => record.level === "debug" && record.message.includes("summary sink detail")
+  ));
+
+  operation.recordPostSuccess();
+  records.length = 0;
+  timers.fire(300_000);
+  assert.match(
+    records.find((record) => record.message.startsWith("5m:"))?.message ?? "",
+    /posts 2\/2 ok/
+  );
+  runtime.stop();
+});
+
 test("markStopping writes stopping before worker shutdown resolves", async (t) => {
   const directory = tempDirectory(t);
   const statusFilePath = join(directory, "status.json");
@@ -308,5 +431,39 @@ test("override observer failures produce a safe warning and debug detail without
   assert.ok(records
     .filter((record) => record.level === "summary")
     .every((record) => !record.message.includes("private")));
+  runtime.stop();
+});
+
+test("override filesystem read failures reach the runtime's safe observer warning", (t) => {
+  const directory = tempDirectory(t);
+  const records: FleetLogRecord[] = [];
+  const runtime = new FleetOperationsRuntime({
+    timers: new FakeTimers(),
+    now: () => new Date("2026-08-03T12:00:00.000Z"),
+    memoryUsage: () => ({ rss: 1, heapUsed: 2 }),
+    paths: {
+      status: join(directory, "status.json"),
+      overrides: directory,
+    },
+    logger: new FleetLogger({
+      defaultLevel: "debug",
+      sink: (_line, record) => records.push(record),
+    }),
+    operations: new Map([["bot-a", new BotOperations("bot-a")]]),
+    coordinator: {
+      activeWorkers: () => [],
+      activationFailures: () => [],
+    },
+    configInvalidCount: 0,
+  });
+
+  assert.doesNotThrow(() => runtime.start());
+  assert.deepEqual(
+    records.filter((record) => record.level === "summary").map((record) => record.message),
+    ["Log override observation failed; fleet execution continues"]
+  );
+  assert.ok(records.some(
+    (record) => record.level === "debug" && /EISDIR|EACCES/.test(record.message)
+  ));
   runtime.stop();
 });

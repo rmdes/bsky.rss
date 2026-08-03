@@ -9,6 +9,8 @@ import {
 
 export type LogOverrideDocument = Record<string, FleetLogOverride>;
 
+class InvalidLogOverrideDocumentError extends Error {}
+
 const durationFactors = {
   s: 1_000,
   m: 60_000,
@@ -48,23 +50,35 @@ export function readValidOverrides(
   try {
     parsed = JSON.parse(source);
   } catch {
-    throw new Error(`Invalid log override document at ${path}: malformed JSON`);
+    throw new InvalidLogOverrideDocumentError(
+      `Invalid log override document at ${path}: malformed JSON`
+    );
   }
   if (!isRecord(parsed)) {
-    throw new Error(`Invalid log override document at ${path}: expected an object`);
+    throw new InvalidLogOverrideDocumentError(
+      `Invalid log override document at ${path}: expected an object`
+    );
+  }
+
+  const validated = new Map<string, FleetLogOverride>();
+  for (const [botId, value] of Object.entries(parsed)) {
+    if (!isRecord(value) || !isFleetLogLevel(value.level) || !isTimestamp(value.expiresAt)) {
+      throw new InvalidLogOverrideDocumentError(
+        `Invalid log override document at ${path}: invalid entry for ${botId}`
+      );
+    }
+    validated.set(botId, {level: value.level, expiresAt: value.expiresAt});
   }
 
   const overrides = new Map<string, FleetLogOverride>();
-  for (const [botId, value] of Object.entries(parsed)) {
+  for (const [botId, override] of validated) {
+    if (new Date(override.expiresAt).getTime() <= now.getTime()) continue;
     if (!knownBotIds.has(botId)) {
-      throw new Error(`Invalid log override document at ${path}: unknown bot ${botId}`);
+      throw new InvalidLogOverrideDocumentError(
+        `Invalid log override document at ${path}: unknown bot ${botId}`
+      );
     }
-    if (!isRecord(value) || !isFleetLogLevel(value.level) || !isTimestamp(value.expiresAt)) {
-      throw new Error(`Invalid log override document at ${path}: invalid entry for ${botId}`);
-    }
-    if (new Date(value.expiresAt).getTime() > now.getTime()) {
-      overrides.set(botId, {level: value.level, expiresAt: value.expiresAt});
-    }
+    overrides.set(botId, override);
   }
   return overrides;
 }
@@ -98,7 +112,8 @@ export class LogOverrideWatcher {
     try {
       nextOverrides = readValidOverrides(this.options.path, this.options.knownBotIds, now);
       this.malformedWarningEmitted = false;
-    } catch {
+    } catch (error) {
+      if (!(error instanceof InvalidLogOverrideDocumentError)) throw error;
       if (!this.malformedWarningEmitted) {
         this.options.logger.summary(
           "log-control",
