@@ -15,7 +15,7 @@
 - All fleet targets enforce one replica and durable state.
 - Managed provider documentation must not promise feature parity where provider storage or lifecycle semantics prevent it.
 - Render free/sleeping services are not recommended for production publishers.
-- DigitalOcean App Platform fleet mode is unsupported without durable state; DigitalOcean Droplet + Docker Compose is the supported fleet adaptation.
+- DigitalOcean App Platform fleet mode is unsupported; one DigitalOcean Droplet running Docker Compose is the supported fleet adaptation.
 - Provider manifests use direct Node entry points, pinned application versions, dry-run-first behavior, health checks, and persistent storage where the platform supports them.
 - The fleet template consumes a verified published image and must not carry a local build context that misleadingly suggests the deploy-only root can reproduce that image.
 - Provider guides must document bounded, privacy-preserving retention for their selected log backend; Docker profiles support host-managed `journald` with tested retention and portable bounded `json-file`.
@@ -155,13 +155,21 @@ services:
       FETCH_URL: ${FETCH_URL:?set FETCH_URL}
       INSTANCE_URL: ${INSTANCE_URL:-https://bsky.social}
       FETCH_INTERVAL: ${FETCH_INTERVAL:-5}
-      HEALTH_CHECK_PORT: 8080
+      HEALTH_CHECK_PORT: ${HEALTH_CHECK_PORT:-8080}
     volumes:
       - ./data:/build/data
     ports:
-      - 127.0.0.1:${HEALTH_CHECK_PORT:-8080}:8080
+      - 127.0.0.1:${HEALTH_CHECK_PORT:-8080}:${HEALTH_CHECK_PORT:-8080}
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          const port = process.env.HEALTH_CHECK_PORT ?? '8080';
+          fetch(`http://127.0.0.1:${port}/live`)
+            .then(r => process.exit(r.ok ? 0 : 1))
+            .catch(() => process.exit(1));
       interval: 30s
       timeout: 5s
       retries: 3
@@ -255,16 +263,18 @@ Use application version pinning through provider-supported image references wher
 
 - [ ] **Step 3: Add mandatory document headers**
 
-Each provider document states:
+Fly.io, Railway, and Render documents use this exact state line:
 
 ```text
 Mode: Solo
 Reference deployment: Docker
 Provider: <provider>
 Support status: Validated
-State requirement: Persistent or Unsupported
+State requirement: Persistent
 Application version policy: Pinned
 ```
+
+The DigitalOcean solo guide must consult current official provider documentation during implementation and then choose exactly one line: `State requirement: Persistent` when durable mounted state is configured, or `State requirement: Unsupported` when it is unavailable. A combined or provisional header value is forbidden.
 
 - [ ] **Step 4: Document local evidence and field-verification boundary**
 
@@ -311,7 +321,8 @@ Requirements:
 process command: node --import tsx fleet/runFleet.ts
 one machine
 persistent volume at /build/data
-config and secrets provisioned through documented Fly secrets/files workflow
+config provisioned through the documented Fly file workflow
+FLEET_SECRETS_JSON supplied directly by the Fly secret store to the Node process
 HTTP health service on 8080
 auto-stop off
 startup-aware readiness
@@ -319,7 +330,7 @@ optional custom CA mapped through a generic read-only mount or documented Fly tr
 provider log retention documented and bounded
 ```
 
-Because Fly secrets are environment variables rather than mounted files by default, add an entrypoint-independent startup command that materializes `FLEET_SECRETS_JSON` into `/build/secrets/bsky-fleet.json` with mode 0600 before executing Node. This wrapper must use `exec node ...` and be tested for signal forwarding. Prefer application support for `FLEET_SECRETS_JSON` directly if added during implementation; do not duplicate secret parsing in shell if the runtime can own it safely.
+The runtime plan lands first and provides the application-owned `loadFleetSecrets({ json })` path. Pass `FLEET_SECRETS_JSON` directly from the Fly secret store to the direct Node process. Validation and runtime must use that parser and enforce exactly one of `FLEET_SECRETS_JSON` or `FLEET_SECRETS_PATH`. A shell wrapper must not write the JSON to disk or duplicate parsing outside the application.
 
 - [ ] **Step 3: Implement Railway fleet overlay**
 
@@ -336,7 +347,7 @@ Requirements:
 
 - [ ] **Step 4: Implement Render fleet overlay**
 
-Use an always-on paid web service when HTTP health is required. Attach persistent disk, force one instance, use direct Node command, and document that free/sleeping services are unsupported.
+Use exactly one paid, always-on web service with persistent disk and HTTP readiness. Use the direct Node command and document that free/sleeping services are unsupported.
 
 Map the optional custom CA contract using a provider-supported read-only secret file or trust-store mechanism and document/test the mapping. Document Render log retention and privacy boundaries separately from application status retention.
 

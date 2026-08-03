@@ -122,7 +122,15 @@ services:
     ports:
       - 127.0.0.1:${HEALTH_CHECK_PORT:-8080}:${HEALTH_CHECK_PORT:-8080}
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          const port = process.env.HEALTH_CHECK_PORT ?? '8080';
+          fetch(`http://127.0.0.1:${port}/live`)
+            .then(r => process.exit(r.ok ? 0 : 1))
+            .catch(() => process.exit(1));
       interval: 30s
       timeout: 5s
       retries: 3

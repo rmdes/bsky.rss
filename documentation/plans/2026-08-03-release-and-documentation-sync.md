@@ -30,6 +30,7 @@
 - Create: `release/compatibility.test.ts`
 - Create: `release/generateCompatibility.ts`
 - Create: `release/compatibility.schema.json`
+- Create: `release/runtime-contract.v1.json`
 - Modify: `package.json`
 
 **Interfaces:**
@@ -57,29 +58,71 @@
   },
   "minimumTemplateFormatVersion": 1,
   "imageProvenance": {
-    "sourceRevision": "<full-git-commit>",
-    "runtimeContractDigest": "sha256:<digest>"
+    "sourceRevision": "<full-git-commit>"
   },
-  "stateCompatibility": {
-    "minimumSchemaVersion": 1,
-    "maximumSchemaVersion": 1,
-    "sqliteContractVersion": 1,
-    "perBotStateIsolation": true
-  },
-  "logging": {
-    "supportedBackends": ["journald", "json-file"],
-    "boundedRetentionRequired": true
-  },
-  "optionalCapabilities": {
-    "customCaEnvironment": "NODE_EXTRA_CA_CERTS"
+  "runtimeContract": {
+    "contractVersion": 1,
+    "input": "release/runtime-contract.v1.json",
+    "digestAlgorithm": "sha256",
+    "runtimeContractDigest": "sha256:<lowercase-hex-digest>",
+    "invariants": {
+      "configuration": {
+        "fleetSchemaVersion": 1,
+        "soloShape": "environment-to-versioned-schema",
+        "botShape": "unchanged-v1",
+        "postShape": "unchanged-v1",
+        "secretsShape": "flat-string-map",
+        "schemaDigests": {
+          "solo": "sha256:<solo-schema-digest>",
+          "fleet": "sha256:<fleet-schema-digest>",
+          "bot": "sha256:<bot-schema-digest>",
+          "post": "sha256:<post-schema-digest>",
+          "secrets": "sha256:<secrets-schema-digest>"
+        }
+      },
+      "state": {
+        "productionConfiguredWorkers": 59,
+        "productionSqliteStores": 59,
+        "separation": "one-sqlite-store-per-bot",
+        "durableMountsRequired": true
+      },
+      "authentication": {
+        "strategy": "sequential",
+        "staggerSeconds": 30
+      },
+      "queue": {
+        "perBotMaximum": 500,
+        "drainIntervalSeconds": 60,
+        "freshnessCatchUpItems": 5,
+        "freshnessMaximumAgeMinutes": 120,
+        "rateLimitSemantics": "defer-recognized-skip-uncertain"
+      },
+      "process": {
+        "fleetEntrypoint": ["node", "--import", "tsx", "fleet/runFleet.ts"],
+        "activePublisherReplicas": 1,
+        "stopGraceSeconds": 45
+      },
+      "logging": {
+        "supportedBackends": ["journald", "json-file"],
+        "boundedRetentionRequired": true
+      },
+      "customCa": {
+        "optional": true,
+        "environment": "NODE_EXTRA_CA_CERTS"
+      }
+    }
   },
   "failureCategories": ["feed-retrieval", "open-graph-fallback", "item-handler"]
 }
 ```
 
+`release/runtime-contract.v1.json` is the canonical, versioned digest input and contains exactly `contractVersion` plus the `invariants` object above. Generate `runtimeContractDigest` by parsing the JSON, recursively sorting object keys lexicographically while preserving array order, serializing with `JSON.stringify` and no whitespace, encoding the result as UTF-8, and calculating SHA-256 as lowercase hexadecimal prefixed by `sha256:`. The generator embeds the parsed contract version and invariants plus the input path, algorithm, and digest in `compatibility.json`; it must never hash Markdown prose, timestamps, absolute paths, Git worktree state, or production data.
+
 - [ ] **Step 1: Write failing metadata tests**
 
-Assert version comes from `package.json`, image tag is numeric without leading `v`, source revision and runtime-contract digest are non-placeholder provenance, entrypoints match checked-in files, schema/state compatibility matches checked-in contracts, health paths match shared health constants, `journald` and `json-file` are supported only with bounded retention, optional custom CA maps generically to `NODE_EXTRA_CA_CERTS`, and the three failure categories remain distinct.
+Assert version comes from `package.json`, image tag is numeric without leading `v`, source revision is non-placeholder provenance, entrypoints match checked-in files, and health paths match shared health constants. Assert the canonical runtime-contract input and emitted invariants explicitly preserve current config shapes, 59 configured workers and 59 independent per-bot SQLite stores, state separation, durable mounts, 30-second sequential authentication, queue/freshness/rate-limit semantics, direct Node fleet entrypoint, one active publisher, 45-second stop grace, bounded `journald`/`json-file` retention, and optional `NODE_EXTRA_CA_CERTS`. Assert all three failure categories remain distinct.
+
+Digest tests must independently calculate every schema digest and the canonical runtime-contract SHA-256, compare them with generated metadata, and prove that changing each invariant group changes `runtimeContractDigest`. Contract tests compare the direct Node/one-publisher/45-second settings with reference Compose, execute the controlled 59-worker/30-second fixture, and assert the recorded queue/freshness/rate-limit behavior. A missing input, unknown contract version, non-canonical digest, missing invariant, changed value, or version-only match must fail compatibility verification. These are metadata and test contracts; they do not rewrite production configuration or state.
 
 - [ ] **Step 2: Run and confirm failure**
 
@@ -126,8 +169,8 @@ git commit -m "feat: publish release compatibility metadata"
 - Create: `release/verifyImage.test.ts`
 
 **Interfaces:**
-- The image contains `/build/release/compatibility.json`.
-- The release workflow uploads `compatibility.json` as a GitHub release asset or workflow artifact and exposes it for the template update job.
+- The image contains `/build/release/compatibility.json` and `/build/release/runtime-contract.v1.json`.
+- The release workflow uploads `compatibility.json` and `runtime-contract.v1.json` as GitHub release assets or workflow artifacts and exposes both to the template update job.
 
 - [ ] **Step 1: Write failing image verification test**
 
@@ -137,7 +180,7 @@ The verifier runs a built image and asserts:
 docker run --rm <image> node -e "const x=require('fs').readFileSync('/build/release/compatibility.json','utf8'); console.log(x)"
 ```
 
-It compares image metadata against the source-generated file.
+It compares image metadata and the canonical runtime-contract input against the source-generated files, recomputes the digest independently, and checks every preserved invariant.
 
 The verifier also checks OCI source/revision/version labels and proves the embedded revision/provenance fields agree with the image. These fields are required for later comparison with a locally built production image; matching application-version strings alone must fail the transition comparison.
 
@@ -157,7 +200,7 @@ Workflow order:
 - uses: docker/build-push-action@v6
 ```
 
-Ensure `dist/compatibility.json` is copied into the image at `/build/release/compatibility.json` without copying unrelated build output.
+Ensure `dist/compatibility.json` and `release/runtime-contract.v1.json` are copied into the image at `/build/release/compatibility.json` and `/build/release/runtime-contract.v1.json` without copying unrelated build output.
 
 - [ ] **Step 4: Verify the built image before push**
 
@@ -169,7 +212,9 @@ Use a local single-platform Buildx load step for verification, then perform the 
 - uses: actions/upload-artifact@v4
   with:
     name: release-compatibility-${{ github.ref_name }}
-    path: dist/compatibility.json
+    path: |
+      dist/compatibility.json
+      release/runtime-contract.v1.json
 ```
 
 - [ ] **Step 6: Run tests and commit**
@@ -201,7 +246,9 @@ git commit -m "ci: verify image compatibility metadata"
 {
   "templateFormatVersion": 1,
   "applicationVersion": "2.2.0",
-  "schemaVersion": 1
+  "schemaVersion": 1,
+  "runtimeContractVersion": 1,
+  "runtimeContractDigest": "sha256:<lowercase-hex-digest>"
 }
 ```
 
@@ -220,9 +267,9 @@ Use a fake image metadata JSON and assert the script rejects:
 - template format below `minimumTemplateFormatVersion`;
 - missing fleet entrypoint;
 - missing validation entrypoint;
-- unexpected state path.
-- missing or mismatched source revision/runtime-contract digest;
-- an unsupported existing configuration or state-schema range;
+- unexpected state path;
+- missing or mismatched source revision, runtime-contract version, canonical input, or digest;
+- changed/missing config-shape, 59-store/state-separation, 30-second-stagger, queue/freshness/rate-limit, direct-Node, durable-mount, one-publisher, 45-second-grace, logging, or custom-CA invariant;
 - missing logging-profile retention metadata;
 - missing optional custom-CA capability metadata; and
 - collapsed or missing feed-retrieval, Open Graph fallback, or item-handler categories.
@@ -237,14 +284,14 @@ bash tests/compatibility.sh
 
 ```bash
 docker run --rm --entrypoint node "$image" \
-  -e "process.stdout.write(require('fs').readFileSync('/build/release/compatibility.json','utf8'))"
+  -e "const fs=require('fs'); process.stdout.write(JSON.stringify({compatibility:JSON.parse(fs.readFileSync('/build/release/compatibility.json','utf8')),runtimeContract:JSON.parse(fs.readFileSync('/build/release/runtime-contract.v1.json','utf8'))}))"
 ```
 
 Write output to a temporary file with mode `0600`; remove it on exit.
 
 - [ ] **Step 4: Compare with template contract**
 
-Use a short Node command inside the application image or a checked-in Node script; do not parse JSON with fragile shell text processing.
+Use a short Node command inside the application image or a checked-in Node script; do not parse JSON with fragile shell text processing. Recompute the canonical digest from the extracted runtime-contract input, require it to match both image metadata and `template-format.json`, and compare every invariant rather than accepting a contract-version match alone.
 
 - [ ] **Step 5: Integrate validation and CI**
 
@@ -275,7 +322,7 @@ git commit -m "feat: enforce application template compatibility"
 **Interfaces:**
 - A successful tagged release dispatches or calls a workflow that opens a branch in the template repository containing only:
   - updated `BSKY_RSS_VERSION` in `.env.example`;
-  - updated `applicationVersion` and `schemaVersion` in `template-format.json`;
+  - updated `applicationVersion`, `schemaVersion`, `runtimeContractVersion`, and `runtimeContractDigest` in `template-format.json`;
   - synchronized example config files when schema-compatible changes require them;
   - generated upgrade notes.
   - compatibility/provenance comparison instructions and required Field-verified production-transition evidence.
@@ -288,6 +335,7 @@ Given old template files and new compatibility metadata, assert exact determinis
 old version
 new version
 schema change
+runtime contract version and digest change
 configuration files changed
 required operator action
 verification commands
@@ -360,7 +408,6 @@ git commit -m "ci: propose fleet template updates on release"
 - Create: `documentation/architecture/authentication.md`
 - Create: `documentation/operations/backup-and-restore.md`
 - Create: `documentation/operations/provider-verification.md`
-- Modify: `documentation/v1-to-v2.md`
 - Modify: `README.md`
 
 **Files (`rmdes/bsky-rss-fleet-template`):**
@@ -379,19 +426,7 @@ Document public contracts for configuration layout, SQLite tables/state, authent
 
 Link the new focused architecture, operations, and template documents from the main README and other newly created current-deployment documents.
 
-- [ ] **Step 3: Archive historical v1-to-v2 material**
-
-Add a clear header:
-
-```text
-Status: Historical
-Current production version: 2.x
-Not required for current deployments
-```
-
-Remove it from current quickstart paths while retaining historical value.
-
-- [ ] **Step 4: Add field-verification record format**
+- [ ] **Step 3: Add field-verification record format**
 
 Provider verification records use:
 
@@ -412,13 +447,13 @@ limitations:
 
 Store real records under `documentation/verification/<provider>/<mode>/<date>.yaml`. Do not create fabricated records during automated implementation.
 
-Any production image transition record must additionally include the approved change window, source local-image digest/provenance, target published-image digest/provenance, configuration/state validation evidence, controlled fixture dry-run result, consistent backup reference, readiness evidence, and previous-compatible-image recovery evidence. Use sanitized artifact references only; never record private identifiers, URLs, environment values, database contents, or raw logs.
+Any production image transition record must additionally include the approved change window; source local-image digest, revision/provenance, and runtime-contract digest; target published-image digest, revision/provenance, and runtime-contract digest; invariant-by-invariant compatibility evidence; configuration/state validation evidence; controlled fixture dry-run result; consistent backup reference; readiness evidence; and previous-compatible-image recovery evidence. Use sanitized artifact references only; never record private identifiers, URLs, environment values, database contents, or raw logs.
 
-- [ ] **Step 5: Add troubleshooting decision trees**
+- [ ] **Step 4: Add troubleshooting decision trees**
 
 Cover validation failure, placeholder secret, lock conflict, partial activation, all bots failed, stale scheduler, volume missing, database recovery, health mismatch, update failure, and previous-image recovery.
 
-- [ ] **Step 6: Commit repository-specific documentation**
+- [ ] **Step 5: Commit repository-specific documentation**
 
 Application:
 
@@ -562,6 +597,7 @@ Record:
 
 - exact commits tested in both repositories;
 - image digest;
+- source/target runtime-contract versions, digests, and invariant comparison result;
 - unit/typecheck/smoke counts;
 - Docker solo/fleet verification results;
 - managed manifest validation results;

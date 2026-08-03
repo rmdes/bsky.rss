@@ -144,14 +144,29 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SCHEMA_VERSION, getSchema } from "./schemaRegistry.ts";
 
-test("all runtime schemas declare the same schema version", () => {
+test("runtime schemas use the reviewed version boundary", () => {
   assert.equal(SCHEMA_VERSION, 1);
   for (const name of ["solo", "fleet", "bot", "post", "secrets"] as const) {
     const schema = getSchema(name);
     assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
-    assert.equal(schema.properties.schemaVersion.const, SCHEMA_VERSION);
+    assert.match(String(schema.$id), /\/v1\//);
+  }
+
+  const fleet = getSchema("fleet");
+  const fleetProperties = fleet.properties as Record<string, { const?: unknown }>;
+  assert.equal(fleetProperties.schemaVersion.const, SCHEMA_VERSION);
+
+  for (const name of ["solo", "bot", "post"] as const) {
+    const schema = getSchema(name);
+    const properties = schema.properties as Record<string, unknown>;
+    assert.equal(properties.schemaVersion, undefined);
     assert.equal(schema.additionalProperties, false);
   }
+
+  const secrets = getSchema("secrets");
+  const secretProperties = (secrets.properties ?? {}) as Record<string, unknown>;
+  assert.equal(secretProperties.schemaVersion, undefined);
+  assert.deepEqual(secrets.additionalProperties, { type: "string" });
 });
 ```
 
@@ -178,8 +193,11 @@ yarn add ajv@^8
 Each schema must:
 
 - use JSON Schema draft 2020-12;
-- require `schemaVersion: 1`;
-- set `additionalProperties: false` at every owned object boundary;
+- use a versioned `$id` containing `/v1/`;
+- require `schemaVersion: 1` only in the fleet-wide schema;
+- omit a top-level `schemaVersion` property from solo, per-bot identity, post, and secrets schemas;
+- set `additionalProperties: false` at every owned fixed-shape object boundary;
+- preserve the secrets file as a flat `Record<string, string>` whose arbitrary keys are validated through a string-valued `additionalProperties` schema;
 - preserve all currently supported post configuration fields;
 - encode positive bounds for intervals, queue lengths, concurrency, image size, timeout, and spacing;
 - encode URL format for `instanceUrl` and `feedUrl`;
@@ -191,7 +209,7 @@ Example fleet schema shape:
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/rmdes/bsky.rss/schemas/fleet-config.schema.json",
+  "$id": "https://github.com/rmdes/bsky.rss/schemas/v1/fleet-config.schema.json",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "staggerSeconds", "runIntervalSeconds", "freshness", "sharedLimiters", "perBotQueueMaxLength"],
@@ -209,32 +227,35 @@ Example fleet schema shape:
 Create `shared/config/schemaRegistry.ts`:
 
 ```ts
-import solo from "../../schemas/solo-config.schema.json" with { type: "json" };
-import fleet from "../../schemas/fleet-config.schema.json" with { type: "json" };
-import bot from "../../schemas/fleet-bot.schema.json" with { type: "json" };
-import post from "../../schemas/post-config.schema.json" with { type: "json" };
-import secrets from "../../schemas/fleet-secrets.schema.json" with { type: "json" };
+import { readFileSync } from "node:fs";
+
+function readSchema(relativePath: string): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(new URL(relativePath, import.meta.url), "utf8")
+  ) as Record<string, unknown>;
+}
 
 export const SCHEMA_VERSION = 1 as const;
 export type SchemaName = "solo" | "fleet" | "bot" | "post" | "secrets";
 
-const schemas = { solo, fleet, bot, post, secrets } as const;
+const schemas = {
+  solo: readSchema("../../schemas/solo-config.schema.json"),
+  fleet: readSchema("../../schemas/fleet-config.schema.json"),
+  bot: readSchema("../../schemas/fleet-bot.schema.json"),
+  post: readSchema("../../schemas/post-config.schema.json"),
+  secrets: readSchema("../../schemas/fleet-secrets.schema.json"),
+} as const;
 
 export function getSchema(name: SchemaName): Record<string, unknown> {
-  return schemas[name] as Record<string, unknown>;
+  return schemas[name];
 }
 ```
 
-If TypeScript JSON import attributes require a `tsconfig.json` adjustment, enable `resolveJsonModule` and use the syntax supported by Node 24/TypeScript 6 consistently across all imports.
+No TypeScript compiler-setting change is needed for schema loading.
 
 - [ ] **Step 6: Update checked-in examples**
 
-Add `"schemaVersion": 1` to:
-
-- `config.example/fleet.json`
-- every `config.example/bots/*/bot.json`
-- every `config.example/bots/*/config.json`
-- `config.example/secrets/bsky-fleet.json`
+Add `"schemaVersion": 1` only to `config.example/fleet.json`. Preserve every existing per-bot `bot.json` and `config.json` top-level shape. Preserve `config.example/secrets/bsky-fleet.json` as the existing flat string map keyed by `secretKey`.
 
 - [ ] **Step 7: Run schema tests and project checks**
 
@@ -250,7 +271,7 @@ Expected: all schema registry and existing tests pass.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add package.json yarn.lock tsconfig.json schemas shared/config config.example
+git add package.json yarn.lock schemas shared/config config.example
 git commit -m "feat: define runtime configuration schemas"
 ```
 
@@ -320,10 +341,15 @@ Expected: validation modules are missing.
 
 - [ ] **Step 3: Implement schema and cross-field validation**
 
-Use Ajv with:
+Use Ajv's JSON Schema 2020-12 implementation explicitly:
 
 ```ts
-const ajv = new Ajv({ allErrors: true, strict: true });
+import Ajv2020 from "ajv/dist/2020.js";
+
+const ajv = new Ajv2020({
+  allErrors: true,
+  strict: true,
+});
 ```
 
 Register a URL format without adding another dependency:
@@ -536,7 +562,6 @@ git commit -m "feat: unify runtime health semantics"
 
 ```ts
 export interface SoloRuntimeConfig {
-  schemaVersion: 1;
   identifier: string;
   appPassword: string;
   fetchUrl: URL;
@@ -913,8 +938,22 @@ yarn install --immutable
 yarn check
 FLEET_CONFIG_ROOT=./config.example FLEET_SECRETS_PATH=<valid-temp-secrets> yarn fleet:validate
 docker build -t bsky-rss:runtime-contracts .
-docker run --rm --init bsky-rss:runtime-contracts node --import tsx fleet/validateFleet.ts
+VALID_SECRETS_FILE=<path-to-temporary-valid-secrets>
+docker run --rm \
+  -e FLEET_CONFIG_ROOT=/build/config.example \
+  -e FLEET_SECRETS_PATH=/run/secrets/bsky-fleet.json \
+  -v "$VALID_SECRETS_FILE:/run/secrets/bsky-fleet.json:ro" \
+  bsky-rss:runtime-contracts \
+  node --import tsx fleet/validateFleet.ts
+
+! docker run --rm \
+  -e FLEET_CONFIG_ROOT=/build/config.example \
+  -e FLEET_SECRETS_PATH=/build/config.example/secrets/bsky-fleet.json \
+  bsky-rss:runtime-contracts \
+  node --import tsx fleet/validateFleet.ts
 ```
+
+The mounted temporary valid secrets file must make the first container validation exit 0. The checked-in placeholder secrets must make the separate second command exit non-zero without disclosing placeholder or secret values.
 
 The PR body must state that Bluesky publication was not performed and that AT Protocol behavior was tested through the controlled mock boundary.
 

@@ -194,10 +194,10 @@ The target support matrix is:
 | Docker Compose | Yes | Yes | Verified | Default and behavioral reference |
 | Fly.io | Yes | Yes | Validated | Fleet requires one machine and persistent volume |
 | Railway | Yes | Yes | Validated | Fleet requires one replica and persistent volume |
-| Render | Yes | Yes | Validated | Fleet requires paid persistent disk and always-on worker/service |
-| DigitalOcean App Platform | Yes | Conditional | Validated | App Platform fleet is unsupported without durable state; a Droplet may provide the Docker reference instead |
+| Render | Yes | Yes | Validated | Fleet uses one paid, always-on web service with persistent disk |
+| DigitalOcean App Platform | Yes | No | Validated | Fleet is unsupported; DigitalOcean fleet uses a one-Droplet Docker Compose adaptation |
 
-DigitalOcean fleet support must not be presented as equivalent when its state cannot survive replacement. The implementation may provide an adapted deployment using a supported persistent service type, or explicitly mark fleet mode unsupported on App Platform and recommend a Droplet with Docker Compose.
+DigitalOcean App Platform fleet mode is unsupported. DigitalOcean fleet support is exactly one Droplet running the Docker Compose reference. The DigitalOcean solo guide must use current official provider evidence to select one exact state requirement: `Persistent` when durable mounted state is configured, otherwise `Unsupported`.
 
 ## 7. Documentation contract
 
@@ -587,23 +587,17 @@ Fleet requirements:
 
 Fleet requirements:
 
-- Always-on paid service or worker.
+- One paid, always-on web service so HTTP readiness is available.
 - Persistent disk.
 - One instance.
-- Explicit health strategy compatible with the selected Render service type.
+- HTTP readiness configured for the web service.
 - No recommendation of a free service that sleeps or discards required state.
 
 ### 13.4 DigitalOcean
 
 Solo mode may use App Platform where its state needs are satisfied.
 
-Fleet mode must not be claimed as production-supported on an App Platform resource lacking durable mounted state. Acceptable outcomes are:
-
-1. A supported App Platform service type with durable storage and one replica.
-2. A documented DigitalOcean Droplet deployment using the Docker reference.
-3. An explicit statement that App Platform fleet mode is unsupported.
-
-The implementation plan must choose the technically valid option based on current provider capabilities and record the evidence used.
+Fleet mode is unsupported on App Platform. The supported DigitalOcean fleet adaptation is one Droplet running the Docker Compose reference with durable state and one active publisher. The App Platform solo guide must record the current official-provider evidence used to choose its exact `Persistent` or `Unsupported` state requirement.
 
 ## 14. Testing strategy
 
@@ -731,7 +725,7 @@ Metrics are desirable but not required for the first implementation cycle. The d
 | Template and application examples can drift | Release-time compatibility and synchronization workflow |
 | Authoritative details live in gitignored machine-local notes | Public committed architecture documentation becomes authoritative |
 | Docker shutdown bug was caused by Yarn as PID 1 | Direct Node entrypoints required and lifecycle-tested |
-| DigitalOcean workers may lack persistent storage | Fleet support is conditional and limitations explicit |
+| DigitalOcean App Platform lacks the required fleet contract | App Platform fleet is unsupported; use the one-Droplet Docker Compose adaptation |
 | Provider docs imply more verification than exists | Verified, Validated, and Field-verified evidence levels |
 
 ## 18. Scope boundaries
@@ -775,7 +769,7 @@ This specification defines one coordinated program, not one giant pull request. 
 
 - Documentation restructuring and mode metadata.
 - Solo and fleet manifests for Fly.io, Railway, and Render.
-- DigitalOcean decision based on current durable-storage capabilities.
+- DigitalOcean App Platform fleet marked unsupported with a one-Droplet Docker Compose adaptation; solo state status selected from current official evidence.
 - Static provider validation and field-verification checklists.
 
 ### Workstream 4: Release synchronization and final audit
