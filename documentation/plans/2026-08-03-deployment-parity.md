@@ -50,6 +50,7 @@ export interface DeploymentTarget {
   replicaCount: number;
   loggingProfile: "journald" | "json-file" | "provider-managed";
   customCa: "mounted" | "platform-trust" | "unsupported";
+  fleetSecretMethod?: "provider-secret-json" | "mounted-file" | "unsupported";
 }
 ```
 
@@ -59,9 +60,11 @@ and CLI:
 yarn deployment:validate [--template-root ../bsky-rss-fleet-template]
 ```
 
-- [ ] **Step 1: Write failing metadata tests**
+- [ ] **Step 1: Write failing metadata and provider-secret tests**
 
 Assert the matrix contains exactly ten provider/mode combinations, with DigitalOcean fleet represented as a Droplet adaptation and App Platform marked unsupported for fleet.
+
+For Fly, Railway, and Render fleet targets, assert `fleetSecretMethod === "provider-secret-json"`, the manifest declares `FLEET_SECRETS_JSON` as a provider-secret reference delivered directly to the Node process, and `FLEET_SECRETS_PATH` is absent. Reject a literal JSON value, both sources, `sh -c`/shell entrypoints, redirection/heredoc/materialization, and provider-specific parsing. These three assertions are mandatory even when the provider represents secret-store binding differently in TOML/YAML.
 
 - [ ] **Step 2: Add parser dependencies**
 
@@ -87,6 +90,7 @@ Validate:
 - no fleet template manifest declares a local build context;
 - the selected logging backend has a bounded retention contract; and
 - custom-CA mapping is either validated generically or explicitly marked unsupported.
+- Fly, Railway, and Render fleet secret delivery is exactly `FLEET_SECRETS_JSON` from the provider secret store to the application-owned exactly-one-source parser, never a path or shell materialization.
 
 - [ ] **Step 4: Add package script**
 
@@ -341,14 +345,19 @@ Requirements:
 - one replica;
 - mounted volume at `/build/data` documented and verified manually later;
 - configuration deployment method that does not bake real secrets into the repository;
+- `FLEET_SECRETS_JSON` supplied directly by the Railway secret store to the Node process;
 - `/ready` health path;
 - no horizontal autoscaling.
 - generic optional custom CA mapping where supported, with a documented unsupported alternative otherwise;
 - bounded provider log retention without emitting private request/error payloads.
 
+Use the same application-owned `loadFleetSecrets({ json })` path as Fly. Enforce exactly one source, do not set `FLEET_SECRETS_PATH`, and do not use a shell wrapper to write or transform the secret JSON.
+
 - [ ] **Step 4: Implement Render fleet overlay**
 
 Use exactly one paid, always-on web service with persistent disk and HTTP readiness. Use the direct Node command and document that free/sleeping services are unsupported.
+
+Supply `FLEET_SECRETS_JSON` directly from the Render secret store (`sync: false`/operator-provided secret value) to the Node process and the application-owned `loadFleetSecrets({ json })` path. Enforce exactly one source; do not set `FLEET_SECRETS_PATH`, materialize a file, or parse through a shell wrapper.
 
 Map the optional custom CA contract using a provider-supported read-only secret file or trust-store mechanism and document/test the mapping. Document Render log retention and privacy boundaries separately from application status retention.
 
@@ -537,7 +546,7 @@ shellcheck scripts/*.sh scripts/lib/*.sh tests/*.sh
 bash tests/run-all.sh
 ```
 
-The PRs must list each provider/mode target, log backend/retention choice, custom-CA mapping, and evidence state. Managed providers remain `Validated` unless real deployment records are added separately.
+The PRs must list each provider/mode target, log backend/retention choice, custom-CA mapping, secret-delivery method, and evidence state. Validator output must explicitly report `fly-fleet-secret-method=provider-secret-json`, `railway-fleet-secret-method=provider-secret-json`, and `render-fleet-secret-method=provider-secret-json`. Managed providers remain `Validated` unless real deployment records are added separately.
 
 ### Production adoption boundary
 

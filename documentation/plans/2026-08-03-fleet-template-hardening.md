@@ -381,15 +381,17 @@ scripts/restore.sh backups/<name>.tar.gz [--confirm-restore]
 
 - [ ] **Step 1: Write failing backup/restore integration test**
 
-The test must:
+Use an injectable Compose/log adapter and a temporary runtime tree so the test proves every binding sequence step without touching a real deployment. The test must:
 
-1. create a temporary runtime tree;
-2. create a SQLite database with one row using the application image or local `node:sqlite`;
-3. run backup;
-4. modify/delete the state;
-5. run restore;
-6. assert the original row and file permissions return;
-7. assert restore refuses while a fake fleet container is reported running.
+1. cover initially stopped, running dry-run, and running publishing modes and assert the captured mode before any stop;
+2. for each running case, assert graceful `docker compose stop`, wait-until-not-running, and shutdown-complete log verification in that order when logs are available;
+3. separately prove unavailable logs are recorded as unavailable rather than silently reported verified;
+4. create one SQLite fixture row plus `-wal` and `-shm` sidecars, config, secrets, and version metadata, then assert the archive contains the complete closed tree;
+5. assert the completed archive mode is exactly `0600`;
+6. assert an initially stopped fleet is not restarted;
+7. assert an initially running fleet is restarted once and in exactly its prior dry-run or publishing mode;
+8. modify/delete state, restore, and assert the original SQLite row plus every captured numeric file/directory mode returns exactly; and
+9. assert restore refuses while the fake fleet is reported active, without changing any target file.
 
 - [ ] **Step 2: Run and confirm failure**
 
@@ -407,7 +409,7 @@ Normative sequence:
 4. verify graceful-shutdown completion in container logs when logs are available;
 5. archive the complete closed `data/` tree, including every SQLite file and any WAL/SHM sidecars, together with `config/`, `secrets/`, and `backup-metadata.json`;
 6. create the archive with owner-only mode `0600`; and
-7. restart only if the fleet was previously running, preserving its previous dry-run/publishing mode.
+7. restart only if the fleet was previously running, preserving its exact previous dry-run/publishing mode.
 
 Do not copy live SQLite state or introduce a second backup mechanism in this cycle.
 
@@ -431,6 +433,7 @@ Restore must:
 - verify archive paths do not escape the restore root;
 - validate metadata format and application compatibility;
 - restore permissions;
+- restore the exact recorded numeric modes for directories, config, secrets, metadata, SQLite files, and sidecars;
 - invoke `scripts/validate.sh --filesystem`;
 - force `DRY_RUN=true` unless `--preserve-publishing-mode` is explicitly supplied.
 
@@ -586,13 +589,16 @@ git commit -m "test: verify fleet template lifecycle"
 `/home/skyfleet-next` is an in-place compatibility target, not an automated acceptance environment. Before a published image is considered for production:
 
 - compare candidate revision/provenance and selected runtime compatibility with the locally built running image; matching `2.2.0` strings are insufficient;
-- validate the existing configuration shapes and all 59 independent SQLite stores without mutation;
+- use the explicitly reconstructed local-image attestation when embedded metadata is unavailable, verify its source revision/selected-file hashes, and compare every canonical runtime-contract invariant with the candidate's embedded attestation;
+- validate the existing absent-version configuration through the assume-v1 in-memory bridge and validate all 59 independent SQLite stores from a stopped read-only backup copy without mutation or identifier-bearing output;
 - run the candidate against controlled fixtures in dry-run;
 - create and verify a consistent graceful-stop backup;
 - schedule an explicit operator-approved change window;
 - preserve direct Node PID 1, durable mounts, one active publisher, 45-second stop grace, 30-second staggering, queue/freshness/rate-limit behavior, selected logging retention, and optional custom-CA behavior;
 - collect readiness and lifecycle evidence after the change; and
 - prove recovery using the previous compatible fleet image and pre-update backup.
+
+`tests/backup-restore.sh` must report passing cases for stopped/no-restart, running-dry-run/exact restart, running-publishing/exact restart, graceful-stop ordering, shutdown-log available/unavailable handling, WAL/SHM/config/secrets/metadata capture, archive `0600`, exact permission/row restoration, and active restore refusal.
 
 Update, restore, and recovery scripts remain template capabilities. Running them against production, changing publishing mode, or performing container lifecycle actions is outside automated acceptance and requires separate authorization and Field-verified evidence.
 

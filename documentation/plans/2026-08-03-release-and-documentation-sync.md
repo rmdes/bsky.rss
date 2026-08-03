@@ -18,7 +18,8 @@
 - A compatibility change that requires operator action must produce explicit upgrade notes.
 - Documentation tests fail on stale paths, unsupported evidence claims, `latest` production examples, or `v`-prefixed image tags.
 - Release metadata must support comparison between the locally built image from the **Production-proven baseline** and a published image; a shared `2.2.0` version string is insufficient.
-- Compatibility covers existing configuration shapes, per-bot state separation, direct Node entrypoint, single-replica behavior, logging backend/retention, and optional custom CA support.
+- The current local image lacks embedded revision/runtime-contract metadata, so its source-side evidence must be an explicitly `reconstructed` canonical attestation verified from the audited source revision and selected-file hashes; it must never be labeled embedded.
+- Compatibility covers the non-mutating absent-version assume-v1 bridge, aggregate-only read compatibility of all 59 SQLite stores, successful-poll usefulness health semantics, per-bot state separation, direct Node entrypoint, single-replica behavior, structured sanitized logging, logging backend/retention, and optional custom CA support.
 - Automation never connects to the production host, changes publishing mode, performs container lifecycle actions, or deploys a release. Production transitions require explicit approval and a Field-verified record.
 
 ---
@@ -68,6 +69,7 @@
     "invariants": {
       "configuration": {
         "fleetSchemaVersion": 1,
+        "absentFleetSchemaVersion": "assume-v1-in-memory-no-rewrite",
         "soloShape": "environment-to-versioned-schema",
         "botShape": "unchanged-v1",
         "postShape": "unchanged-v1",
@@ -84,7 +86,8 @@
         "productionConfiguredWorkers": 59,
         "productionSqliteStores": 59,
         "separation": "one-sqlite-store-per-bot",
-        "durableMountsRequired": true
+        "durableMountsRequired": true,
+        "compatibilityValidation": "read-only-aggregate-all-stores"
       },
       "authentication": {
         "strategy": "sequential",
@@ -102,9 +105,17 @@
         "activePublisherReplicas": 1,
         "stopGraceSeconds": 45
       },
+      "health": {
+        "usefulnessBasis": "fresh-successful-poll",
+        "postActivationGraceRequired": true,
+        "zeroUsefulAfterGrace": "unhealthy",
+        "partialUsefulWithFailures": "degraded-ready"
+      },
       "logging": {
         "supportedBackends": ["journald", "json-file"],
-        "boundedRetentionRequired": true
+        "boundedRetentionRequired": true,
+        "structuredRuntimeEvents": true,
+        "identifierFreeAggregateOnly": true
       },
       "customCa": {
         "optional": true,
@@ -120,7 +131,7 @@
 
 - [ ] **Step 1: Write failing metadata tests**
 
-Assert version comes from `package.json`, image tag is numeric without leading `v`, source revision is non-placeholder provenance, entrypoints match checked-in files, and health paths match shared health constants. Assert the canonical runtime-contract input and emitted invariants explicitly preserve current config shapes, 59 configured workers and 59 independent per-bot SQLite stores, state separation, durable mounts, 30-second sequential authentication, queue/freshness/rate-limit semantics, direct Node fleet entrypoint, one active publisher, 45-second stop grace, bounded `journald`/`json-file` retention, and optional `NODE_EXTRA_CA_CERTS`. Assert all three failure categories remain distinct.
+Assert version comes from `package.json`, image tag is numeric without leading `v`, source revision is non-placeholder provenance, entrypoints match checked-in files, and health paths match shared health constants. Assert the canonical runtime-contract input and emitted invariants explicitly preserve current config shapes, the absent-version assume-v1/no-rewrite bridge, 59 configured workers and 59 independent per-bot SQLite stores, aggregate-only read compatibility, state separation, durable mounts, 30-second sequential authentication, queue/freshness/rate-limit semantics, fresh-successful-poll usefulness/grace outcomes, direct Node fleet entrypoint, one active publisher, 45-second stop grace, structured identifier-free runtime events, bounded `journald`/`json-file` retention, and optional `NODE_EXTRA_CA_CERTS`. Assert all three failure categories remain distinct.
 
 Digest tests must independently calculate every schema digest and the canonical runtime-contract SHA-256, compare them with generated metadata, and prove that changing each invariant group changes `runtimeContractDigest`. Contract tests compare the direct Node/one-publisher/45-second settings with reference Compose, execute the controlled 59-worker/30-second fixture, and assert the recorded queue/freshness/rate-limit behavior. A missing input, unknown contract version, non-canonical digest, missing invariant, changed value, or version-only match must fail compatibility verification. These are metadata and test contracts; they do not rewrite production configuration or state.
 
@@ -229,6 +240,89 @@ git commit -m "ci: verify image compatibility metadata"
 
 ---
 
+### Task 2A: Reconstruct and Compare the Current Local-Image Attestation
+
+**Files (`rmdes/bsky.rss`):**
+- Create: `release/localImageAttestation.ts`
+- Create: `release/localImageAttestation.test.ts`
+- Create: `release/reconstructLocalImageAttestation.ts`
+- Create: `release/compareRuntimeAttestations.ts`
+- Create: `release/compareRuntimeAttestations.test.ts`
+
+**Interfaces:**
+
+```ts
+export interface SelectedFileEvidence {
+  path: string;
+  sha256: `sha256:${string}`;
+}
+
+interface BaseRuntimeContractAttestation {
+  imageDigest: `sha256:${string}`;
+  sourceRevision: string;
+  runtimeContractVersion: 1;
+  runtimeContractDigest: `sha256:${string}`;
+  runtimeContract: unknown;
+}
+
+export interface ReconstructedRuntimeContractAttestation extends BaseRuntimeContractAttestation {
+  attestationKind: "reconstructed";
+  selectedFileEvidence: readonly SelectedFileEvidence[];
+}
+
+export interface EmbeddedRuntimeContractAttestation extends BaseRuntimeContractAttestation {
+  attestationKind: "embedded";
+  ociRevisionVerified: true;
+  embeddedContractVerified: true;
+}
+
+export type RuntimeContractAttestation =
+  | ReconstructedRuntimeContractAttestation
+  | EmbeddedRuntimeContractAttestation;
+
+export function reconstructLocalImageAttestation(options: {
+  repositoryRoot: string;
+  imageDigest: string;
+  sourceRevision: string;
+  selectedFileEvidence: readonly SelectedFileEvidence[];
+}): ReconstructedRuntimeContractAttestation;
+```
+
+Exact local reconstruction command, using the sanitized evidence captured by the Phase 0 audit and no production connection:
+
+```bash
+node --import tsx release/reconstructLocalImageAttestation.ts \
+  --image-digest <local-image-sha256> \
+  --source-revision <verified-full-revision> \
+  --selected-file-evidence <sanitized-selected-file-evidence.json> \
+  --output <local-reconstructed-attestation.json>
+```
+
+- [ ] **Step 1: Write failing reconstruction and comparison tests**
+
+Require a full source revision, canonical lowercase image/file digests, a closed allowlist of selected relative runtime/deployment paths, and exact hash equality between the supplied audit evidence and `git show <sourceRevision>:<path>`. Reject a dirty/unresolvable revision, missing/extra/duplicate path, mismatch, absolute/traversal path, unknown contract version, or evidence containing configuration/state/environment values. Verify the reconstructed canonical `runtime-contract.v1` and digest are deterministically derived only after those checks pass.
+
+Assert the result says `attestationKind: "reconstructed"` and can never claim `embedded`. Candidate comparison must require `attestationKind: "embedded"` on metadata actually extracted from the candidate image and compare source/provenance evidence plus every canonical invariant. Matching application version, partial selected-file equality, or contract-version equality alone fails.
+
+- [ ] **Step 2: Implement reconstructed evidence generation**
+
+Read selected files at the verified revision through Git object access, not the mutable worktree. Derive the canonical v1 invariant projection through the same stable builder and canonical SHA-256 algorithm used by release metadata. The output may contain only evidence kind, image digest, full revision, allowlisted relative selected-file paths/hashes, canonical contract/digest, and fixed verification codes. Never include absolute paths, host/container IDs, environment values, config/secrets, SQLite data, or raw command errors. Write the local evidence artifact with mode `0600`; do not commit it.
+
+- [ ] **Step 3: Implement candidate comparison**
+
+`compareRuntimeAttestations` accepts the reconstructed source attestation and candidate image's embedded metadata, verifies each attestation independently, and produces invariant-by-invariant pass/fail counts plus fixed reason codes. It must fail closed on any provenance/evidence or invariant mismatch.
+
+- [ ] **Step 4: Run checks and commit**
+
+```bash
+yarn tsx --test release/localImageAttestation.test.ts release/compareRuntimeAttestations.test.ts
+yarn check
+git add release/localImageAttestation.ts release/localImageAttestation.test.ts release/reconstructLocalImageAttestation.ts release/compareRuntimeAttestations.ts release/compareRuntimeAttestations.test.ts
+git commit -m "feat: reconstruct local image compatibility evidence"
+```
+
+---
+
 ### Task 3: Add Template Compatibility Contract
 
 **Files (`rmdes/bsky-rss-fleet-template`):**
@@ -271,8 +365,22 @@ Use a fake image metadata JSON and assert the script rejects:
 - missing or mismatched source revision, runtime-contract version, canonical input, or digest;
 - changed/missing config-shape, 59-store/state-separation, 30-second-stagger, queue/freshness/rate-limit, direct-Node, durable-mount, one-publisher, 45-second-grace, logging, or custom-CA invariant;
 - missing logging-profile retention metadata;
-- missing optional custom-CA capability metadata; and
-- collapsed or missing feed-retrieval, Open Graph fallback, or item-handler categories.
+- missing optional custom-CA capability metadata;
+- collapsed or missing feed-retrieval, Open Graph fallback, or item-handler categories; and
+- missing/mismatched absent-version assume-v1/no-rewrite, aggregate state-validation, useful-worker health, or structured identifier-free logging invariants.
+
+Add a production-transition fixture test that invokes the candidate image's exact state interface against 59 read-only synthetic stores:
+
+```bash
+docker run --rm --read-only \
+  -v "$STATE_FIXTURE_ROOT:/candidate-state:ro" \
+  "$image" \
+  node --import tsx fleet/validateStateCompatibility.ts \
+    --state-root /candidate-state \
+    --expected-stores 59
+```
+
+Require aggregate output, all 59 passed stores, and identical pre/post hashes and modes. Missing/extra/corrupt/version/shape/index/status/candidate-read fixtures fail without emitting a store name, path, identifier, row, URL, or raw error.
 
 - [ ] **Step 2: Run and confirm failure**
 
@@ -295,7 +403,7 @@ Use a short Node command inside the application image or a checked-in Node scrip
 
 - [ ] **Step 5: Integrate validation and CI**
 
-`scripts/validate.sh` runs compatibility checks before validating mounted config. CI checks the pinned image from `.env.example`.
+`scripts/validate.sh` runs compatibility checks before validating mounted config. CI checks the pinned image from `.env.example`. Production-transition instructions additionally require the reconstructed local-image versus embedded candidate comparison and the candidate's aggregate state validator against a stopped backup copy; routine template startup does not connect to production or run those adoption-only inputs.
 
 - [ ] **Step 6: Run and commit**
 
@@ -420,7 +528,7 @@ git commit -m "ci: propose fleet template updates on release"
 
 - [ ] **Step 1: Move current runtime architecture content out of machine-local notes**
 
-Document public contracts for configuration layout, SQLite tables/state, authentication staggering, shared limiters, queue behavior, startup, shutdown, backup, update compatibility, and previous-compatible-image recovery. Include distinct feed-retrieval, Open Graph fallback, and item-handler diagnostics; selected log backend/retention; optional custom CA behavior; and identifier-free status. Do not copy private scratchpad commentary or unverified claims. Leave the existing legacy documentation structure and current fleet guide unchanged.
+Document public contracts for configuration layout, the absent-version assume-v1 in-memory/no-rewrite bridge, aggregate-only stopped-backup SQLite compatibility, authentication staggering, shared limiters, queue behavior, successful-poll usefulness/grace health, startup, shutdown, backup, update compatibility, reconstructed-local versus embedded-candidate attestation comparison, and previous-compatible-image recovery. Include distinct structured feed-retrieval, Open Graph fallback, item-handler, and process-safety diagnostics; fixed reason-code/aggregate-count privacy; selected log backend/retention as a separate concern; optional custom CA behavior; and identifier-free status. Do not copy private scratchpad commentary or unverified claims. Leave existing migration/import/export assets and the current fleet guide unchanged and do not make them current-navigation or acceptance dependencies.
 
 - [ ] **Step 2: Add current architecture navigation without changing the fleet guide**
 
@@ -448,6 +556,8 @@ limitations:
 Store real records under `documentation/verification/<provider>/<mode>/<date>.yaml`. Do not create fabricated records during automated implementation.
 
 Any production image transition record must additionally include the approved change window; source local-image digest, revision/provenance, and runtime-contract digest; target published-image digest, revision/provenance, and runtime-contract digest; invariant-by-invariant compatibility evidence; configuration/state validation evidence; controlled fixture dry-run result; consistent backup reference; readiness evidence; and previous-compatible-image recovery evidence. Use sanitized artifact references only; never record private identifiers, URLs, environment values, database contents, or raw logs.
+
+When source image metadata is unavailable, record `sourceAttestationKind: reconstructed`, the selected-file-evidence verification result, and canonical reconstructed contract digest. Never call that evidence embedded. State validation records aggregate expected/discovered/passed counts and fixed issue codes only and must show all 59 passed from a stopped read-only backup copy.
 
 - [ ] **Step 4: Add troubleshooting decision trees**
 
@@ -521,6 +631,11 @@ Add drift assertions that current deployment documents:
 - declare the selected logging backend and bounded retention policy;
 - describe optional custom CA support generically when available; and
 - never claim a production image transition is Field-verified without its transition record.
+- describe the absent-version assume-v1 bridge as in-memory/non-mutating and reject unknown explicit versions;
+- require reconstructed local-image evidence to be labeled reconstructed, never embedded;
+- require aggregate-only all-59 state compatibility and successful-poll usefulness health outcomes;
+- describe structured runtime log categories/reason codes separately from backend retention; and
+- leave migration/import/export assets and `documentation/fleet.md` untouched and outside current navigation/acceptance.
 
 - [ ] **Step 6: Integrate checks**
 
@@ -598,6 +713,8 @@ Record:
 - exact commits tested in both repositories;
 - image digest;
 - source/target runtime-contract versions, digests, and invariant comparison result;
+- source attestation kind (`reconstructed` for the current local image), selected-file evidence verification, and candidate embedded-attestation result;
+- absent/explicit/unknown configuration-version bridge result and all-59 aggregate state compatibility result;
 - unit/typecheck/smoke counts;
 - Docker solo/fleet verification results;
 - managed manifest validation results;
@@ -628,3 +745,5 @@ bash tests/run-all.sh
 ```
 
 all exit 0, the compatibility update dry run produces the expected patch, and the final report explicitly distinguishes local verification from field verification. No release or documentation workflow deploys to production; a production image transition is complete only when a separate approved Field-verified record satisfies the compatibility/provenance gate.
+
+That field gate must show a verified reconstructed attestation for the current local image, an embedded attestation for the candidate, invariant-by-invariant equality, non-mutating absent-version config validation, and aggregate-only read compatibility for all 59 stopped-backup state stores. It also records the structured-log privacy and usefulness-health acceptance results without identifiers or raw errors.

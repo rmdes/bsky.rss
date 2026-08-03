@@ -28,6 +28,8 @@ Avoid an unnecessary breaking rewrite of every existing configuration file.
 - Solo environment variables are converted to an internal object and validated against the solo schema; operators do not set a schema-version environment variable.
 - Release compatibility metadata publishes the supported fleet schema version.
 
+Canonical newly written fleet configuration requires `schemaVersion: 1`, but the first hardened runtime must also load the current production shape without mutating it. Before schema validation, the shared loader treats an absent fleet-level `schemaVersion` as v1 in a deep in-memory normalized copy, emits only the sanitized notice code `fleet-schema-version-assumed-v1`, and never rewrites the source file. No other key, value, array, or object shape may change. An explicit `schemaVersion: 1` follows the same validation path without a notice; any explicit unknown version is rejected.
+
 The schema-registry test therefore checks draft, strict object boundaries, and versioned `$id` values for every schema, but checks `properties.schemaVersion.const === 1` only for the fleet-wide schema.
 
 ## 3. Schema Loading
@@ -103,6 +105,8 @@ The fleet backup script must:
 
 Do not add an unspecified alternative using `VACUUM INTO` or a future application backup command in this implementation cycle.
 
+`tests/backup-restore.sh` must prove each step independently: capture stopped/running and dry-run/publishing modes; graceful stop and wait; shutdown-log verification when logs are available; capture of the complete closed data tree including WAL/SHM sidecars plus config, secrets, and metadata; archive mode `0600`; no restart when initially stopped; conditional restart in the exact prior mode when initially running; exact restored file modes and fixture row; and active-fleet restore refusal.
+
 ## 7. Docker Validation Acceptance
 
 Do not run the image validator against placeholder example secrets and expect success.
@@ -157,9 +161,13 @@ Do not replace the locally built production image with a GHCR image merely becau
 6. readiness evidence; and
 7. a tested recovery path using the previous compatible fleet image.
 
+The current local image has no embedded revision/runtime-contract metadata. Its source-side comparison input must therefore be a canonical `runtime-contract.v1` reconstructed from the verified source revision and the audited selected-file SHA-256 evidence. The attestation must be labeled `reconstructed`, never `embedded`; validate the source revision, evidence allowlist, every selected-file hash, image digest, canonical contract digest, and absence of production data before comparing it invariant-by-invariant with the candidate's embedded attestation. A matching version or partially matching evidence cannot pass.
+
 ## 14. Backend-Neutral Bounded Logging
 
 Require bounded retention and privacy regardless of backend. Supported Docker profiles are host-managed `journald` with a documented and tested retention policy, and portable bounded `json-file`. Do not force a production driver switch. Logs, status, and support artifacts exclude identifiers, URLs, titles, bodies, credentials, sessions, database contents, and raw errors.
+
+Runtime logging is a separate application workstream from backend retention. It must emit structured events with an allowlisted category, reason code, and aggregate counts only across startup, configuration, authentication, feed retrieval, Open Graph fallback, item handling, queue activity, posting/dry-run suppression, rate limits, health transitions, shutdown, and process-safety events. It must never emit IDs, handles, titles, excerpts, URLs, raw errors, secrets, sessions, or content.
 
 ## 15. Optional Generic Custom CA
 
@@ -168,6 +176,8 @@ Preserve a generic optional CA-bundle contract compatible with `NODE_EXTRA_CA_CE
 ## 16. Production-Scale Startup Acceptance
 
 Exercise exactly 59 configured worker-equivalents with a 30-second sequential authentication stagger through an injected or virtual clock, without waiting roughly 29 real minutes. While activation progresses, `starting` stays live and ready enough once configuration, lock, status server, and scheduler progress are valid. Status exposes aggregate configured/active/failed counts only.
+
+Use an injected clock for post-activation grace and successful-poll freshness as well. Before the first poll and while activation/grace is valid, report `starting`, not false `unhealthy`. After activation plus grace, zero workers with a fresh successful poll or all feeds persistently failing is `unhealthy` even if processes remain active. At least one useful worker with any worker/feed failures is `degraded` and ready. The one-HTTP-500 fixture therefore remains useful, degraded, and ready while the other 58 continue successfully.
 
 ## 17. Failure Isolation and Classification
 
@@ -178,3 +188,25 @@ Use a controlled fixture where one synthetic feed returns persistent HTTP 500 wh
 Implementation, template scripts, automated tests, CI, and release workflows do not authorize connection to the production host, container lifecycle actions, publishing-mode changes, or deployment. Production adoption is a separate explicitly approved operation and becomes **Field-verified** only when its sanitized record includes the image-transition gate, readiness, and previous-compatible-image recovery evidence.
 
 The graceful-stop filesystem procedure in decision 6 is the only backup method planned for this cycle. Detailed task text and tests must implement that exact running-mode capture, graceful stop/wait, shutdown-log verification when logs are available, complete closed-tree archive including sidecars, owner-only permissions, and conditional restart sequence.
+
+## 19. Aggregate State Compatibility Gate
+
+Before candidate adoption, run the candidate's non-mutating state validator against a stopped backup copy mounted read-only. It must enumerate exactly 59 independent SQLite stores and, for every store, run `PRAGMA integrity_check`, verify `PRAGMA application_id` and `PRAGMA user_version`, required tables, columns, indexes, and allowlisted queue statuses, and prove the candidate can open/read the store. Output is aggregate-only: counts and fixed reason codes, with no rows, content, identifiers, database names/paths, URLs, or raw errors. All 59 stores must pass and pre/post hashes and modes must match.
+
+Canonical interface:
+
+```bash
+node --import tsx fleet/validateStateCompatibility.ts \
+  --state-root /candidate-state \
+  --expected-stores 59
+```
+
+The production procedure mounts a stopped backup copy at `/candidate-state:ro` in the candidate image. Tests cover exactly 59 valid stores, missing/extra stores, corrupt SQLite, application/user-version mismatch, missing table/column/index, unknown queue status, candidate read failure, sanitized aggregate output, and non-mutation.
+
+## 20. Legacy Assets Outside This Program
+
+Do not create migration documentation, add legacy import/export round-trip tests, modify `documentation/fleet.md`, or otherwise activate historical migration/import/export work in this program. Existing legacy code and documents remain untouched and out of scope. Current production adoption is in-place hardening plus previous-compatible-image and pre-update-backup recovery.
+
+## 21. Provider Secret Delivery Assertions
+
+Fly, Railway, and Render fleet deployments receive `FLEET_SECRETS_JSON` directly from each provider's secret store as an environment variable consumed by the application-owned exactly-one-source parser. None may set `FLEET_SECRETS_PATH`, materialize JSON through a shell wrapper, redirect it to a file, or introduce a provider-specific parsing path. The manifest validator must assert the exact method for all three providers and reject literal secret values, shell materialization, or both secret sources.

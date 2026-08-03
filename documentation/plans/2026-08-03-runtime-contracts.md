@@ -18,6 +18,8 @@
 - Containers execute Node directly as PID 1.
 - Tests use `node:test` and `node:assert/strict` to match the repository.
 - Preserve current configuration shapes and values, 59 per-bot SQLite stores and state separation, 30-second sequential authentication, queue/freshness/rate-limit behavior, durable mounts, one publisher, and the 45-second container stop grace.
+- Canonical new fleet config requires `schemaVersion: 1`; an absent version in the current baseline is assumed to be v1 only in a deep in-memory normalized copy, with a fixed sanitized notice and no rewrite or other shape change.
+- State compatibility checks run non-mutating against a stopped backup copy, emit aggregate counts/fixed codes only, and require all 59 expected stores to pass before adoption.
 - Stable PID/container operation is not readiness or usefulness evidence; liveness, readiness, and lifecycle assertions remain separate.
 - Preserve optional `NODE_EXTRA_CA_CERTS`-style behavior through a generic validated custom-CA contract without private paths, endpoints, or feed identities.
 - Runtime work starts only after the Phase 0 documentation reconciliation PR is approved. Tests and implementation do not authorize production-host access or deployment.
@@ -128,12 +130,23 @@ git commit -m "test: add canonical project checks"
 - Create: `schemas/fleet-secrets.schema.json`
 - Create: `shared/config/schemaRegistry.ts`
 - Create: `shared/config/schemaRegistry.test.ts`
+- Create: `shared/config/fleetCompatibility.ts`
+- Create: `shared/config/fleetCompatibility.test.ts`
 - Modify: `package.json`
 - Modify: `yarn.lock`
 
 **Interfaces:**
 - Consumes: current solo environment variables, `config.example/fleet.json`, `config.example/bots/*/bot.json`, per-bot `config.json`, and fleet secrets JSON.
-- Produces: `SCHEMA_VERSION`, `SchemaName`, `getSchema(name)`, and Ajv-ready strict JSON Schema documents.
+- Produces: `SCHEMA_VERSION`, `SchemaName`, `getSchema(name)`, Ajv-ready strict JSON Schema documents, and the non-mutating fleet compatibility bridge.
+
+```ts
+export interface FleetConfigNormalizationResult {
+  config: unknown;
+  noticeCodes: readonly "fleet-schema-version-assumed-v1"[];
+}
+
+export function normalizeFleetConfigForValidation(raw: unknown): FleetConfigNormalizationResult;
+```
 
 - [ ] **Step 1: Write failing schema-registry tests**
 
@@ -169,6 +182,17 @@ test("runtime schemas use the reviewed version boundary", () => {
   assert.deepEqual(secrets.additionalProperties, { type: "string" });
 });
 ```
+
+Create `shared/config/fleetCompatibility.test.ts` with four binding cases:
+
+```ts
+test("accepts absent fleet schemaVersion as v1 in memory and does not mutate input", () => {});
+test("accepts explicit fleet schemaVersion 1 without a compatibility notice", () => {});
+test("leaves an explicit unknown version for schema rejection", () => {});
+test("adds no change except fleet-level schemaVersion in the normalized copy", () => {});
+```
+
+The absent-version case asserts the fixed notice code `fleet-schema-version-assumed-v1`, byte-identical source-file contents before/after, unchanged original object, and a deep diff containing exactly one added fleet-level property. Tests must include nested objects and arrays so accidental reshaping fails.
 
 - [ ] **Step 2: Run the test and confirm it fails**
 
@@ -253,9 +277,13 @@ export function getSchema(name: SchemaName): Record<string, unknown> {
 
 No TypeScript compiler-setting change is needed for schema loading.
 
+Implement `normalizeFleetConfigForValidation` with a deep copy. It may add `schemaVersion: 1` only when the parsed top-level fleet object has no such property. It must never write, rename, coerce, default, reorder, or drop any other data. Notices contain a fixed code only: no path, identifier, config value, or serialized input.
+
 - [ ] **Step 6: Update checked-in examples**
 
 Add `"schemaVersion": 1` only to `config.example/fleet.json`. Preserve every existing per-bot `bot.json` and `config.json` top-level shape. Preserve `config.example/secrets/bsky-fleet.json` as the existing flat string map keyed by `secretKey`.
+
+Do not rewrite the current production config or make adoption depend on that manual edit. The compatibility bridge is what lets the first hardened runtime load its current absent-version shape.
 
 - [ ] **Step 7: Run schema tests and project checks**
 
@@ -263,6 +291,7 @@ Run:
 
 ```bash
 yarn tsx --test shared/config/schemaRegistry.test.ts
+yarn tsx --test shared/config/fleetCompatibility.test.ts
 yarn check
 ```
 
@@ -325,6 +354,8 @@ test("rejects placeholder secrets without printing the value", () => { /* REPLAC
 test("rejects bot directory and id mismatch", () => { /* existing behavior */ });
 test("rejects invalid URL and spacing bounds", () => { /* feedUrl and minSpacing > maxSpacing */ });
 test("sorts issues deterministically by botId, path, and code", () => { /* stable output */ });
+test("loads an absent-version fleet as v1 without rewriting it", () => { /* current baseline bridge */ });
+test("rejects an explicit unknown fleet schema version", () => { /* no fallback */ });
 ```
 
 Assert that serialized issues do not contain any secret value.
@@ -379,9 +410,9 @@ Cross-field checks must include:
 - writable data root when `checkFilesystem` is true;
 - schema version equality.
 
-- [ ] **Step 4: Make `loadFleet` consume validated data**
+- [ ] **Step 4: Make `loadFleet` normalize once and consume validated data**
 
-Refactor `fleet/configLoader.ts` so parsing and validation are not duplicated. `loadFleet` may still return per-bot runtime errors, but malformed fleet-wide configuration must throw a sanitized `FleetConfigurationError` containing only `ValidationIssue[]`.
+Refactor `fleet/configLoader.ts` so parsing and validation are not duplicated. Parse the fleet file, call `normalizeFleetConfigForValidation`, validate and use only that in-memory copy, and return fixed compatibility notice codes alongside the validated result. Never write the normalized object back to the source. `loadFleet` may still return per-bot runtime errors, but malformed fleet-wide configuration must throw a sanitized `FleetConfigurationError` containing only `ValidationIssue[]`. Task 7A routes those fixed notices through the structured startup/configuration logger once that logger lands.
 
 - [ ] **Step 5: Add the CLI**
 
@@ -398,6 +429,8 @@ const result = validateFleetTree({
 console.log(JSON.stringify(result, null, 2));
 process.exitCode = result.valid ? 0 : 1;
 ```
+
+The CLI prints `noticeCodes` when present. That compatibility notice contains no config path/value or serialized source; ordinary deterministic schema issue paths retain their existing validation contract. The compatibility test snapshots the config file before and after execution and proves equality.
 
 - [ ] **Step 6: Add package scripts**
 
@@ -432,6 +465,97 @@ git commit -m "feat: add fleet configuration validation"
 
 ---
 
+### Task 3A: Add Non-Mutating Aggregate State Compatibility Validation
+
+**Files:**
+- Create: `shared/state/stateCompatibility.ts`
+- Create: `shared/state/stateCompatibility.test.ts`
+- Create: `fleet/validateStateCompatibility.ts`
+- Create: `fleet/validateStateCompatibility.test.ts`
+- Modify: `package.json`
+
+**Interfaces:**
+
+```ts
+export type StateCompatibilityCode =
+  | "store-count-mismatch"
+  | "integrity-failed"
+  | "application-id-mismatch"
+  | "user-version-mismatch"
+  | "required-table-missing"
+  | "required-column-missing"
+  | "required-index-missing"
+  | "queue-status-unknown"
+  | "candidate-read-failed"
+  | "mutation-detected";
+
+export interface FleetStateCompatibilityResult {
+  compatible: boolean;
+  expectedStoreCount: number;
+  discoveredStoreCount: number;
+  passedStoreCount: number;
+  issueCounts: Partial<Record<StateCompatibilityCode, number>>;
+}
+
+export function validateFleetStateCompatibility(options: {
+  stateRoot: string;
+  expectedStoreCount: number;
+  expectedApplicationId: number;
+  expectedUserVersion: number;
+  requiredTables: Readonly<Record<string, readonly string[]>>;
+  requiredIndexes: readonly string[];
+  allowedQueueStatuses: readonly string[];
+}): FleetStateCompatibilityResult;
+```
+
+Production comparison interface, run inside the candidate image against a stopped backup copy mounted read-only:
+
+```bash
+docker run --rm --read-only \
+  -v "$STOPPED_BACKUP_DATA:/candidate-state:ro" \
+  <candidate-image> \
+  node --import tsx fleet/validateStateCompatibility.ts \
+    --state-root /candidate-state \
+    --expected-stores 59
+```
+
+- [ ] **Step 1: Write the failing 59-store compatibility matrix**
+
+Create synthetic SQLite fixtures and cover exactly 59 valid independent stores; 58 and 60 stores; corrupt SQLite; non-`ok` `PRAGMA integrity_check`; `PRAGMA application_id` and `PRAGMA user_version` mismatch; each required table, column, and index missing; an unknown persisted queue status; candidate read/open failure; and a mutation attempt. Assert all 59 must pass for `compatible=true`.
+
+Snapshot every fixture's SHA-256 and numeric file mode before and after validation and require exact equality. Invoke the CLI with identifiers, paths, row content, URLs, and raw-error sentinels in the fixtures; serialized output may contain only the result keys, numeric counts, booleans, and fixed `StateCompatibilityCode` values.
+
+- [ ] **Step 2: Run tests and confirm failure**
+
+```bash
+yarn tsx --test shared/state/stateCompatibility.test.ts fleet/validateStateCompatibility.test.ts
+```
+
+- [ ] **Step 3: Implement read-only structural validation**
+
+Enumerate SQLite stores internally and open each with read-only flags. Run `PRAGMA integrity_check`, `PRAGMA application_id`, `PRAGMA user_version`, `sqlite_schema` checks for required tables/indexes, `PRAGMA table_info` for required columns, and a distinct queue-status projection compared with an application-owned allowlist. Never select content-bearing columns; queue status codes may be compared internally but are not emitted. Catch failures at the store boundary and increment a fixed aggregate reason code; do not emit a database name, relative/absolute path, identifier, raw SQLite message, or row value.
+
+- [ ] **Step 4: Add the exact CLI**
+
+```json
+{
+  "fleet:validate-state": "NODE_NO_WARNINGS=1 tsx ./fleet/validateStateCompatibility.ts"
+}
+```
+
+Require `--state-root` and `--expected-stores`; the production gate passes `59`. The CLI has no mutating mode, opens databases read-only, prints only `FleetStateCompatibilityResult`, and exits 0 only when all expected stores pass. Adoption instructions additionally require the stopped backup copy to be mounted read-only.
+
+- [ ] **Step 5: Run checks and commit**
+
+```bash
+yarn tsx --test shared/state/stateCompatibility.test.ts fleet/validateStateCompatibility.test.ts
+yarn check
+git add package.json shared/state fleet/validateStateCompatibility.ts fleet/validateStateCompatibility.test.ts
+git commit -m "feat: validate fleet state compatibility"
+```
+
+---
+
 ### Task 4: Add Shared Health, Readiness, and Status Server
 
 **Files:**
@@ -447,6 +571,13 @@ git commit -m "feat: add fleet configuration validation"
 ```ts
 export type RuntimeMode = "solo" | "fleet";
 export type RuntimePhase = "starting" | "operational" | "degraded" | "unhealthy" | "shutting_down";
+export type HealthReasonCode =
+  | "partial-worker-failure"
+  | "no-useful-workers"
+  | "all-feeds-persistently-failing"
+  | "scheduler-stalled"
+  | "startup-failed"
+  | "process-safety-event";
 
 export interface RuntimeSnapshot {
   version: string;
@@ -459,6 +590,9 @@ export interface RuntimeSnapshot {
   lastActivityAt?: string;
   configuredBots?: number;
   activeBots?: number;
+  usefulWorkers?: number;
+  workersWithFreshSuccessfulPoll?: number;
+  persistentlyFailingFeeds?: number;
   failedBots?: number;
   totalQueueDepth?: number;
   lastSuccessfulPollAt?: string;
@@ -524,8 +658,8 @@ Keep the current default export shape temporarily so existing imports continue t
 ```ts
 markStarting();
 markReady();
-markDegraded(reasonCode: string);
-markUnhealthy(reasonCode: string);
+markDegraded(reasonCode: HealthReasonCode);
+markUnhealthy(reasonCode: HealthReasonCode);
 markShuttingDown();
 updateActivity(at?: Date);
 setDryRun(value: boolean);
@@ -533,7 +667,7 @@ start(): Promise<Server>;
 stop(): Promise<void>;
 ```
 
-Reason codes may be logged but must not be returned if they can include user content.
+Reason codes are application-owned allowlisted constants and never contain user content. Health payloads expose aggregate phase/count data, not reason text or arbitrary context.
 
 - [ ] **Step 6: Run tests and commit**
 
@@ -612,12 +746,11 @@ In `post()`, return before facet detection, image upload, or record creation:
 
 ```ts
 if (dryRun) {
-  console.log(`[${new Date().toUTCString()}] - [bsky.rss POST] [solo] [dry-run] publication suppressed`);
   return { ok: true, uri: "dry-run://noop" };
 }
 ```
 
-Do not log the complete post body.
+Do not log the post body, title, excerpt, URL, handle, identifier, or raw error. Task 7A adds the structured `post` / `dry-run-publication-suppressed` event with aggregate `suppressed` count after the shared logger exists.
 
 - [ ] **Step 6: Implement graceful shutdown**
 
@@ -667,9 +800,13 @@ git commit -m "feat: add safe solo runtime lifecycle"
 export interface FleetRuntimeMetrics {
   configuredBots: number;
   activeBots: number;
+  usefulWorkers: number;
+  workersWithFreshSuccessfulPoll: number;
+  persistentlyFailingFeeds: number;
   failedBots: number;
   totalQueueDepth: number;
   lastSuccessfulPollAt?: Date;
+  activatedAt?: Date;
   activationComplete: boolean;
   schedulerResponsive: boolean;
   failureCounts: {
@@ -679,7 +816,11 @@ export interface FleetRuntimeMetrics {
   };
 }
 
-export function deriveFleetPhase(metrics: FleetRuntimeMetrics): RuntimePhase;
+export function deriveFleetPhase(metrics: FleetRuntimeMetrics, options: {
+  now: () => Date;
+  successfulPollFreshnessMs: number;
+  postActivationGraceMs: number;
+}): RuntimePhase;
 ```
 
 - [ ] **Step 1: Write failing phase tests**
@@ -688,9 +829,13 @@ Required cases:
 
 ```text
 valid config + activation pending + zero active -> starting, ready=true
-activation complete + all active -> operational
-some active + some failed -> degraded
-activation complete + zero active + configured > 0 -> unhealthy
+activation complete + grace elapsed + all workers fresh/useful + no failures -> operational
+activation complete + grace elapsed + some useful + some failed -> degraded, ready=true
+activation complete + grace elapsed + zero useful workers -> unhealthy, ready=false
+activation complete + grace elapsed + all feeds persistently failing -> unhealthy, ready=false
+58 fresh useful workers + one persistent HTTP 500 -> degraded, ready=true
+some useful workers + any activation/poll/staleness failure -> degraded, ready=true
+activation complete + before first poll + grace not elapsed -> starting, ready=true
 scheduler not responsive -> unhealthy
 shutdown requested -> shutting_down
 ```
@@ -702,6 +847,9 @@ Add an injected-clock acceptance test with exactly 59 configured worker-equivale
 - aggregate configured/active/failed counts advance deterministically;
 - no bot identifier, feed URL, title, body, or raw error appears in status; and
 - a stable process with a stalled scheduler becomes unhealthy even though PID 1/container evidence remains stable.
+- successful-poll freshness and post-activation grace are computed from the injected clock, never wall-clock sleeps;
+- after grace, active process count alone cannot prevent `unhealthy` when useful workers are zero or all feeds persistently fail; and
+- the one-HTTP-500 worker plus 58 continuing fresh pollers stays useful overall, `degraded`, and ready.
 
 - [ ] **Step 2: Run tests and confirm failure**
 
@@ -716,9 +864,10 @@ Add methods that return numbers/timestamps only:
 ```ts
 BotWorker.queueDepth(): number;
 BotWorker.lastSuccessfulPollAt(): Date | undefined;
+BotWorker.hasPersistentFeedFailure(): boolean;
 ```
 
-Do not expose queue item bodies.
+Aggregate these into `usefulWorkers`, `workersWithFreshSuccessfulPoll`, and `persistentlyFailingFeeds` using the injected clock. Do not expose worker identities, feed URLs, queue item bodies, or per-worker timestamps.
 
 - [ ] **Step 4: Start the shared health server before staggered activation**
 
@@ -730,11 +879,11 @@ In `runFleet.ts`:
 4. start the health server;
 5. begin coordinator activation;
 6. update counts after every activation success/failure;
-7. transition to operational/degraded/unhealthy according to `deriveFleetPhase`.
+7. remain `starting` through the first-poll/post-activation grace boundary, then transition to operational/degraded/unhealthy according to `deriveFleetPhase`.
 
 - [ ] **Step 5: Add scheduler heartbeat**
 
-Update status whenever a worker completes a feed poll or queue cycle. The stale threshold must be configurable with `FLEET_HEALTH_STALE_AFTER_MS`, defaulting to ten minutes, and tested with an injected clock.
+Update status whenever a worker completes a feed poll or queue cycle. The successful-poll freshness threshold must be configurable with `FLEET_HEALTH_STALE_AFTER_MS`, defaulting to ten minutes; the post-activation first-poll grace must be configurable with `FLEET_HEALTH_GRACE_MS` and default to at least one configured poll interval. Both use the injected clock in tests.
 
 - [ ] **Step 6: Integrate shutdown state**
 
@@ -826,7 +975,9 @@ Assert that:
 - caught Open Graph fallback failures do not increment feed-retrieval or item-handler counts;
 - item-handler failures have their own count;
 - aggregate readiness is degraded rather than fleet-wide unhealthy while useful workers continue; and
-- status/log evidence contains counts and category codes only, never identifiers, URLs, titles, bodies, or raw error strings.
+- status evidence contains counts and category codes only, never identifiers, URLs, titles, bodies, or raw error strings.
+
+Task 7A reruns this smoke case after structured logging lands and applies the equivalent privacy/category assertions to captured log lines.
 
 - [ ] **Step 4: Run tests and confirm the missing harness fails**
 
@@ -864,12 +1015,108 @@ git commit -m "test: add no-publish runtime smoke fixtures"
 
 ---
 
+### Task 7A: Add Structured Sanitized Runtime Logging
+
+**Files:**
+- Create: `shared/logging/runtimeLogger.ts`
+- Create: `shared/logging/runtimeLogger.test.ts`
+- Create: `test/logging/runtimeCallSites.test.ts`
+- Modify: startup/config/auth/feed/Open-Graph/item-handler/queue/post/rate-limit/health/shutdown/process-safety call sites under `app/`, `fleet/`, and `shared/`
+
+**Interfaces:**
+
+```ts
+export type RuntimeLogCategory =
+  | "startup"
+  | "configuration"
+  | "authentication"
+  | "feed-retrieval"
+  | "open-graph-fallback"
+  | "item-handler"
+  | "queue"
+  | "post"
+  | "rate-limit"
+  | "health-transition"
+  | "shutdown"
+  | "process-safety";
+
+export type RuntimeReasonCode =
+  | "startup-begin"
+  | "configuration-valid"
+  | "configuration-invalid"
+  | "authentication-failed"
+  | "feed-retrieval-failed"
+  | "open-graph-fallback-used"
+  | "item-handler-failed"
+  | "queue-cycle-complete"
+  | "publication-complete"
+  | "dry-run-publication-suppressed"
+  | "rate-limit-deferred"
+  | "health-phase-changed"
+  | "shutdown-complete"
+  | "unhandled-rejection"
+  | "uncaught-exception";
+
+export type RuntimeCountCode =
+  | "configured"
+  | "active"
+  | "useful"
+  | "failed"
+  | "queued"
+  | "processed"
+  | "suppressed"
+  | "occurrences";
+
+export interface RuntimeLogEvent {
+  level: "debug" | "info" | "warn" | "error";
+  category: RuntimeLogCategory;
+  reasonCode: RuntimeReasonCode;
+  counts?: Readonly<Partial<Record<RuntimeCountCode, number>>>;
+}
+
+export interface RuntimeLogger {
+  emit(event: RuntimeLogEvent): void;
+}
+```
+
+The event type intentionally has no arbitrary metadata, identifier, URL, content, or `Error` field. The serializer adds a timestamp/version/mode where safe, validates category and reason-code allowlists, and emits one JSON object per line.
+
+- [ ] **Step 1: Write failing serializer and call-site coverage tests**
+
+Test startup, configuration, authentication, feed retrieval, Open Graph fallback, item handler, queue, post and dry-run suppression, rate limit, health transition, shutdown, and process-safety events. Each test injects sentinel IDs, handles, titles, excerpts, URLs, raw errors, secret values, session values, and content into the originating failure objects and captured legacy messages; none may appear in serialized logs.
+
+Assert output contains only allowlisted envelope keys, category/reason codes, count keys, and aggregate non-negative integer counts. Feed retrieval, Open Graph fallback, and item-handler categories cannot collapse. Unknown categories, unknown reason/count codes, non-integer/negative counts, arbitrary context, and raw `Error` objects are rejected before serialization.
+
+- [ ] **Step 2: Run tests and confirm failure**
+
+```bash
+yarn tsx --test shared/logging/runtimeLogger.test.ts test/logging/runtimeCallSites.test.ts
+```
+
+- [ ] **Step 3: Implement the logger and replace unsafe call sites**
+
+Map caught errors to fixed reason codes at the boundary and increment aggregate counts. Never interpolate or spread input objects into an event. Process-safety handlers emit only `unhandled-rejection` or `uncaught-exception` plus aggregate occurrence counts and drive the documented health transition; they do not serialize the thrown value.
+
+- [ ] **Step 4: Keep retention out of the runtime logger**
+
+The application emits structured lines only. `journald`, bounded `json-file`, and provider-managed retention remain deployment/template responsibilities and are tested separately; this task must not select or configure a logging backend.
+
+- [ ] **Step 5: Run full checks and commit**
+
+```bash
+yarn tsx --test shared/logging/runtimeLogger.test.ts test/logging/runtimeCallSites.test.ts
+yarn check
+git add app fleet shared/logging test/logging
+git commit -m "feat: sanitize structured runtime logs"
+```
+
+---
+
 ### Task 8: Document the Runtime Contract
 
 **Files:**
 - Create: `documentation/architecture/runtime-contracts.md`
 - Create: `documentation/deployment/runtime-environment.md`
-- Modify: `documentation/fleet.md`
 - Modify: `README.md`
 
 **Interfaces:**
@@ -897,6 +1144,7 @@ Include:
 yarn check
 yarn fleet:validate
 yarn fleet:validate:filesystem
+node --import tsx fleet/validateStateCompatibility.ts --state-root <stopped-backup-copy> --expected-stores 59
 curl -fsS http://127.0.0.1:8080/live
 curl -fsS http://127.0.0.1:8080/ready
 curl -fsS http://127.0.0.1:8080/health
@@ -905,9 +1153,11 @@ curl -fsS http://127.0.0.1:8080/status
 
 - [ ] **Step 3: Document status semantics and privacy boundary**
 
-Describe each phase, endpoint status code, startup staggering behavior, stale scheduler threshold, and excluded sensitive fields.
+Describe each phase, endpoint status code, startup staggering behavior, post-activation grace, successful-poll freshness/useful-worker metrics, stale scheduler threshold, and excluded sensitive fields. Document that startup before the first poll remains `starting`; after grace, zero useful workers or all feeds persistently failing is unhealthy; and one persistent HTTP 500 plus 58 fresh workers is degraded and ready.
 
-Document feed-retrieval, Open Graph fallback, and item-handler failures as distinct categories. Explain that process/container stability is not readiness evidence and that the production baseline remains Production-proven rather than lifecycle-Verified.
+Document feed-retrieval, Open Graph fallback, and item-handler failures as distinct structured categories. Document the fixed reason-code/aggregate-count logging boundary across every runtime category and keep backend retention as a separate deployment concern. Explain that process/container stability is not readiness evidence and that the production baseline remains Production-proven rather than lifecycle-Verified.
+
+Document the non-mutating absent-version assume-v1 bridge, the sanitized notice, explicit-version rejection, and the aggregate-only stopped-backup state validator. Existing migration/import/export assets and `documentation/fleet.md` remain untouched and are not navigation or acceptance dependencies.
 
 - [ ] **Step 3a: Document and test optional custom CA behavior**
 
@@ -955,6 +1205,10 @@ docker run --rm \
 
 The mounted temporary valid secrets file must make the first container validation exit 0. The checked-in placeholder secrets must make the separate second command exit non-zero without disclosing placeholder or secret values.
 
+A fixture matching the current production fleet-level shape without `schemaVersion` must also validate and load as v1 through the in-memory bridge, emit only `fleet-schema-version-assumed-v1`, leave the source byte-identical, and produce the same runtime object as an otherwise identical explicit-v1 fixture. An explicit unknown version must fail.
+
 The PR body must state that Bluesky publication was not performed and that AT Protocol behavior was tested through the controlled mock boundary.
 
 It must also record the virtual-time 59-worker/30-second result, the isolated HTTP 500 result proving 58 unaffected synthetic workers continued, the distinct Open Graph and item-handler counts, custom-CA validation, and the explicit boundary that no production connection or deployment was performed.
+
+It must additionally record the absent/explicit/unknown schema-version matrix with source non-mutation, the aggregate-only 59-store state fixture matrix with pre/post hash and mode equality, the successful-poll usefulness/grace matrix, and the structured-log call-site privacy matrix.

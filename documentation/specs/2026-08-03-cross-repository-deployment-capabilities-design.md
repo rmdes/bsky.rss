@@ -73,10 +73,11 @@ The application repository owns:
 - Provider-neutral deployment requirements.
 - Solo deployment manifests.
 - Fleet development and source-build examples.
-- Legacy importer and rollback exporter.
-- Migration, compatibility, and architecture documentation.
+- Current runtime compatibility and architecture documentation.
 - The cross-repository deployment capability matrix.
 - The release compatibility contract consumed by the fleet template.
+
+Existing legacy importer/exporter code and historical documents remain untouched and outside this program. They are not current deployment deliverables or acceptance dependencies.
 
 ### 3.2 `rmdes/bsky-rss-fleet-template`
 
@@ -228,7 +229,7 @@ Run one bot
 
 Run a fleet
   New deployment -> bsky-rss-fleet-template
-  Existing one-container-per-bot deployment -> migration guide
+  Existing current fleet -> in-place hardening and update operations
   Build from source -> fleet development guide
 ```
 
@@ -259,7 +260,7 @@ documentation/
     2026-08-03-cross-repository-deployment-capabilities-design.md
 ```
 
-Historical v1-to-v2 material is not part of the current production architecture. It may remain as archived migration history, but current deployment documents must not link to it as an active prerequisite.
+Historical v1-to-v2 material is not part of the current production architecture. It may remain untouched as archived history, but this program does not create migration documentation, require legacy import/export tests, modify `documentation/fleet.md`, or link historical material as an active prerequisite.
 
 ### 7.3 Information architecture in `bsky-rss-fleet-template`
 
@@ -362,13 +363,15 @@ Published image tag documentation must match the release workflow. If a Git tag 
 
 For the production baseline, a matching application version string is not compatibility or provenance evidence. Replacing the locally built running image with a published GHCR image requires all of the following before the change is authorized:
 
-1. image revision/provenance and selected runtime-file compatibility evidence;
+1. image revision/provenance and selected runtime-file compatibility evidence, using an explicitly reconstructed local-image attestation when embedded metadata is unavailable;
 2. validation of the existing configuration shapes and all per-bot state stores;
 3. a controlled fixture dry-run using the candidate image;
 4. a consistent pre-update fleet backup;
 5. an operator-approved change window;
 6. readiness evidence after replacement; and
 7. evidence that the previous compatible fleet image plus the pre-update backup can restore the same fleet.
+
+The current local image lacks embedded revision/runtime-contract metadata. Its comparison input must be a canonical `runtime-contract.v1` reconstructed from the verified source revision and audited selected-file SHA-256 evidence. The attestation is labeled `reconstructed`, not `embedded`, and records only the image digest, source revision, allowlisted relative file paths and hashes, canonical contract version/digest, and invariant projection. Generation must verify every selected-file hash against both the identified source revision and image evidence, reject missing/extra/mismatched evidence, and exclude absolute paths, environment values, configuration, state, and production data. Candidate comparison requires every invariant to match the candidate image's embedded attestation; version equality alone never passes.
 
 ### 8.5 Optional custom certificate authority
 
@@ -418,6 +421,29 @@ Validation must detect:
 
 Validation output must be deterministic, actionable, and free of secrets.
 
+Canonical newly written fleet configuration requires `schemaVersion: 1`. For baseline compatibility, the shared loader must normalize a parsed fleet object before validation:
+
+```ts
+export interface FleetConfigNormalizationResult {
+  config: unknown;
+  noticeCodes: readonly "fleet-schema-version-assumed-v1"[];
+}
+
+export function normalizeFleetConfigForValidation(raw: unknown): FleetConfigNormalizationResult;
+```
+
+If the fleet-level `schemaVersion` is absent, return a deep in-memory copy with only `schemaVersion: 1` added and emit that fixed sanitized notice code. Never write the normalized copy back to disk. Explicit `schemaVersion: 1` is accepted without a notice; an explicit unknown version is rejected. Tests compare the original and normalized object deeply and prove that no other key, value, array, or nested shape changes. This bridge is mandatory so the first hardened runtime can load the current production configuration unchanged.
+
+State adoption uses a separate non-mutating, aggregate-only validator against a stopped backup copy mounted read-only:
+
+```bash
+node --import tsx fleet/validateStateCompatibility.ts \
+  --state-root /candidate-state \
+  --expected-stores 59
+```
+
+It must enumerate exactly 59 independent SQLite stores and, for every store, run `PRAGMA integrity_check`, verify `PRAGMA application_id`, `PRAGMA user_version`, required tables, columns, indexes, and allowlisted queue statuses, and prove candidate read compatibility. All 59 stores must pass. Output contains only aggregate counts and fixed reason codes; no rows, content, identifiers, database names/paths, URLs, or raw errors. Tests assert pre/post hashes and modes are identical and cover missing/extra/corrupt stores and every structural/version/status failure.
+
 ## 10. Health, readiness, and status
 
 Solo and fleet modes must expose compatible health semantics.
@@ -456,8 +482,8 @@ shutting_down
 Required interpretation:
 
 - `starting`: valid configuration loaded; activation in progress.
-- `operational`: expected workers active and scheduler running.
-- `degraded`: one or more bots failed, but at least one worker remains operational.
+- `operational`: expected workers active, useful through fresh successful polls, and scheduler running with no classified failures.
+- `degraded`: one or more workers/feeds failed or became stale, but at least one useful worker remains and readiness stays true.
 - `unhealthy`: no useful workers, unrecoverable configuration failure, or stalled scheduler.
 - `shutting_down`: graceful shutdown initiated.
 
@@ -468,6 +494,9 @@ Status output must include:
 - Dry-run state.
 - Configured bot count.
 - Active bot count.
+- Useful worker count.
+- Workers with a fresh successful poll.
+- Persistently failing feed count.
 - Failed activation count.
 - Total queue depth.
 - Last successful poll time.
@@ -476,6 +505,8 @@ Status output must include:
 It must not include identifiers, passwords, sessions, feed contents, post bodies, or tokens by default.
 
 Acceptance must exercise 59 worker-equivalents with the production 30-second sequential authentication stagger through an injected or virtual clock, without a real 29-minute wait. Throughout valid activation, `starting` remains live and ready enough for startup checks, activation progress remains aggregate-only, and stable PID/container evidence remains distinct from readiness and lifecycle verification.
+
+Fleet status must derive aggregate usefulness from successful-poll freshness with an injected clock. A useful worker is active and has a successful poll within the configured freshness window. Before the first poll, while activation or the post-activation grace window is still valid, the phase remains `starting`, not false `unhealthy`. After activation plus grace, zero useful workers or all feeds persistently failing is `unhealthy` and not ready even if worker processes are active. At least one useful worker plus any activation, persistent-feed, or stale-worker failure is `degraded` and ready. The isolated HTTP-500 case therefore remains useful, degraded, and ready while the other 58 workers continue successful polls.
 
 One controlled fixture must return a persistent feed-retrieval HTTP 500 for exactly one synthetic worker while the other 58 continue queueing and draining. Feed retrieval failures, caught Open Graph fallback failures, and item-handler failures are separate status/log categories. Aggregate status may expose category counts only; it must never expose identifiers, URLs, titles, bodies, or raw errors.
 
@@ -522,6 +553,8 @@ Fleet backup must capture:
 
 The reference backup procedure records whether the fleet is running and its dry-run state, stops it gracefully when running, waits for it to be stopped, verifies graceful-shutdown logs when available, and archives the complete closed `data/` tree including SQLite sidecars together with config, secrets, and version metadata. The archive is owner-only. The fleet is restarted only when previously running and in its previous dry-run/publishing mode. Copying live database files without consistency guarantees is not sufficient.
 
+The backup/restore integration test must exercise each binding step: capture stopped/running and dry-run/publishing mode, graceful stop and wait, shutdown-log verification when available, closed-tree capture including WAL/SHM plus config/secrets/metadata, archive mode `0600`, no restart when initially stopped, conditional restart in the exact prior mode when initially running, exact restored file modes and fixture row, and refusal to restore while active.
+
 Backup archives containing secrets must be created with owner-only permissions and the documentation must recommend encryption before off-host storage.
 
 ### 12.2 Restore
@@ -567,7 +600,7 @@ Fleet requirements:
 
 - Exactly one machine.
 - Persistent volume mounted for state.
-- Secrets provided through Fly secrets.
+- `FLEET_SECRETS_JSON` delivered directly from Fly secrets to the application-owned exactly-one-source parser.
 - Health checks configured with startup-aware readiness.
 - Automatic stop disabled for active publishers.
 - Version-pinned image or reproducible source deployment.
@@ -578,7 +611,7 @@ Fleet requirements:
 
 - Exactly one replica.
 - Persistent volume for SQLite state.
-- Provider variables or mounted secret file.
+- `FLEET_SECRETS_JSON` delivered directly from the Railway secret store to the application-owned exactly-one-source parser.
 - Correct direct Node start command.
 - Health check path matching application readiness semantics.
 - Deployment replacement tested through local lifecycle simulation and later field verification.
@@ -590,6 +623,7 @@ Fleet requirements:
 - One paid, always-on web service so HTTP readiness is available.
 - Persistent disk.
 - One instance.
+- `FLEET_SECRETS_JSON` delivered directly from the Render secret store to the application-owned exactly-one-source parser.
 - HTTP readiness configured for the web service.
 - No recommendation of a free service that sleeps or discards required state.
 
@@ -628,12 +662,14 @@ Tests must cover:
 - Health state transitions.
 - Graceful shutdown.
 - PID-lock behavior.
-- Import/export round trips.
 - Backup/restore consistency helpers.
 - Secret redaction.
+- Absent fleet schema version accepted as v1 in memory without rewrite, explicit v1 accepted, unknown versions rejected, and no other shape changes.
+- Aggregate-only state compatibility across exactly 59 read-only SQLite fixtures, including integrity, application/user version, required tables/columns/indexes/statuses, candidate reads, and non-mutation.
 - A 59-worker, 30-second authentication stagger through virtual time, including identifier-free startup progress.
 - Isolation of one persistent feed HTTP 500 while the other 58 synthetic workers continue queueing and draining.
 - Separate feed-retrieval, Open Graph fallback, and item-handler failure categories.
+- Structured sanitized log events across every runtime category, including process-safety, with fixed reason codes and aggregate counts only.
 - Optional custom CA validation with and without a selected bundle.
 
 ### 14.2 Docker verification
@@ -663,6 +699,7 @@ Provider files must receive:
 - Port and health-path checks.
 - Persistent-storage checks.
 - Secret-handling checks.
+- Exact `FLEET_SECRETS_JSON` secret-store delivery for Fly, Railway, and Render fleet manifests, with no `FLEET_SECRETS_PATH`, shell materialization, literal value, or second parser.
 - Fleet replica-count checks.
 - Image-version checks.
 
@@ -692,21 +729,26 @@ The template must not silently advance to a new major or incompatible release. I
 
 ## 16. Logging and observability
 
-Both modes must use structured, consistent log categories for:
+Both modes must use structured, sanitized log events for:
 
 - Startup.
 - Configuration validation.
 - Authentication.
 - Feed polling.
+- Open Graph fallback.
+- Item handling.
 - Queue operations.
 - Posting or dry-run output.
 - Rate limits.
 - Health transitions.
 - Shutdown.
+- Process-safety events.
 
-Every deployment must document and verify bounded log retention and privacy regardless of backend. Supported Docker profiles include host-managed `journald` with a documented/tested retention policy and a portable bounded `json-file` profile. Production adoption must not force a logging-driver switch merely to satisfy this design. Logs and support artifacts must keep feed retrieval, Open Graph fallback, and item-handler failures distinct while excluding identifiers, URLs, titles, bodies, credentials, sessions, and raw errors.
+Each event has an allowlisted category, fixed reason code, severity, and optional aggregate counts. The application logger does not accept arbitrary context or raw `Error` serialization. Tests must cover startup, configuration, authentication, feed retrieval, Open Graph fallback, item handler, queue, post/dry-run, rate limit, health transition, shutdown, and process-safety call sites. Logs and support artifacts exclude IDs, handles, titles, excerpts, URLs, raw errors, secrets, sessions, and all content.
 
-Metrics are desirable but not required for the first implementation cycle. The design must leave a clear interface for later Prometheus metrics without coupling health responses to a specific monitoring stack.
+Backend retention is a separate deployment responsibility. Every deployment must document and verify bounded retention regardless of backend. Supported Docker profiles include host-managed `journald` with a documented/tested retention policy and a portable bounded `json-file` profile. Production adoption must not force a logging-driver switch merely to satisfy this design.
+
+The in-process aggregate usefulness/freshness metrics required for health are mandatory. External metrics export is optional in the first implementation cycle; leave a clear interface for later Prometheus integration without coupling health responses to a monitoring stack.
 
 ## 17. Audit findings converted to requirements
 
@@ -740,6 +782,7 @@ This implementation cycle does not require:
 - Runtime hot reload unless already supported safely.
 - Prometheus or Grafana deployment.
 - Automatic credential rotation.
+- New migration documentation, legacy import/export testing, or changes to existing legacy assets including `documentation/fleet.md`.
 
 Mocks and dry-run must nevertheless cover behavior up to the final external publication boundary.
 
@@ -751,9 +794,10 @@ This specification defines one coordinated program, not one giant pull request. 
 
 - Canonical test commands.
 - Configuration schemas and validation.
+- Non-mutating baseline config and 59-store compatibility validators.
 - Shared dry-run semantics.
 - Shared health/readiness/status model.
-- Lifecycle and secret-redaction tests.
+- Structured sanitized runtime logging plus lifecycle and redaction tests.
 - Virtual-time 59-worker readiness and isolated feed-failure acceptance.
 - Optional custom-CA validation.
 
@@ -791,7 +835,7 @@ The design is implemented when:
 
 1. Docker solo and fleet deployments start in dry-run and pass automated local smoke tests.
 2. Fleet credentials and state cannot be accidentally committed through the documented workflow.
-3. A dedicated validation command catches invalid and unsafe configuration before startup.
+3. Dedicated validation commands catch invalid/unsafe configuration and incompatible state before startup without mutating either.
 4. Solo and fleet expose documented health/readiness semantics.
 5. Fleet startup, degradation, and shutdown are represented correctly.
 6. All deployment documents clearly identify solo, fleet, or both.
@@ -812,6 +856,10 @@ The design is implemented when:
 21. Logging retention is bounded and privacy-preserving under either supported `journald` or bounded `json-file` profiles.
 22. Optional custom CA behavior is documented and tested generically.
 23. A published-image production transition has compatibility/provenance, backup, change-window, readiness, previous-compatible-image recovery, and Field-verified evidence; automated acceptance alone does not authorize it.
+24. The first hardened runtime accepts the current absent-version fleet config as v1 only in memory, emits a sanitized notice, and never rewrites or otherwise reshapes it.
+25. A reconstructed local-image attestation and read-only aggregate validator prove candidate compatibility for all 59 state stores before adoption.
+26. Runtime logs use allowlisted categories/reason codes and aggregate counts only, while Fly, Railway, and Render pass `FLEET_SECRETS_JSON` directly from provider secret stores.
+27. Existing migration/import/export assets and `documentation/fleet.md` remain unchanged and are not current navigation, deliverables, tests, or acceptance dependencies.
 
 ## 21. Decision summary
 

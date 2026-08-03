@@ -25,7 +25,11 @@ This program incrementally hardens the working production fleet in place; existi
 - Tests use controlled RSS/Atom fixtures and mocked AT Protocol responses.
 - A versioned production update requires a consistent pre-update backup and a tested recovery path using the previous compatible fleet image.
 - Preserve current configuration shapes, 59 per-bot SQLite stores and state separation, 30-second sequential authentication staggering, queue/freshness/rate-limit behavior, direct Node PID 1, durable mounts, one publisher, 45-second stop grace, and optional custom CA behavior.
+- Preserve the current absent fleet-level schema version through an in-memory assume-v1 compatibility bridge; canonical new config still requires `schemaVersion: 1`, unknown versions fail, and no file is rewritten.
+- Candidate adoption requires an aggregate-only, read-only compatibility pass for all 59 SQLite stores and a reconstructed local-image attestation when embedded metadata is unavailable.
+- Structured runtime logs use allowlisted categories/reason codes and aggregate counts only; backend retention remains a separate deployment contract.
 - Bounded, privacy-preserving logging is required regardless of backend; supported profiles include host-managed `journald` with tested retention and portable bounded `json-file`.
+- Existing legacy importer/exporter and historical documentation, including `documentation/fleet.md`, remain untouched and outside this program.
 - Runtime implementation and automated acceptance do not authorize production-host access, lifecycle actions, publishing changes, or deployment.
 
 ---
@@ -51,7 +55,7 @@ Before runtime work begins, read and preserve:
 
 The documentation-only reconciliation PR covering the authoritative design, complete plan suite, and review decisions must be approved before Task 1 of the runtime plan starts. `/home/skyfleet-next` remains the **Production-proven baseline**. Stable process evidence does not make health, shutdown, backup, restore, update, or recovery **Verified**. Production adoption remains a separate operator-approved and **Field-verified** operation.
 
-A published GHCR image must not replace the locally built production image merely because both report `2.2.0`. The transition gate requires compatibility/provenance comparison, existing config/state validation, controlled fixture dry-run, consistent backup, an operator-approved change window, readiness evidence, and previous-compatible-image recovery evidence.
+A published GHCR image must not replace the locally built production image merely because both report `2.2.0`. Because the local image lacks embedded revision/runtime-contract metadata, the source side uses an explicitly `reconstructed` canonical attestation derived from the verified source revision and audited selected-file hashes; it is never represented as embedded evidence. The transition gate requires invariant-by-invariant candidate comparison, non-mutating existing-config validation, aggregate-only read-only validation of all 59 state stores, controlled fixture dry-run, consistent backup, an operator-approved change window, readiness evidence, and previous-compatible-image recovery evidence.
 
 ## Plan Suite
 
@@ -60,7 +64,9 @@ Execute the plans in this order:
 1. [`2026-08-03-runtime-contracts.md`](2026-08-03-runtime-contracts.md)
    - Canonical test/check commands.
    - JSON Schemas and deterministic validation.
+   - Non-mutating absent-version compatibility bridge and aggregate-only SQLite compatibility validator.
    - Compatible solo/fleet health, readiness, and status.
+   - Successful-poll usefulness semantics and structured sanitized runtime logging.
    - Solo dry-run and lifecycle parity.
    - Mocked feed-to-publication-boundary smoke harness.
 
@@ -111,20 +117,26 @@ The implementation program is complete only when all of the following are eviden
 - `yarn test`, `yarn typecheck`, and `yarn check` pass in `bsky.rss`.
 - Solo and fleet Docker smoke tests pass with controlled fixtures and no real Bluesky post.
 - Fleet configuration validation rejects malformed, duplicate, placeholder, and incompatible inputs.
+- The current absent-version fleet config is accepted as v1 in an in-memory copy with one sanitized notice; explicit v1 passes, unknown versions fail, and no other shape/file change occurs.
+- Exactly 59 stopped-backup SQLite stores pass aggregate-only integrity, application/user-version, table/column/index/status, candidate-read, hash, and mode checks before adoption.
 - Solo and fleet health endpoints expose consistent liveness, readiness, health, and status semantics.
 - Fleet startup reports `starting` during staggered activation rather than becoming falsely unhealthy.
 - A virtual-time acceptance case exercises 59 configured worker-equivalents with the 30-second stagger without a real 29-minute wait, keeping `starting` live and ready enough.
 - A persistent feed HTTP 500 affecting one synthetic worker is isolated while the other 58 continue queueing and draining; feed retrieval, Open Graph fallback, and item-handler failures remain distinct and aggregate-only.
+- Injected-clock usefulness tests keep pre-poll startup `starting`, mark zero useful/all-persistently-failing workers unhealthy after grace, and keep one HTTP 500 plus 58 fresh successful pollers degraded and ready.
 - The fleet template starts in dry-run with a pinned image and cannot accidentally commit runtime secrets or state.
-- Backup and restore tests prove SQLite-consistent state recovery.
+- Backup and restore tests prove every graceful-stop binding step, closed data/config/secrets/metadata capture including WAL/SHM, archive mode `0600`, conditional exact-mode restart, exact restored modes/row, and active restore refusal.
+- Runtime logging tests cover every required category with fixed reason codes/aggregate counts and reject IDs, handles, titles, excerpts, URLs, raw errors, secrets, sessions, and content.
 - Logging retention and privacy checks pass for documented `journald` and bounded `json-file` profiles without forcing a driver switch.
 - Optional custom CA mounting/selection passes absent, valid, and invalid-bundle tests without any private endpoint or path.
 - Fly.io, Railway, Render, and DigitalOcean manifests parse and satisfy the capability matrix or explicitly document unsupported features.
+- Fly, Railway, and Render fleet validators prove direct provider-secret-store `FLEET_SECRETS_JSON` delivery to the application parser with no path source or shell materialization.
 - Every deployment document declares mode, provider, evidence status, state requirement, and version policy.
 - A release compatibility check verifies that the template examples and pinned image agree with application schemas and entry points.
 - The release workflow can open a version-update PR in the companion repository.
 - No document claims field verification without a dated provider verification record.
 - Any production image transition record includes the explicit GHCR compatibility gate and previous-compatible-image recovery evidence; no test or workflow performs production deployment.
+- The current local-image side of that gate carries a verified `reconstructed` attestation and is compared with the candidate's embedded contract; matching version strings alone fail.
 
 ## PR and Review Gates
 
