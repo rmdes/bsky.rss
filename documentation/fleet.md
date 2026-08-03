@@ -80,11 +80,15 @@ separately and can still result in a successful post.
 Use temporary per-bot overrides when investigating one bot:
 
 ```bash
+yarn fleet:log set <bot-id> summary|verbose|debug --for <positive duration>
 yarn fleet:log set <bot-id> debug --for 15m
 yarn fleet:log set <bot-id> verbose --for 30m
 yarn fleet:log list
 yarn fleet:log clear <bot-id>
 ```
+
+The `set` duration must be a positive whole number followed by `s`, `m`, or
+`h` (for example, `15m` or `30m`).
 
 Overrides expire automatically and return that bot to `FLEET_LOG_LEVEL`. The
 log CLI only reads status and override data, or changes the override document;
