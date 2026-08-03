@@ -9,7 +9,61 @@ import { removeHTMLTags, decodeHTMLTwice, fixMalformedUrl, parseString, textOf, 
 import { computeDedupeKey } from "./dedupeKey.ts";
 import { BotStore } from "./botStore.ts";
 import { SharedLimiters } from "./sharedLimiters.ts";
+import { BotOperations } from "./botOperations.ts";
+import { FleetLogger, type FleetLogRecord } from "./logging.ts";
 import jimp from "jimp";
+
+const fixedNow = new Date("2026-08-03T12:00:00.000Z");
+
+function createRuntime(
+  botId = "test-bot",
+  fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>
+): { operations: BotOperations; logger: FleetLogger; records: FleetLogRecord[]; fetchOpenGraph?: typeof fetchOpenGraph } {
+  const records: FleetLogRecord[] = [];
+  return {
+    operations: new BotOperations(botId, () => fixedNow),
+    logger: new FleetLogger({
+      defaultLevel: "debug",
+      now: () => fixedNow,
+      sink: (_line, record) => records.push(record),
+    }),
+    records,
+    fetchOpenGraph,
+  };
+}
+
+function createInstrumentedReader(
+  t: { after(callback: () => void): void },
+  options: {
+    config?: Record<string, unknown>;
+    fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>;
+  } = {}
+) {
+  const dir = mkdtempSync(join(tmpdir(), "feedreader-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const store = new BotStore(join(dir, "state.sqlite"));
+  t.after(() => store.close());
+  const runtime = createRuntime("test-bot", options.fetchOpenGraph);
+  const reader = new FeedReader(
+    "test-bot",
+    new URL("http://127.0.0.1:1/feed.xml"),
+    5,
+    { string: "$title", ...options.config },
+    store,
+    new SharedLimiters({
+      maxConcurrentOpenGraphFetches: 1,
+      maxConcurrentImageJobs: 1,
+      maxImageDownloadBytes: 10_000_000,
+      httpTimeoutMs: 5000,
+    }),
+    runtime
+  );
+  const underlying = (reader as any).reader;
+  underlying.read = () => undefined;
+  underlying.start = () => undefined;
+  underlying.stop = () => undefined;
+  return { reader, runtime };
+}
 
 test("removeHTMLTags strips tags and collapses whitespace", () => {
   assert.equal(removeHTMLTags("<p>Hello <b>world</b></p>"), "Hello world");
@@ -108,6 +162,158 @@ test("two feedme-style attributed guid objects with different text no longer col
   assert.notEqual(keyA, keyB);
 });
 
+test("an items batch with entries records a successful feed poll", (t) => {
+  // Break caught: removing the FeedSub `items` success listener leaves successful
+  // polls invisible even though feedsub delivered a complete batch.
+  const { reader, runtime } = createInstrumentedReader(t);
+  reader.start();
+
+  (reader as any).reader.emit("items", [{ title: "one" }]);
+
+  const snapshot = runtime.operations.snapshot();
+  assert.equal(snapshot.feedState, "ok");
+  assert.equal(snapshot.counters.feedPollSucceeded, 1);
+  assert.equal(snapshot.lastFeedSuccessAt, fixedNow.toISOString());
+});
+
+test("an empty items batch still records a successful feed poll", (t) => {
+  // Break caught: treating an empty but successfully fetched feed as a failed or
+  // unrecorded poll hides the health of feeds that simply have no new entries.
+  const { reader, runtime } = createInstrumentedReader(t);
+  reader.start();
+
+  (reader as any).reader.emit("items", []);
+
+  const snapshot = runtime.operations.snapshot();
+  assert.equal(snapshot.feedState, "ok");
+  assert.equal(snapshot.counters.feedPollSucceeded, 1);
+});
+
+test("feed failures are summarized once and a later items batch records the exact recovery count", (t) => {
+  // Break caught: logging every failed poll creates an incident flood, while losing
+  // the prior count makes a recovery impossible to assess from the summary line.
+  const { reader, runtime } = createInstrumentedReader(t);
+  reader.start();
+
+  (reader as any).reader.emit("error", new Error("unable to verify the first certificate"));
+  (reader as any).reader.emit("error", new Error("unable to verify the first certificate"));
+
+  const duringFailure = runtime.operations.snapshot();
+  assert.equal(duringFailure.feedState, "failing");
+  assert.equal(duringFailure.counters.feedPollFailed, 2);
+  assert.equal(duringFailure.consecutiveFeedFailures, 2);
+  assert.equal(duringFailure.lastFeedFailureCategory, "tls");
+  assert.deepEqual(
+    runtime.records.filter((record) => record.level === "summary").map((record) => record.message),
+    ["Feed unavailable (tls)"]
+  );
+
+  (reader as any).reader.emit("items", []);
+
+  const recovered = runtime.operations.snapshot();
+  assert.equal(recovered.feedState, "ok");
+  assert.equal(recovered.counters.feedPollSucceeded, 1);
+  assert.equal(recovered.consecutiveFeedFailures, 0);
+  assert.deepEqual(
+    runtime.records.filter((record) => record.level === "summary").map((record) => record.message),
+    ["Feed unavailable (tls)", "Feed recovered after 2 failed poll(s)"]
+  );
+});
+
+test("a successful Open Graph fetch records success", async (t) => {
+  // Break caught: accepting the fetched Open Graph result without recording its
+  // outcome makes the operations snapshot undercount successful enrichment.
+  const { reader, runtime } = createInstrumentedReader(t, {
+    config: { publishEmbed: true, embedType: "card" },
+    fetchOpenGraph: async () => ({
+      ogTitle: "Open Graph title",
+      ogDescription: "Open Graph description",
+      ogUrl: "https://example.test/canonical",
+    }),
+  });
+  const emitted: unknown[] = [];
+  reader.onItem((item) => emitted.push(item));
+
+  await (reader as any).handleItem({
+    title: "RSS title",
+    link: "https://example.test/article",
+    description: "RSS description",
+    pubdate: "2026-08-03T12:01:00.000Z",
+  });
+
+  assert.equal(runtime.operations.snapshot().counters.openGraphSucceeded, 1);
+  assert.equal(runtime.operations.snapshot().counters.openGraphFallback, 0);
+  assert.deepEqual(emitted, [
+    {
+      title: "RSS title",
+      content: "RSS title",
+      embed: {
+        uri: "https://example.test/canonical",
+        title: "Open Graph title",
+        description: "Open Graph description",
+        imageUrl: undefined,
+        imageAlt: undefined,
+        type: "card",
+      },
+      languages: undefined,
+      itemDate: "2026-08-03T12:01:00.000Z",
+      dedupeKey: computeDedupeKey("test-bot", "https://example.test/article"),
+    },
+  ]);
+});
+
+test("a rejected Open Graph fetch records fallback without leaking item details to summary logs", async (t) => {
+  // Break caught: a rejected enrichment request must retain today's RSS-derived
+  // embed fallback, but leaking its URL/title/error to summary logs exposes noisy
+  // operational detail and makes a harmless fallback look like a feed outage.
+  const itemUrl = "https://private.example.test/article";
+  const itemTitle = "Sensitive RSS title";
+  const rawError = "upstream token should stay debug-only";
+  const { reader, runtime } = createInstrumentedReader(t, {
+    config: { publishEmbed: true, embedType: "card" },
+    fetchOpenGraph: async () => {
+      throw new Error(rawError);
+    },
+  });
+  const emitted: any[] = [];
+  reader.onItem((item) => emitted.push(item));
+
+  await (reader as any).handleItem({
+    title: itemTitle,
+    link: itemUrl,
+    description: "RSS fallback description",
+    pubdate: "2026-08-03T12:01:00.000Z",
+  });
+
+  assert.deepEqual(emitted[0].embed, {
+    uri: itemUrl,
+    title: itemTitle,
+    description: "RSS fallback description",
+    imageUrl: undefined,
+    imageAlt: undefined,
+    type: "card",
+  });
+  assert.equal(runtime.operations.snapshot().counters.openGraphSucceeded, 0);
+  assert.equal(runtime.operations.snapshot().counters.openGraphFallback, 1);
+
+  const summaries = runtime.records.filter((record) => record.level === "summary");
+  assert.equal(summaries.length, 0);
+  assert.equal(
+    summaries.some((record) =>
+      [itemUrl, itemTitle, rawError].some((sensitiveDetail) => record.message.includes(sensitiveDetail))
+    ),
+    false
+  );
+  assert.ok(
+    runtime.records.some(
+      (record) => record.level === "verbose" && record.message.includes(itemUrl) && record.message.includes(itemTitle)
+    )
+  );
+  assert.ok(
+    runtime.records.some((record) => record.level === "debug" && record.message.includes(rawError))
+  );
+});
+
 test("start() attaches an error listener so a feed-fetch failure is logged per-bot, not an uncaught exception", (t) => {
   // Found live in production: FeedSub (a Node EventEmitter) throws an
   // 'error' event as an uncaught exception by default when nothing is
@@ -132,7 +338,8 @@ test("start() attaches an error listener so a feed-fetch failure is logged per-b
     5,
     { string: "$title" },
     store,
-    sharedLimiters
+    sharedLimiters,
+    createRuntime()
   );
   t.after(() => reader.stop());
   reader.start();
@@ -177,7 +384,8 @@ test("resolveEmbedImage returns undefined when the response exceeds maxImageDown
     5,
     { string: "$title" },
     store,
-    sharedLimiters
+    sharedLimiters,
+    createRuntime()
   );
 
   const result = await reader.resolveEmbedImage(`http://127.0.0.1:${port}/image.jpg`);
@@ -212,7 +420,8 @@ test("resolveEmbedImage succeeds when the response is within maxImageDownloadByt
     5,
     { string: "$title" },
     store,
-    sharedLimiters
+    sharedLimiters,
+    createRuntime()
   );
 
   const result = await reader.resolveEmbedImage(`http://127.0.0.1:${port}/image.jpg`);

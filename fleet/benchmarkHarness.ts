@@ -10,6 +10,8 @@ import { BskyClient } from "./bskyClient.ts";
 import { FeedReader } from "./feedReader.ts";
 import { BotWorker } from "./botWorker.ts";
 import { SharedLimiters } from "./sharedLimiters.ts";
+import { BotOperations } from "./botOperations.ts";
+import { FleetLogger } from "./logging.ts";
 
 export interface BenchmarkOptions {
   botCount: number;
@@ -117,6 +119,7 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
   const workers: BotWorker[] = [];
   const stores: BotStore[] = [];
   const feedReaders: FeedReader[] = [];
+  const logger = new FleetLogger({ defaultLevel: "summary", sink: () => undefined });
 
   for (let i = 0; i < options.botCount; i++) {
     const botId = `bench-bot-${i}`;
@@ -138,7 +141,8 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
         descriptionClearHTML: false,
       },
       store,
-      sharedLimiters
+      sharedLimiters,
+      { operations: new BotOperations(botId), logger }
     );
     feedReaders.push(feedReader);
     const worker = new BotWorker({

@@ -6,6 +6,8 @@ import { decode } from "html-entities";
 import { BotStore } from "./botStore.ts";
 import { computeDedupeKey } from "./dedupeKey.ts";
 import { SharedLimiters } from "./sharedLimiters.ts";
+import { BotOperations, classifyFeedFailure } from "./botOperations.ts";
+import { FleetLogger, formatDebugError } from "./logging.ts";
 
 export interface FeedItem {
   title: string;
@@ -31,6 +33,12 @@ export interface FeedReaderConfig {
   forceDescriptionEmbed?: boolean;
   removeDuplicate?: boolean;
   titleClearHTML?: boolean;
+}
+
+export interface FeedReaderRuntime {
+  operations: BotOperations;
+  logger: FleetLogger;
+  fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>;
 }
 
 export interface ParsedEmbed {
@@ -131,7 +139,8 @@ export class FeedReader {
     fetchIntervalMinutes: number,
     private config: FeedReaderConfig,
     private store: BotStore,
-    private sharedLimiters: SharedLimiters
+    private sharedLimiters: SharedLimiters,
+    private runtime: FeedReaderRuntime
   ) {
     this.reader = new FeedSub(String(feedUrl), {
       interval: fetchIntervalMinutes,
@@ -152,10 +161,23 @@ export class FeedReader {
     // safety net rather than handled per-bot here - a feed-fetch failure
     // (a broken TLS cert chain, DNS failure, timeout, etc.) must not be
     // allowed to fall through to that global handler as the primary defense.
-    this.reader.on("error", (err: Error) => {
-      console.log(
-        `[${new Date().toUTCString()}] - [bsky.rss FEED] [${this.botId}] Error fetching feed: ${err}`
-      );
+    this.reader.on("items", () => {
+      const { recoveredFailures } = this.runtime.operations.recordFeedSuccess();
+      if (recoveredFailures > 0) {
+        this.runtime.logger.summary(
+          "FEED",
+          `Feed recovered after ${recoveredFailures} failed poll(s)`,
+          this.botId
+        );
+      }
+    });
+    this.reader.on("error", (err: unknown) => {
+      const category = classifyFeedFailure(err);
+      const { becameFailing } = this.runtime.operations.recordFeedFailure(category);
+      if (becameFailing) {
+        this.runtime.logger.summary("FEED", `Feed unavailable (${category})`, this.botId);
+      }
+      this.runtime.logger.debug("FEED", formatDebugError(err), this.botId);
     });
     this.reader.read();
     // handleItem is async; the EventEmitter has no way to await or catch a
@@ -164,9 +186,8 @@ export class FeedReader {
     // process - fatal for every other bot sharing this process.
     this.reader.on("item", (item: FeedItem) => {
       this.handleItem(item).catch((err) => {
-        console.log(
-          `[${new Date().toUTCString()}] - [bsky.rss FEED] [${this.botId}] Error handling item: ${err}`
-        );
+        this.runtime.logger.summary("FEED", "Item handling failed", this.botId);
+        this.runtime.logger.debug("FEED", formatDebugError(err), this.botId);
       });
     });
     this.reader.start();
@@ -193,17 +214,19 @@ export class FeedReader {
   }
 
   private async handleItem(item: FeedItem): Promise<void> {
+    const itemUrl = typeof item.link === "object" ? item.link.href : item.link;
     const useDate: string | undefined = this.config.dateField
       ? item[this.config.dateField]
       : (item.pubdate ?? item.published);
     if (!useDate) {
-      console.log(
-        `[${new Date().toUTCString()}] - [bsky.rss FEED] [${this.botId}] No date provided by RSS reader for post.`
+      this.runtime.logger.verbose(
+        "FEED",
+        `Skipping item without a date: ${item.title ?? "(untitled)"} (${itemUrl ?? "no URL"})`,
+        this.botId
       );
       return;
     }
 
-    const itemUrl = typeof item.link === "object" ? item.link.href : item.link;
     // Fall back to a guid-like field before giving up, so two distinct link-less items
     // from the same bot don't collide on the same dedupe key / AT-Proto rkey (§3.4 step 5
     // calls for "item link/guid"). FeedItem has no typed guid field (feedsub's shape
@@ -229,10 +252,16 @@ export class FeedReader {
       // Dedup check runs before any network fetch, matching rssHandler.ts's real
       // ordering today — avoids the expensive OG/image fetch for known duplicates.
       if (this.config.removeDuplicate) {
-        if (this.store.seenValueExists(url)) return;
+        if (this.store.seenValueExists(url)) {
+          this.runtime.logger.verbose("FEED", `Skipping duplicate item: ${item.title} (${url})`, this.botId);
+          return;
+        }
         this.store.writeSeenValue(url);
       } else {
-        if (new Date(useDate) <= new Date(lastCursor)) return;
+        if (new Date(useDate) <= new Date(lastCursor)) {
+          this.runtime.logger.verbose("FEED", `Skipping stale item: ${item.title} (${url})`, this.botId);
+          return;
+        }
       }
 
       let imageUrl: string | undefined;
@@ -261,23 +290,11 @@ export class FeedReader {
 
       const defaultUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-      const openGraphResult: any = await this.sharedLimiters.withOgLimit(() =>
-        og({
-          url,
-          timeout: this.sharedLimiters.httpTimeoutMs / 1000,
-          fetchOptions: {
-            headers: {
-              "user-agent": this.config.ogUserAgent || defaultUserAgent,
-              accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-              "accept-language": "en-US,en;q=0.9",
-            },
-          },
-        })
-          .then((res: any) => (res.error ? { error: true } : res.result))
-          .catch(() => ({ error: true }))
-      );
+      const openGraphFetch = await this.fetchOpenGraph(url, this.config.ogUserAgent || defaultUserAgent);
+      const openGraphResult: any = openGraphFetch.result;
 
-      if (!openGraphResult.error) {
+      if (openGraphFetch.error === undefined) {
+        this.runtime.operations.recordOpenGraphSuccess();
         if (!imageUrl && openGraphResult.ogImage?.[0]?.url) {
           imageUrl = openGraphResult.ogImage[0].url;
         }
@@ -304,16 +321,19 @@ export class FeedReader {
           };
         }
       } else {
-        console.log(
-          `[${new Date().toUTCString()}] - [bsky.rss FETCH] [${this.botId}] Error fetching Open Graph data for ${item.title} (${url})`
-        );
+        this.runtime.operations.recordOpenGraphFallback();
+        this.runtime.logger.verbose("FETCH", `Open Graph fallback for ${item.title} (${url})`, this.botId);
+        this.runtime.logger.debug("FETCH", formatDebugError(openGraphFetch.error), this.botId);
         description = item.description ?? item.content;
         if (description && this.config.descriptionClearHTML) description = removeHTMLTags(description);
         embed = { uri: url, title: item.title, description, imageUrl, imageAlt, type: this.config.embedType };
       }
     }
 
-    if (new Date(useDate) <= new Date(lastCursor)) return;
+    if (new Date(useDate) <= new Date(lastCursor)) {
+      this.runtime.logger.verbose("FEED", `Skipping stale item: ${item.title} (${itemUrl ?? "no URL"})`, this.botId);
+      return;
+    }
 
     const title =
       item.title && this.config.titleClearHTML ? decodeHTMLTwice(removeHTMLTags(item.title)) : item.title;
@@ -334,5 +354,36 @@ export class FeedReader {
       itemDate: useDate,
       dedupeKey,
     } as ParsedItem);
+  }
+
+  private async fetchOpenGraph(
+    url: string,
+    userAgent: string
+  ): Promise<{ result: unknown; error?: unknown }> {
+    try {
+      const result = await this.sharedLimiters.withOgLimit(async () => {
+        if (this.runtime.fetchOpenGraph) {
+          return this.runtime.fetchOpenGraph(url, userAgent, this.sharedLimiters.httpTimeoutMs);
+        }
+        const response: any = await og({
+          url,
+          timeout: this.sharedLimiters.httpTimeoutMs / 1000,
+          fetchOptions: {
+            headers: {
+              "user-agent": userAgent,
+              accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "accept-language": "en-US,en;q=0.9",
+            },
+          },
+        });
+        return response.error ? { error: response.error } : response.result;
+      });
+      if (result && typeof result === "object" && "error" in result && (result as any).error) {
+        return { result: undefined, error: (result as any).error };
+      }
+      return { result };
+    } catch (error) {
+      return { result: undefined, error };
+    }
   }
 }
