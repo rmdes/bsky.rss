@@ -1,0 +1,875 @@
+# Runtime Contracts Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Give solo and fleet modes one tested contract for configuration validation, dry-run behavior, health/readiness/status, process lifecycle, and local no-publish smoke testing.
+
+**Architecture:** Add provider-neutral runtime modules under `shared/` and keep mode-specific adapters in `app/` and `fleet/`. JSON Schema files are the machine-readable source of truth and Ajv validates both CLI and runtime inputs. A shared HTTP status server exposes consistent endpoints while mode adapters supply snapshots.
+
+**Tech Stack:** Node.js 24, TypeScript 6, Yarn 4, Node `test`, Ajv 8, JSON Schema 2020-12, native `http`, Docker.
+
+## Global Constraints
+
+- Preserve current solo and fleet posting behavior outside explicit dry-run changes.
+- Do not require a live Bluesky account in automated tests.
+- Do not emit credentials, sessions, feed bodies, or post contents from health/status endpoints.
+- Fleet `starting` remains ready enough for provider startup checks once configuration is valid and the scheduler is progressing.
+- Fleet `unhealthy` means no useful workers or a stalled/unrecoverable runtime, not merely incomplete staggered activation.
+- Containers execute Node directly as PID 1.
+- Tests use `node:test` and `node:assert/strict` to match the repository.
+
+---
+
+### Task 1: Establish Canonical Test and Check Commands
+
+**Files:**
+- Modify: `package.json`
+- Modify: `.github/workflows/release-image.yml`
+- Create: `.github/workflows/ci.yml`
+- Test: all existing `fleet/*.test.ts` files
+
+**Interfaces:**
+- Consumes: existing `tsx --test fleet/*.test.ts` release command.
+- Produces: `yarn test`, `yarn test:unit`, `yarn typecheck`, and `yarn check` commands used by every later task and companion-repository validation.
+
+- [ ] **Step 1: Add a failing CI assertion for the missing scripts**
+
+Create `.github/workflows/ci.yml` with a temporary command that invokes the intended interface:
+
+```yaml
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: yarn install --immutable
+      - run: yarn check
+```
+
+- [ ] **Step 2: Run the intended command and confirm it fails**
+
+Run:
+
+```bash
+yarn check
+```
+
+Expected: Yarn reports that the `check` script is not defined.
+
+- [ ] **Step 3: Add canonical scripts**
+
+Update `package.json` scripts to include:
+
+```json
+{
+  "test:unit": "tsx --test app/**/*.test.ts fleet/*.test.ts shared/**/*.test.ts test/**/*.test.ts",
+  "test": "yarn test:unit",
+  "typecheck": "tsc --noEmit",
+  "check": "yarn typecheck && yarn test"
+}
+```
+
+Keep existing `start`, `dev`, `fleet`, `release`, and Docker scripts unchanged.
+
+- [ ] **Step 4: Point release verification at the canonical command**
+
+Replace the workflow-specific test invocation in `.github/workflows/release-image.yml`:
+
+```yaml
+- name: Run checks
+  run: yarn check
+```
+
+- [ ] **Step 5: Run the complete baseline**
+
+Run:
+
+```bash
+yarn install --immutable
+yarn check
+```
+
+Expected: TypeScript exits 0 and all existing tests pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add package.json .github/workflows/ci.yml .github/workflows/release-image.yml
+git commit -m "test: add canonical project checks"
+```
+
+---
+
+### Task 2: Add Machine-Readable Configuration Schemas
+
+**Files:**
+- Create: `schemas/solo-config.schema.json`
+- Create: `schemas/fleet-config.schema.json`
+- Create: `schemas/fleet-bot.schema.json`
+- Create: `schemas/post-config.schema.json`
+- Create: `schemas/fleet-secrets.schema.json`
+- Create: `shared/config/schemaRegistry.ts`
+- Create: `shared/config/schemaRegistry.test.ts`
+- Modify: `package.json`
+- Modify: `yarn.lock`
+
+**Interfaces:**
+- Consumes: current solo environment variables, `config.example/fleet.json`, `config.example/bots/*/bot.json`, per-bot `config.json`, and fleet secrets JSON.
+- Produces: `SCHEMA_VERSION`, `SchemaName`, `getSchema(name)`, and Ajv-ready strict JSON Schema documents.
+
+- [ ] **Step 1: Write failing schema-registry tests**
+
+Create `shared/config/schemaRegistry.test.ts`:
+
+```ts
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { SCHEMA_VERSION, getSchema } from "./schemaRegistry.ts";
+
+test("all runtime schemas declare the same schema version", () => {
+  assert.equal(SCHEMA_VERSION, 1);
+  for (const name of ["solo", "fleet", "bot", "post", "secrets"] as const) {
+    const schema = getSchema(name);
+    assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
+    assert.equal(schema.properties.schemaVersion.const, SCHEMA_VERSION);
+    assert.equal(schema.additionalProperties, false);
+  }
+});
+```
+
+- [ ] **Step 2: Run the test and confirm it fails**
+
+Run:
+
+```bash
+yarn tsx --test shared/config/schemaRegistry.test.ts
+```
+
+Expected: module `shared/config/schemaRegistry.ts` does not exist.
+
+- [ ] **Step 3: Add Ajv**
+
+Run:
+
+```bash
+yarn add ajv@^8
+```
+
+- [ ] **Step 4: Create strict schemas**
+
+Each schema must:
+
+- use JSON Schema draft 2020-12;
+- require `schemaVersion: 1`;
+- set `additionalProperties: false` at every owned object boundary;
+- preserve all currently supported post configuration fields;
+- encode positive bounds for intervals, queue lengths, concurrency, image size, timeout, and spacing;
+- encode URL format for `instanceUrl` and `feedUrl`;
+- encode non-empty strings for IDs, identifiers, and secret keys;
+- encode language entries as two-to-eight character BCP-47-like tokens using `^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$`.
+
+Example fleet schema shape:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rmdes/bsky.rss/schemas/fleet-config.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "staggerSeconds", "runIntervalSeconds", "freshness", "sharedLimiters", "perBotQueueMaxLength"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "staggerSeconds": { "type": "number", "minimum": 0 },
+    "runIntervalSeconds": { "type": "number", "exclusiveMinimum": 0 },
+    "perBotQueueMaxLength": { "type": "integer", "minimum": 1 }
+  }
+}
+```
+
+- [ ] **Step 5: Implement the registry**
+
+Create `shared/config/schemaRegistry.ts`:
+
+```ts
+import solo from "../../schemas/solo-config.schema.json" with { type: "json" };
+import fleet from "../../schemas/fleet-config.schema.json" with { type: "json" };
+import bot from "../../schemas/fleet-bot.schema.json" with { type: "json" };
+import post from "../../schemas/post-config.schema.json" with { type: "json" };
+import secrets from "../../schemas/fleet-secrets.schema.json" with { type: "json" };
+
+export const SCHEMA_VERSION = 1 as const;
+export type SchemaName = "solo" | "fleet" | "bot" | "post" | "secrets";
+
+const schemas = { solo, fleet, bot, post, secrets } as const;
+
+export function getSchema(name: SchemaName): Record<string, unknown> {
+  return schemas[name] as Record<string, unknown>;
+}
+```
+
+If TypeScript JSON import attributes require a `tsconfig.json` adjustment, enable `resolveJsonModule` and use the syntax supported by Node 24/TypeScript 6 consistently across all imports.
+
+- [ ] **Step 6: Update checked-in examples**
+
+Add `"schemaVersion": 1` to:
+
+- `config.example/fleet.json`
+- every `config.example/bots/*/bot.json`
+- every `config.example/bots/*/config.json`
+- `config.example/secrets/bsky-fleet.json`
+
+- [ ] **Step 7: Run schema tests and project checks**
+
+Run:
+
+```bash
+yarn tsx --test shared/config/schemaRegistry.test.ts
+yarn check
+```
+
+Expected: all schema registry and existing tests pass.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add package.json yarn.lock tsconfig.json schemas shared/config config.example
+git commit -m "feat: define runtime configuration schemas"
+```
+
+---
+
+### Task 3: Implement Deterministic Fleet Validation CLI
+
+**Files:**
+- Create: `shared/config/validation.ts`
+- Create: `shared/config/validation.test.ts`
+- Create: `fleet/validateFleet.ts`
+- Create: `fleet/validateFleet.test.ts`
+- Modify: `fleet/configLoader.ts`
+- Modify: `fleet/configLoader.test.ts`
+- Modify: `package.json`
+
+**Interfaces:**
+- Consumes: `getSchema()`, filesystem paths, and current fleet config tree.
+- Produces:
+
+```ts
+export interface ValidationIssue {
+  scope: "fleet" | "bot" | "post" | "secrets" | "filesystem" | "cross-field";
+  botId?: string;
+  path: string;
+  code: string;
+  message: string;
+}
+
+export interface FleetValidationResult {
+  valid: boolean;
+  issues: ValidationIssue[];
+  enabledBotCount: number;
+}
+
+export function validateFleetTree(options: {
+  configRoot: string;
+  secretsFilePath: string;
+  dataRoot?: string;
+  checkFilesystem?: boolean;
+}): FleetValidationResult;
+```
+
+- [ ] **Step 1: Write failing validation tests**
+
+Cover at least:
+
+```ts
+test("rejects duplicate Bluesky identifiers", () => { /* two enabled bots, same identifier */ });
+test("rejects placeholder secrets without printing the value", () => { /* REPLACE-WITH-REAL-APP-PASSWORD */ });
+test("rejects bot directory and id mismatch", () => { /* existing behavior */ });
+test("rejects invalid URL and spacing bounds", () => { /* feedUrl and minSpacing > maxSpacing */ });
+test("sorts issues deterministically by botId, path, and code", () => { /* stable output */ });
+```
+
+Assert that serialized issues do not contain any secret value.
+
+- [ ] **Step 2: Run tests and confirm failure**
+
+Run:
+
+```bash
+yarn tsx --test shared/config/validation.test.ts fleet/validateFleet.test.ts
+```
+
+Expected: validation modules are missing.
+
+- [ ] **Step 3: Implement schema and cross-field validation**
+
+Use Ajv with:
+
+```ts
+const ajv = new Ajv({ allErrors: true, strict: true });
+```
+
+Register a URL format without adding another dependency:
+
+```ts
+ajv.addFormat("uri", {
+  type: "string",
+  validate(value: string) {
+    try {
+      new URL(value);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+});
+```
+
+Cross-field checks must include:
+
+- duplicate bot IDs;
+- duplicate enabled identifiers;
+- directory/id mismatch;
+- missing secret keys;
+- placeholder secret values matching `/REPLACE|CHANGE-ME|YOUR[-_ ]/i`;
+- `minSpacing <= maxSpacing`;
+- writable data root when `checkFilesystem` is true;
+- schema version equality.
+
+- [ ] **Step 4: Make `loadFleet` consume validated data**
+
+Refactor `fleet/configLoader.ts` so parsing and validation are not duplicated. `loadFleet` may still return per-bot runtime errors, but malformed fleet-wide configuration must throw a sanitized `FleetConfigurationError` containing only `ValidationIssue[]`.
+
+- [ ] **Step 5: Add the CLI**
+
+`fleet/validateFleet.ts` must:
+
+```ts
+const result = validateFleetTree({
+  configRoot: process.env.FLEET_CONFIG_ROOT ?? "./config.example",
+  secretsFilePath: process.env.FLEET_SECRETS_PATH ?? "./config.example/secrets/bsky-fleet.json",
+  dataRoot: process.env.FLEET_DATA_ROOT ?? "./data/fleet",
+  checkFilesystem: process.argv.includes("--check-filesystem"),
+});
+
+console.log(JSON.stringify(result, null, 2));
+process.exitCode = result.valid ? 0 : 1;
+```
+
+- [ ] **Step 6: Add package scripts**
+
+```json
+{
+  "fleet:validate": "NODE_NO_WARNINGS=1 tsx ./fleet/validateFleet.ts",
+  "fleet:validate:filesystem": "NODE_NO_WARNINGS=1 tsx ./fleet/validateFleet.ts --check-filesystem"
+}
+```
+
+- [ ] **Step 7: Verify redaction and deterministic output**
+
+Run:
+
+```bash
+FLEET_CONFIG_ROOT=./config.example \
+FLEET_SECRETS_PATH=./config.example/secrets/bsky-fleet.json \
+yarn fleet:validate
+```
+
+Expected: exit 1 because example placeholders are rejected, and output contains no placeholder value.
+
+Create a temporary valid secrets file and rerun; expected exit 0.
+
+- [ ] **Step 8: Run full checks and commit**
+
+```bash
+yarn check
+git add package.json shared/config fleet config.example
+git commit -m "feat: add fleet configuration validation"
+```
+
+---
+
+### Task 4: Add Shared Health, Readiness, and Status Server
+
+**Files:**
+- Create: `shared/health/types.ts`
+- Create: `shared/health/runtimeStatus.ts`
+- Create: `shared/health/httpServer.ts`
+- Create: `shared/health/httpServer.test.ts`
+- Modify: `app/utils/healthHandler.ts`
+
+**Interfaces:**
+- Produces:
+
+```ts
+export type RuntimeMode = "solo" | "fleet";
+export type RuntimePhase = "starting" | "operational" | "degraded" | "unhealthy" | "shutting_down";
+
+export interface RuntimeSnapshot {
+  version: string;
+  mode: RuntimeMode;
+  phase: RuntimePhase;
+  live: boolean;
+  ready: boolean;
+  dryRun: boolean;
+  uptimeSeconds: number;
+  lastActivityAt?: string;
+  configuredBots?: number;
+  activeBots?: number;
+  failedBots?: number;
+  totalQueueDepth?: number;
+  lastSuccessfulPollAt?: string;
+}
+
+export interface RuntimeStatus {
+  snapshot(): RuntimeSnapshot;
+}
+
+export function startHealthServer(options: {
+  port: number;
+  status: RuntimeStatus;
+}): Promise<import("node:http").Server>;
+```
+
+- [ ] **Step 1: Write endpoint tests**
+
+Test with an ephemeral port:
+
+```ts
+test("/live is 200 while a starting runtime is alive", async () => { /* assert body.live */ });
+test("/ready is 503 until ready and 200 afterward", async () => { /* mutate status */ });
+test("/health returns 200 for operational and degraded, 503 for unhealthy", async () => { /* phases */ });
+test("/status excludes arbitrary internal fields", async () => { /* exact response keys */ });
+test("unknown paths return 404", async () => { /* request /secret */ });
+```
+
+- [ ] **Step 2: Run tests and confirm failure**
+
+```bash
+yarn tsx --test shared/health/httpServer.test.ts
+```
+
+Expected: shared health modules are missing.
+
+- [ ] **Step 3: Implement immutable snapshot generation**
+
+`runtimeStatus.ts` should expose a small mutable state holder whose public `snapshot()` returns a new plain object. It must never accept credentials, identifiers, feed content, or tokens as fields.
+
+- [ ] **Step 4: Implement endpoint semantics**
+
+Map endpoints as follows:
+
+```text
+/live   -> 200 when live=true, otherwise 503
+/ready  -> 200 when ready=true, otherwise 503
+/health -> 200 for operational or degraded; 503 for starting, unhealthy, shutting_down
+/status -> 200 while the HTTP server responds; body contains snapshot
+/       -> same response as /health for provider compatibility
+```
+
+Set `Cache-Control: no-store` and `Content-Type: application/json; charset=utf-8`.
+
+- [ ] **Step 5: Convert the solo health handler into an adapter**
+
+Keep the current default export shape temporarily so existing imports continue to compile, but implement it using the shared status/server modules. Add explicit methods:
+
+```ts
+markStarting();
+markReady();
+markDegraded(reasonCode: string);
+markUnhealthy(reasonCode: string);
+markShuttingDown();
+updateActivity(at?: Date);
+setDryRun(value: boolean);
+start(): Promise<Server>;
+stop(): Promise<void>;
+```
+
+Reason codes may be logged but must not be returned if they can include user content.
+
+- [ ] **Step 6: Run tests and commit**
+
+```bash
+yarn tsx --test shared/health/httpServer.test.ts
+yarn check
+git add shared/health app/utils/healthHandler.ts
+git commit -m "feat: unify runtime health semantics"
+```
+
+---
+
+### Task 5: Add Solo Dry-Run and Graceful Lifecycle Parity
+
+**Files:**
+- Create: `app/runtime/soloConfig.ts`
+- Create: `app/runtime/soloConfig.test.ts`
+- Create: `app/runtime/soloLifecycle.ts`
+- Create: `app/runtime/soloLifecycle.test.ts`
+- Modify: `app/index.ts`
+- Modify: `app/utils/bskyHandler.ts`
+- Modify: `app/utils/queueHandler.ts`
+
+**Interfaces:**
+- Produces:
+
+```ts
+export interface SoloRuntimeConfig {
+  schemaVersion: 1;
+  identifier: string;
+  appPassword: string;
+  fetchUrl: URL;
+  instanceUrl: URL;
+  fetchIntervalMinutes: number;
+  dryRun: boolean;
+  healthPort: number;
+}
+
+export function loadSoloRuntimeConfig(env: NodeJS.ProcessEnv): SoloRuntimeConfig;
+```
+
+and a publication adapter:
+
+```ts
+export interface SoloPublisher {
+  post(params: SoloPostParams): Promise<unknown>;
+}
+```
+
+- [ ] **Step 1: Write failing solo config tests**
+
+Cover required variables, valid URLs, positive intervals, `DRY_RUN` defaulting to true, explicit `DRY_RUN=false`, and sanitized errors.
+
+- [ ] **Step 2: Write a failing dry-run publication test**
+
+Inject a fake agent whose `post` and `uploadBlob` methods throw if called. Assert that dry-run returns a successful no-op result and never calls either method.
+
+- [ ] **Step 3: Run tests and confirm failure**
+
+```bash
+yarn tsx --test app/runtime/soloConfig.test.ts app/runtime/soloLifecycle.test.ts
+```
+
+- [ ] **Step 4: Implement typed configuration loading**
+
+Use the solo JSON Schema through the shared validator. Do not read process environment directly from multiple modules after startup.
+
+- [ ] **Step 5: Add dry-run to the solo publisher**
+
+Change `bskyHandler.init()` to accept an options object:
+
+```ts
+async function init(options: { service: string; dryRun: boolean })
+```
+
+In `post()`, return before facet detection, image upload, or record creation:
+
+```ts
+if (dryRun) {
+  console.log(`[${new Date().toUTCString()}] - [bsky.rss POST] [solo] [dry-run] publication suppressed`);
+  return { ok: true, uri: "dry-run://noop" };
+}
+```
+
+Do not log the complete post body.
+
+- [ ] **Step 6: Implement graceful shutdown**
+
+`soloLifecycle.ts` must register `SIGTERM` and `SIGINT`, mark health `shutting_down`, stop feed polling, stop accepting queue work, wait for a bounded queue stop, stop the HTTP server, and exit once. Use injectable callbacks so the lifecycle tests do not terminate the test process.
+
+- [ ] **Step 7: Refactor `app/index.ts`**
+
+`main()` must:
+
+1. load and validate config;
+2. start health as `starting`;
+3. initialize/login;
+4. initialize reader and queue;
+5. mark `operational`;
+6. register shutdown;
+7. mark `unhealthy` and set non-zero exit code on unrecoverable startup failure.
+
+A rate-limit startup failure must not silently return while health remains starting forever.
+
+- [ ] **Step 8: Run checks and commit**
+
+```bash
+yarn tsx --test app/runtime/soloConfig.test.ts app/runtime/soloLifecycle.test.ts
+yarn check
+git add app shared/config schemas/solo-config.schema.json
+git commit -m "feat: add safe solo runtime lifecycle"
+```
+
+---
+
+### Task 6: Wire Fleet Runtime Status and Startup-Aware Readiness
+
+**Files:**
+- Create: `fleet/fleetRuntimeStatus.ts`
+- Create: `fleet/fleetRuntimeStatus.test.ts`
+- Modify: `fleet/authCoordinator.ts`
+- Modify: `fleet/botWorker.ts`
+- Modify: `fleet/botStore.ts`
+- Modify: `fleet/runFleet.ts`
+- Modify: `fleet/runFleet.test.ts`
+
+**Interfaces:**
+- Consumes: shared `RuntimeStatus`, `AuthCoordinator.activeWorkers()`, `activationFailures()`, queue/store metrics.
+- Produces:
+
+```ts
+export interface FleetRuntimeMetrics {
+  configuredBots: number;
+  activeBots: number;
+  failedBots: number;
+  totalQueueDepth: number;
+  lastSuccessfulPollAt?: Date;
+  activationComplete: boolean;
+  schedulerResponsive: boolean;
+}
+
+export function deriveFleetPhase(metrics: FleetRuntimeMetrics): RuntimePhase;
+```
+
+- [ ] **Step 1: Write failing phase tests**
+
+Required cases:
+
+```text
+valid config + activation pending + zero active -> starting, ready=true
+activation complete + all active -> operational
+some active + some failed -> degraded
+activation complete + zero active + configured > 0 -> unhealthy
+scheduler not responsive -> unhealthy
+shutdown requested -> shutting_down
+```
+
+- [ ] **Step 2: Run tests and confirm failure**
+
+```bash
+yarn tsx --test fleet/fleetRuntimeStatus.test.ts fleet/runFleet.test.ts
+```
+
+- [ ] **Step 3: Expose safe worker metrics**
+
+Add methods that return numbers/timestamps only:
+
+```ts
+BotWorker.queueDepth(): number;
+BotWorker.lastSuccessfulPollAt(): Date | undefined;
+```
+
+Do not expose queue item bodies.
+
+- [ ] **Step 4: Start the shared health server before staggered activation**
+
+In `runFleet.ts`:
+
+1. validate config;
+2. acquire lock;
+3. initialize status as `starting`, `ready=true`;
+4. start the health server;
+5. begin coordinator activation;
+6. update counts after every activation success/failure;
+7. transition to operational/degraded/unhealthy according to `deriveFleetPhase`.
+
+- [ ] **Step 5: Add scheduler heartbeat**
+
+Update status whenever a worker completes a feed poll or queue cycle. The stale threshold must be configurable with `FLEET_HEALTH_STALE_AFTER_MS`, defaulting to ten minutes, and tested with an injected clock.
+
+- [ ] **Step 6: Integrate shutdown state**
+
+Before aborting activation, set `shutting_down` and readiness false. Stop the health server only after worker shutdown and lock release have completed, unless the overall shutdown timeout expires.
+
+- [ ] **Step 7: Run lifecycle tests and full checks**
+
+```bash
+yarn tsx --test fleet/fleetRuntimeStatus.test.ts fleet/runFleet.test.ts
+yarn check
+```
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add fleet shared/health
+git commit -m "feat: expose fleet health and readiness"
+```
+
+---
+
+### Task 7: Add Controlled Feed and AT Protocol Smoke Fixtures
+
+**Files:**
+- Create: `test/fixtures/rss/basic.xml`
+- Create: `test/fixtures/atom/basic.xml`
+- Create: `test/support/fixtureServer.ts`
+- Create: `test/support/mockAtprotoServer.ts`
+- Create: `test/smoke/soloDryRun.test.ts`
+- Create: `test/smoke/fleetDryRun.test.ts`
+- Create: `test/smoke/persistence.test.ts`
+- Modify: `package.json`
+
+**Interfaces:**
+- Produces:
+
+```ts
+export async function startFixtureServer(): Promise<{
+  rssUrl: string;
+  atomUrl: string;
+  close(): Promise<void>;
+}>;
+
+export async function startMockAtprotoServer(): Promise<{
+  serviceUrl: string;
+  requests: readonly MockRequest[];
+  close(): Promise<void>;
+}>;
+```
+
+- [ ] **Step 1: Write fixture-server tests**
+
+Assert RSS and Atom fixture responses use deterministic dates, GUIDs/IDs, titles, descriptions, links, and content types.
+
+- [ ] **Step 2: Write solo dry-run smoke test**
+
+Start both fixture servers, launch solo mode as a child process with:
+
+```text
+DRY_RUN=true
+FETCH_INTERVAL=0.01
+HEALTH_CHECK_PORT=<ephemeral>
+INSTANCE_URL=<mock service>
+FETCH_URL=<fixture RSS URL>
+```
+
+Assert:
+
+- readiness becomes 200;
+- at least one feed item is processed;
+- no create-record or upload request reaches the mock service;
+- SIGTERM produces exit code 0.
+
+- [ ] **Step 3: Write fleet dry-run and persistence smoke tests**
+
+Use two bots, one RSS and one Atom. Assert per-bot SQLite files exist, restart resumes state, and duplicate fixture items are not re-queued.
+
+- [ ] **Step 4: Run tests and confirm the missing harness fails**
+
+```bash
+yarn tsx --test test/smoke/*.test.ts
+```
+
+- [ ] **Step 5: Implement minimal fixture servers**
+
+Use native `http`; do not add an application framework. The mock AT Protocol server should implement only the lexicon paths actually called during login/session setup and record metrics for assertions.
+
+- [ ] **Step 6: Add smoke script**
+
+```json
+{
+  "test:smoke": "tsx --test test/smoke/*.test.ts",
+  "check": "yarn typecheck && yarn test && yarn test:smoke"
+}
+```
+
+- [ ] **Step 7: Run complete verification**
+
+```bash
+yarn check
+```
+
+Expected: all unit, lifecycle, schema, and smoke tests pass without external network access.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add test package.json
+git commit -m "test: add no-publish runtime smoke fixtures"
+```
+
+---
+
+### Task 8: Document the Runtime Contract
+
+**Files:**
+- Create: `documentation/architecture/runtime-contracts.md`
+- Create: `documentation/deployment/runtime-environment.md`
+- Modify: `documentation/fleet.md`
+- Modify: `README.md`
+
+**Interfaces:**
+- Consumes: implemented schemas, validation CLI, health endpoints, and dry-run semantics.
+- Produces: authoritative documentation referenced by the template and provider plans.
+
+- [ ] **Step 1: Add deployment-document headers**
+
+Both new documents begin with:
+
+```text
+Mode: Both
+Reference deployment: Docker
+Provider: Docker
+Support status: Verified
+State requirement: Persistent
+Application version policy: Pinned
+```
+
+- [ ] **Step 2: Document exact commands**
+
+Include:
+
+```bash
+yarn check
+yarn fleet:validate
+yarn fleet:validate:filesystem
+curl -fsS http://127.0.0.1:8080/live
+curl -fsS http://127.0.0.1:8080/ready
+curl -fsS http://127.0.0.1:8080/health
+curl -fsS http://127.0.0.1:8080/status
+```
+
+- [ ] **Step 3: Document status semantics and privacy boundary**
+
+Describe each phase, endpoint status code, startup staggering behavior, stale scheduler threshold, and excluded sensitive fields.
+
+- [ ] **Step 4: Remove misleading test wording**
+
+Replace any documentation that calls `yarn typecheck` “running tests” with `yarn check` and explain the separate test/typecheck commands.
+
+- [ ] **Step 5: Verify every documented command**
+
+Run each local command from a clean checkout and record its exit status in the PR body.
+
+- [ ] **Step 6: Run final checks and commit**
+
+```bash
+yarn check
+git add README.md documentation
+git commit -m "docs: define runtime deployment contracts"
+```
+
+## Runtime Plan Acceptance
+
+Before opening the PR, verify:
+
+```bash
+yarn install --immutable
+yarn check
+FLEET_CONFIG_ROOT=./config.example FLEET_SECRETS_PATH=<valid-temp-secrets> yarn fleet:validate
+docker build -t bsky-rss:runtime-contracts .
+docker run --rm --init bsky-rss:runtime-contracts node --import tsx fleet/validateFleet.ts
+```
+
+The PR body must state that Bluesky publication was not performed and that AT Protocol behavior was tested through the controlled mock boundary.
