@@ -41,6 +41,10 @@ export interface FeedReaderRuntime {
   fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>;
 }
 
+type OpenGraphFetchOutcome =
+  | { ok: true; result: unknown }
+  | { ok: false; error: unknown };
+
 export interface ParsedEmbed {
   uri: string;
   title: string;
@@ -291,9 +295,9 @@ export class FeedReader {
       const defaultUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
       const openGraphFetch = await this.fetchOpenGraph(url, this.config.ogUserAgent || defaultUserAgent);
-      const openGraphResult: any = openGraphFetch.result;
 
-      if (openGraphFetch.error === undefined) {
+      if (openGraphFetch.ok) {
+        const openGraphResult: any = openGraphFetch.result;
         this.runtime.operations.recordOpenGraphSuccess();
         if (!imageUrl && openGraphResult.ogImage?.[0]?.url) {
           imageUrl = openGraphResult.ogImage[0].url;
@@ -359,7 +363,7 @@ export class FeedReader {
   private async fetchOpenGraph(
     url: string,
     userAgent: string
-  ): Promise<{ result: unknown; error?: unknown }> {
+  ): Promise<OpenGraphFetchOutcome> {
     try {
       const result = await this.sharedLimiters.withOgLimit(async () => {
         if (this.runtime.fetchOpenGraph) {
@@ -379,11 +383,11 @@ export class FeedReader {
         return response.error ? { error: response.error } : response.result;
       });
       if (result && typeof result === "object" && "error" in result && (result as any).error) {
-        return { result: undefined, error: (result as any).error };
+        return { ok: false, error: (result as any).error };
       }
-      return { result };
+      return { ok: true, result };
     } catch (error) {
-      return { result: undefined, error };
+      return { ok: false, error };
     }
   }
 }

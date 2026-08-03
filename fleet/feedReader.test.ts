@@ -314,6 +314,37 @@ test("a rejected Open Graph fetch records fallback without leaking item details 
   );
 });
 
+test("an Open Graph rejection with undefined still records fallback and returns the RSS embed", async (t) => {
+  // Break caught: using an optional error field as the result discriminant turns
+  // Promise.reject(undefined) into a false success, so fallback data is lost.
+  const itemUrl = "https://example.test/undefined-rejection";
+  const { reader, runtime } = createInstrumentedReader(t, {
+    config: { publishEmbed: true, embedType: "card" },
+    fetchOpenGraph: async () => Promise.reject(undefined),
+  });
+  const emitted: any[] = [];
+  reader.onItem((item) => emitted.push(item));
+
+  await (reader as any).handleItem({
+    title: "RSS fallback title",
+    link: itemUrl,
+    description: "RSS fallback description",
+    pubdate: "2026-08-03T12:01:00.000Z",
+  });
+
+  assert.deepEqual(emitted[0].embed, {
+    uri: itemUrl,
+    title: "RSS fallback title",
+    description: "RSS fallback description",
+    imageUrl: undefined,
+    imageAlt: undefined,
+    type: "card",
+  });
+  const counters = runtime.operations.snapshot().counters;
+  assert.equal(counters.openGraphSucceeded, 0);
+  assert.equal(counters.openGraphFallback, 1);
+});
+
 test("start() attaches an error listener so a feed-fetch failure is logged per-bot, not an uncaught exception", (t) => {
   // Found live in production: FeedSub (a Node EventEmitter) throws an
   // 'error' event as an uncaught exception by default when nothing is
