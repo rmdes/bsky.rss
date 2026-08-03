@@ -136,3 +136,45 @@ Provider documents must select one exact value. Text such as `Persistent or Unsu
 ## 10. Execution Order
 
 The runtime-contract implementation must land and produce a released image before the companion template is validated against it. Provider manifests depending on `FLEET_SECRETS_JSON`, `/ready`, or compatibility metadata cannot merge first.
+
+## 11. Production Baseline and In-Place Adoption
+
+The [production fleet baseline](../reports/2026-08-03-production-fleet-baseline.md) and [repository/production drift matrix](../reports/2026-08-03-repository-production-drift-matrix.md) are normative Phase 0 inputs. `/home/skyfleet-next` is the authoritative in-place compatibility target and a **Production-proven baseline** based on operator-attested successful operation for at least three days plus four days of uninterrupted container uptime with zero restarts and no OOM event. That evidence is not all-bot health and does not make readiness, shutdown, backup, restore, update, or recovery **Verified**.
+
+## 12. Incremental Hardening Scope
+
+Production is hardened in place and does not depend on the historical deployment; migration and legacy export are outside production adoption. Preserve current config shapes, 59 independent per-bot SQLite stores, state separation, 30-second sequential authentication, queue/freshness/rate-limit behavior, direct Node PID 1, durable mounts, one active publisher, 45-second stop grace, and optional custom-CA behavior.
+
+## 13. Published-Image Transition Gate
+
+Do not replace the locally built production image with a GHCR image merely because both report `2.2.0`. Require:
+
+1. compatible source revision/provenance and runtime-contract evidence;
+2. validation of existing configuration and all per-bot state stores;
+3. a controlled fixture dry-run;
+4. a consistent pre-update backup;
+5. an operator-approved change window;
+6. readiness evidence; and
+7. a tested recovery path using the previous compatible fleet image.
+
+## 14. Backend-Neutral Bounded Logging
+
+Require bounded retention and privacy regardless of backend. Supported Docker profiles are host-managed `journald` with a documented and tested retention policy, and portable bounded `json-file`. Do not force a production driver switch. Logs, status, and support artifacts exclude identifiers, URLs, titles, bodies, credentials, sessions, database contents, and raw errors.
+
+## 15. Optional Generic Custom CA
+
+Preserve a generic optional CA-bundle contract compatible with `NODE_EXTRA_CA_CERTS`. The default trust store works without an overlay. Validate absent, readable-valid, missing, and invalid selections; mount bundles read-only where applicable; sanitize failures; and never place a private feed, endpoint, or production-specific path in canonical examples.
+
+## 16. Production-Scale Startup Acceptance
+
+Exercise exactly 59 configured worker-equivalents with a 30-second sequential authentication stagger through an injected or virtual clock, without waiting roughly 29 real minutes. While activation progresses, `starting` stays live and ready enough once configuration, lock, status server, and scheduler progress are valid. Status exposes aggregate configured/active/failed counts only.
+
+## 17. Failure Isolation and Classification
+
+Use a controlled fixture where one synthetic feed returns persistent HTTP 500 while the other 58 workers continue queueing and draining. Feed retrieval, caught Open Graph fallback, and item-handler failures are distinct categories. Evidence remains aggregate and identifier-free, and a useful 58-worker fleet is not unhealthy merely because one feed is persistently failing.
+
+## 18. Production Authorization Boundary
+
+Implementation, template scripts, automated tests, CI, and release workflows do not authorize connection to the production host, container lifecycle actions, publishing-mode changes, or deployment. Production adoption is a separate explicitly approved operation and becomes **Field-verified** only when its sanitized record includes the image-transition gate, readiness, and previous-compatible-image recovery evidence.
+
+The graceful-stop filesystem procedure in decision 6 is the only backup method planned for this cycle. Detailed task text and tests must implement that exact running-mode capture, graceful stop/wait, shutdown-log verification when logs are available, complete closed-tree archive including sidecars, owner-only permissions, and conditional restart sequence.

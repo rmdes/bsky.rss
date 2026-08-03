@@ -17,6 +17,10 @@
 - Fleet `unhealthy` means no useful workers or a stalled/unrecoverable runtime, not merely incomplete staggered activation.
 - Containers execute Node directly as PID 1.
 - Tests use `node:test` and `node:assert/strict` to match the repository.
+- Preserve current configuration shapes and values, 59 per-bot SQLite stores and state separation, 30-second sequential authentication, queue/freshness/rate-limit behavior, durable mounts, one publisher, and the 45-second container stop grace.
+- Stable PID/container operation is not readiness or usefulness evidence; liveness, readiness, and lifecycle assertions remain separate.
+- Preserve optional `NODE_EXTRA_CA_CERTS`-style behavior through a generic validated custom-CA contract without private paths, endpoints, or feed identities.
+- Runtime work starts only after the Phase 0 documentation reconciliation PR is approved. Tests and implementation do not authorize production-host access or deployment.
 
 ---
 
@@ -432,6 +436,11 @@ export interface RuntimeSnapshot {
   failedBots?: number;
   totalQueueDepth?: number;
   lastSuccessfulPollAt?: string;
+  failureCounts?: {
+    feedRetrieval: number;
+    openGraphFallback: number;
+    itemHandler: number;
+  };
 }
 
 export interface RuntimeStatus {
@@ -638,6 +647,11 @@ export interface FleetRuntimeMetrics {
   lastSuccessfulPollAt?: Date;
   activationComplete: boolean;
   schedulerResponsive: boolean;
+  failureCounts: {
+    feedRetrieval: number;
+    openGraphFallback: number;
+    itemHandler: number;
+  };
 }
 
 export function deriveFleetPhase(metrics: FleetRuntimeMetrics): RuntimePhase;
@@ -655,6 +669,14 @@ activation complete + zero active + configured > 0 -> unhealthy
 scheduler not responsive -> unhealthy
 shutdown requested -> shutting_down
 ```
+
+Add an injected-clock acceptance test with exactly 59 configured worker-equivalents and a 30-second sequential stagger. Advance virtual time through the full activation window instead of sleeping for roughly 29 real minutes. Assert throughout activation that:
+
+- phase remains `starting` until activation completes;
+- liveness remains true and readiness remains true once configuration, lock, status server, and scheduler progress are valid;
+- aggregate configured/active/failed counts advance deterministically;
+- no bot identifier, feed URL, title, body, or raw error appears in status; and
+- a stable process with a stalled scheduler becomes unhealthy even though PID 1/container evidence remains stable.
 
 - [ ] **Step 2: Run tests and confirm failure**
 
@@ -714,11 +736,13 @@ git commit -m "feat: expose fleet health and readiness"
 **Files:**
 - Create: `test/fixtures/rss/basic.xml`
 - Create: `test/fixtures/atom/basic.xml`
+- Create: `test/fixtures/rss/persistent-500.json`
 - Create: `test/support/fixtureServer.ts`
 - Create: `test/support/mockAtprotoServer.ts`
 - Create: `test/smoke/soloDryRun.test.ts`
 - Create: `test/smoke/fleetDryRun.test.ts`
 - Create: `test/smoke/persistence.test.ts`
+- Create: `test/smoke/fleetFailureIsolation.test.ts`
 - Modify: `package.json`
 
 **Interfaces:**
@@ -728,6 +752,7 @@ git commit -m "feat: expose fleet health and readiness"
 export async function startFixtureServer(): Promise<{
   rssUrl: string;
   atomUrl: string;
+  failingFeedUrl: string;
   close(): Promise<void>;
 }>;
 
@@ -764,6 +789,19 @@ Assert:
 - [ ] **Step 3: Write fleet dry-run and persistence smoke tests**
 
 Use two bots, one RSS and one Atom. Assert per-bot SQLite files exist, restart resumes state, and duplicate fixture items are not re-queued.
+
+- [ ] **Step 3a: Write the 59-worker failure-isolation smoke test**
+
+Create 59 synthetic worker configurations using an injected/virtual clock for the 30-second authentication stagger. The fixture server returns a persistent HTTP 500 from the feed endpoint for exactly one worker. Independently inject caught Open Graph retrieval failures and an item-handler failure so classification cannot collapse the three categories.
+
+Assert that:
+
+- the affected worker records feed-retrieval failures without queue progress;
+- the other 58 workers continue queueing and draining fixture items;
+- caught Open Graph fallback failures do not increment feed-retrieval or item-handler counts;
+- item-handler failures have their own count;
+- aggregate readiness is degraded rather than fleet-wide unhealthy while useful workers continue; and
+- status/log evidence contains counts and category codes only, never identifiers, URLs, titles, bodies, or raw error strings.
 
 - [ ] **Step 4: Run tests and confirm the missing harness fails**
 
@@ -844,6 +882,12 @@ curl -fsS http://127.0.0.1:8080/status
 
 Describe each phase, endpoint status code, startup staggering behavior, stale scheduler threshold, and excluded sensitive fields.
 
+Document feed-retrieval, Open Graph fallback, and item-handler failures as distinct categories. Explain that process/container stability is not readiness evidence and that the production baseline remains Production-proven rather than lifecycle-Verified.
+
+- [ ] **Step 3a: Document and test optional custom CA behavior**
+
+Define a generic optional CA bundle contract compatible with `NODE_EXTRA_CA_CERTS`. Document the absent/default-trust case, a validated read-only bundle selection, sanitized invalid-bundle errors, and provider/template mapping. Add automated tests for absent, readable-valid, missing, and invalid bundle cases without using a private path or endpoint.
+
 - [ ] **Step 4: Remove misleading test wording**
 
 Replace any documentation that calls `yarn typecheck` “running tests” with `yarn check` and explain the separate test/typecheck commands.
@@ -873,3 +917,5 @@ docker run --rm --init bsky-rss:runtime-contracts node --import tsx fleet/valida
 ```
 
 The PR body must state that Bluesky publication was not performed and that AT Protocol behavior was tested through the controlled mock boundary.
+
+It must also record the virtual-time 59-worker/30-second result, the isolated HTTP 500 result proving 58 unaffected synthetic workers continued, the distinct Open Graph and item-handler counts, custom-CA validation, and the explicit boundary that no production connection or deployment was performed.

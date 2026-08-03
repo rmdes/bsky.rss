@@ -19,6 +19,10 @@
 - Backup must be SQLite-consistent.
 - Restore refuses to operate while the fleet container is active.
 - Scripts must fail closed with `set -Eeuo pipefail` and sanitized errors.
+- Preserve current config shapes, independent per-bot SQLite state, direct Node PID 1, durable mounts, one active publisher, 45-second stop grace, queue/freshness/rate-limit behavior, and 30-second sequential authentication.
+- Log retention and privacy are mandatory but backend-neutral: support host-managed `journald` with a documented/tested retention policy and a portable bounded `json-file` profile.
+- Support a generic optional custom-CA overlay compatible with `NODE_EXTRA_CA_CERTS`; never include a private feed, endpoint, or production path in examples.
+- Template scripts and automated acceptance are capabilities only; they do not authorize execution against production.
 
 ---
 
@@ -28,6 +32,8 @@
 - Create: `.gitignore`
 - Create: `.env.example`
 - Modify: `docker-compose.yml`
+- Create: `compose.logging-json-file.yaml`
+- Create: `compose.custom-ca.yaml`
 - Move: `config.example/secrets/bsky-fleet.json` to `secrets.example/bsky-fleet.json`
 - Modify: `README.md`
 - Create: `tests/compose-config.sh`
@@ -121,12 +127,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 2m
-    logging:
-      driver: json-file
-      options:
-        max-size: 20m
-        max-file: "5"
 ```
+
+Keep the base Compose file logging-driver neutral. Add `compose.logging-json-file.yaml` as a portable opt-in profile with `max-size: 20m` and `max-file: "5"`. Document a separate `journald` profile that inherits the host driver only when the operator has verified bounded retention and log availability. Tests must render both choices and reject an unbounded or undocumented backend.
+
+Add `compose.custom-ca.yaml` as an optional overlay that mounts a generic operator-owned CA bundle read-only and selects it through `NODE_EXTRA_CA_CERTS`. The base deployment must work without the overlay. Compose and validation tests cover absent, readable-valid, missing, and invalid bundle cases without logging bundle contents or private paths.
 
 - [ ] **Step 6: Separate secret examples**
 
@@ -136,7 +141,7 @@ Move the secret example to `secrets.example/bsky-fleet.json`. Update every READM
 
 ```bash
 bash tests/compose-config.sh
-git add .gitignore .env.example docker-compose.yml config.example secrets.example README.md tests/compose-config.sh
+git add .gitignore .env.example docker-compose.yml compose.logging-json-file.yaml compose.custom-ca.yaml config.example secrets.example README.md tests/compose-config.sh
 git commit -m "fix: make fleet template safe by default"
 ```
 
@@ -386,14 +391,17 @@ bash tests/backup-restore.sh
 
 - [ ] **Step 3: Implement consistent backup**
 
-Preferred sequence:
+Normative sequence:
 
-1. record whether the fleet is running;
-2. stop it gracefully if running;
-3. run application-owned SQLite backup tooling for each bot database, or use SQLite `VACUUM INTO`/backup API through a small Node command in the image;
-4. archive `config/`, `secrets/`, consistent DB copies, and `backup-metadata.json`;
-5. set archive mode `0600`;
-6. restart in the previous dry-run/publishing mode.
+1. record whether the fleet is running and its current dry-run/publishing mode;
+2. if it is running, issue a graceful `docker compose stop`;
+3. wait until the container is no longer running;
+4. verify graceful-shutdown completion in container logs when logs are available;
+5. archive the complete closed `data/` tree, including every SQLite file and any WAL/SHM sidecars, together with `config/`, `secrets/`, and `backup-metadata.json`;
+6. create the archive with owner-only mode `0600`; and
+7. restart only if the fleet was previously running, preserving its previous dry-run/publishing mode.
+
+Do not copy live SQLite state or introduce a second backup mechanism in this cycle.
 
 Metadata shape:
 
@@ -564,6 +572,21 @@ git commit -m "test: verify fleet template lifecycle"
 ```
 
 ## Fleet Template Plan Acceptance
+
+### Production adoption checklist
+
+`/home/skyfleet-next` is an in-place compatibility target, not an automated acceptance environment. Before a published image is considered for production:
+
+- compare candidate revision/provenance and selected runtime compatibility with the locally built running image; matching `2.2.0` strings are insufficient;
+- validate the existing configuration shapes and all 59 independent SQLite stores without mutation;
+- run the candidate against controlled fixtures in dry-run;
+- create and verify a consistent graceful-stop backup;
+- schedule an explicit operator-approved change window;
+- preserve direct Node PID 1, durable mounts, one active publisher, 45-second stop grace, 30-second staggering, queue/freshness/rate-limit behavior, selected logging retention, and optional custom-CA behavior;
+- collect readiness and lifecycle evidence after the change; and
+- prove recovery using the previous compatible fleet image and pre-update backup.
+
+Update, restore, and recovery scripts remain template capabilities. Running them against production, changing publishing mode, or performing container lifecycle actions is outside automated acceptance and requires separate authorization and Field-verified evidence.
 
 Before opening the companion PR:
 

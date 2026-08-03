@@ -4,7 +4,7 @@
 
 **Goal:** Align Docker, Fly.io, Railway, Render, and DigitalOcean documentation and manifests for solo and fleet modes, matching the Docker capability contract where possible and explicitly documenting adaptations where not.
 
-**Architecture:** Keep solo provider manifests in `rmdes/bsky.rss` because that repository owns the application and solo operator path. Keep fleet provider overlays in `rmdes/bsky-rss-fleet-template` because it owns the fleet operator experience. Add one shared manifest validator in the application repository and run it against checked-out copies of both repositories.
+**Architecture:** Keep solo provider manifests in `rmdes/bsky.rss` because that repository owns the application and solo operator path. Keep fleet provider overlays in `rmdes/bsky-rss-fleet-template` because it owns the fleet operator experience. Managed providers adapt the Verified Docker runtime contract instead of redefining it. Add one shared manifest validator in the application repository and run it against checked-out copies of both repositories.
 
 **Tech Stack:** Docker Compose, Fly TOML, Railway TOML, Render Blueprint YAML, DigitalOcean App Spec YAML, TypeScript, Node.js 24, `yaml`, `smol-toml`, GitHub Actions.
 
@@ -17,6 +17,11 @@
 - Render free/sleeping services are not recommended for production publishers.
 - DigitalOcean App Platform fleet mode is unsupported without durable state; DigitalOcean Droplet + Docker Compose is the supported fleet adaptation.
 - Provider manifests use direct Node entry points, pinned application versions, dry-run-first behavior, health checks, and persistent storage where the platform supports them.
+- The fleet template consumes a verified published image and must not carry a local build context that misleadingly suggests the deploy-only root can reproduce that image.
+- Provider guides must document bounded, privacy-preserving retention for their selected log backend; Docker profiles support host-managed `journald` with tested retention and portable bounded `json-file`.
+- Map the generic optional custom CA contract where the provider supports a mounted bundle or platform trust-store integration, and validate the unsupported/adapted case explicitly.
+- `/home/skyfleet-next` is a **Production-proven baseline** from operator attestation and stable process evidence. Its lack of a current fleet health endpoint does not erase that evidence, but newly **Verified** readiness, shutdown, backup, update, and recovery capabilities require separate lifecycle tests.
+- Static validation and local smoke tests never authorize production-host access, container lifecycle actions, publishing changes, or deployment; production adoption requires explicit approval and a **Field-verified** record.
 
 ---
 
@@ -43,6 +48,8 @@ export interface DeploymentTarget {
   stateRequirement: "Persistent" | "Ephemeral-safe" | "Unsupported";
   versionPolicy: "Pinned" | "Floating";
   replicaCount: number;
+  loggingProfile: "journald" | "json-file" | "provider-managed";
+  customCa: "mounted" | "platform-trust" | "unsupported";
 }
 ```
 
@@ -76,6 +83,10 @@ Validate:
 - no `latest` or `v<version>` image tags;
 - documentation header matches capability metadata;
 - referenced files exist.
+- published fleet images include revision/provenance and compatibility metadata;
+- no fleet template manifest declares a local build context;
+- the selected logging backend has a bounded retention contract; and
+- custom-CA mapping is either validated generically or explicitly marked unsupported.
 
 - [ ] **Step 4: Add package script**
 
@@ -304,6 +315,8 @@ config and secrets provisioned through documented Fly secrets/files workflow
 HTTP health service on 8080
 auto-stop off
 startup-aware readiness
+optional custom CA mapped through a generic read-only mount or documented Fly trust-store adaptation
+provider log retention documented and bounded
 ```
 
 Because Fly secrets are environment variables rather than mounted files by default, add an entrypoint-independent startup command that materializes `FLEET_SECRETS_JSON` into `/build/secrets/bsky-fleet.json` with mode 0600 before executing Node. This wrapper must use `exec node ...` and be tested for signal forwarding. Prefer application support for `FLEET_SECRETS_JSON` directly if added during implementation; do not duplicate secret parsing in shell if the runtime can own it safely.
@@ -318,10 +331,14 @@ Requirements:
 - configuration deployment method that does not bake real secrets into the repository;
 - `/ready` health path;
 - no horizontal autoscaling.
+- generic optional custom CA mapping where supported, with a documented unsupported alternative otherwise;
+- bounded provider log retention without emitting private request/error payloads.
 
 - [ ] **Step 4: Implement Render fleet overlay**
 
 Use an always-on paid web service when HTTP health is required. Attach persistent disk, force one instance, use direct Node command, and document that free/sleeping services are unsupported.
+
+Map the optional custom CA contract using a provider-supported read-only secret file or trust-store mechanism and document/test the mapping. Document Render log retention and privacy boundaries separately from application status retention.
 
 - [ ] **Step 5: Implement DigitalOcean fleet adaptation**
 
@@ -392,6 +409,8 @@ interface DeploymentValidationRecord {
   localRuntimeSmoke: boolean;
   liveProviderTested: false;
   status: "Verified" | "Validated";
+  loggingRetentionValidated: boolean;
+  customCaMapping: "validated" | "unsupported";
   notes: string[];
 }
 ```
@@ -506,4 +525,8 @@ shellcheck scripts/*.sh scripts/lib/*.sh tests/*.sh
 bash tests/run-all.sh
 ```
 
-The PRs must list each provider/mode target and its evidence state. Managed providers remain `Validated` unless real deployment records are added separately.
+The PRs must list each provider/mode target, log backend/retention choice, custom-CA mapping, and evidence state. Managed providers remain `Validated` unless real deployment records are added separately.
+
+### Production adoption boundary
+
+Deployment-parity acceptance validates reusable artifacts only. Considering a published image for `/home/skyfleet-next` additionally requires image compatibility/provenance comparison, validation of existing config and state, controlled fixture dry-run, consistent backup, an operator-approved change window, readiness evidence, and a recovery path through the previous compatible image. No command in this plan connects to or mutates production.

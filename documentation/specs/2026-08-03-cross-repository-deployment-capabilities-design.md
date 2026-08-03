@@ -13,6 +13,19 @@ The goal is to make both supported execution modes—solo and fleet—deployable
 
 This design converts the current repository audit into one implementation contract. It supersedes informal assumptions spread across READMEs, deployment files, commit messages, and machine-local notes.
 
+### 1.1 Normative production baseline and adoption boundary
+
+The following reports are normative preconditions for this program:
+
+- [Production fleet baseline](../reports/2026-08-03-production-fleet-baseline.md)
+- [Repository/production drift matrix](../reports/2026-08-03-repository-production-drift-matrix.md)
+
+`/home/skyfleet-next` is the authoritative current production fleet. It is a **Production-proven baseline**: the operator attests to at least three days of successful operation, while direct process evidence showed four days of uninterrupted container uptime, zero restarts, and no OOM event. That evidence establishes stable process operation, not readiness or all-bot health. Health, graceful shutdown, backup, restore, update, and rollback remain unverified until their lifecycle cases are exercised.
+
+Production adoption is incremental **in-place hardening**; historical legacy migration/export remains outside scope. Implementation and automated acceptance may create and validate artifacts, but they do not authorize access to the production host, container lifecycle actions, publishing changes, or deployment. Any production adoption is a separate, explicitly operator-approved and **Field-verified** operation.
+
+All implementation must preserve the current configuration shapes, 59 independent per-bot SQLite stores, per-bot state separation, 30-second sequential authentication staggering, queue/freshness/rate-limit behavior, direct Node entrypoint, durable mounts, single-publisher invariant, 45-second stop grace, and optional custom-CA capability unless a separately approved compatibility change proves an equivalent replacement.
+
 ## 2. Product model
 
 `bsky.rss` is one product with two execution modes.
@@ -239,8 +252,6 @@ documentation/
     fleet-from-source.md
 
   operations/
-    migrate-legacy-fleet.md
-    rollback-to-legacy.md
     backup-and-restore.md
     provider-verification.md
 
@@ -349,6 +360,20 @@ The Compose image must resolve through that value. `latest` may be documented as
 
 Published image tag documentation must match the release workflow. If a Git tag `v2.2.0` publishes image tag `2.2.0`, documentation must use `2.2.0`.
 
+For the production baseline, a matching application version string is not compatibility or provenance evidence. Replacing the locally built running image with a published GHCR image requires all of the following before the change is authorized:
+
+1. image revision/provenance and selected runtime-file compatibility evidence;
+2. validation of the existing configuration shapes and all per-bot state stores;
+3. a controlled fixture dry-run using the candidate image;
+4. a consistent pre-update fleet backup;
+5. an operator-approved change window;
+6. readiness evidence after replacement; and
+7. evidence that the previous compatible fleet image plus the pre-update backup can restore the same fleet.
+
+### 8.5 Optional custom certificate authority
+
+Deployments may support a generic operator-supplied CA bundle through a validated optional mount and `NODE_EXTRA_CA_CERTS`-style selection contract. The default remains the standard trust store. Validation must reject an unreadable or invalid selected bundle without printing its path contents, and tests must prove both absent and enabled cases. Canonical examples must not contain a private feed, private endpoint, or production-specific path.
+
 ## 9. Configuration schemas and validation
 
 The application repository must provide machine-readable schemas for:
@@ -450,6 +475,10 @@ Status output must include:
 
 It must not include identifiers, passwords, sessions, feed contents, post bodies, or tokens by default.
 
+Acceptance must exercise 59 worker-equivalents with the production 30-second sequential authentication stagger through an injected or virtual clock, without a real 29-minute wait. Throughout valid activation, `starting` remains live and ready enough for startup checks, activation progress remains aggregate-only, and stable PID/container evidence remains distinct from readiness and lifecycle verification.
+
+One controlled fixture must return a persistent feed-retrieval HTTP 500 for exactly one synthetic worker while the other 58 continue queueing and draining. Feed retrieval failures, caught Open Graph fallback failures, and item-handler failures are separate status/log categories. Aggregate status may expose category counts only; it must never expose identifiers, URLs, titles, bodies, or raw errors.
+
 ## 11. Process lifecycle
 
 ### 11.1 PID 1
@@ -491,7 +520,7 @@ Fleet backup must capture:
 - SQLite state, including associated WAL or shared-memory files when applicable.
 - Version metadata.
 
-The preferred backup procedure must either stop the fleet briefly or use a SQLite-consistent backup method. Copying live database files without consistency guarantees is not sufficient.
+The reference backup procedure records whether the fleet is running and its dry-run state, stops it gracefully when running, waits for it to be stopped, verifies graceful-shutdown logs when available, and archives the complete closed `data/` tree including SQLite sidecars together with config, secrets, and version metadata. The archive is owner-only. The fleet is restarted only when previously running and in its previous dry-run/publishing mode. Copying live database files without consistency guarantees is not sufficient.
 
 Backup archives containing secrets must be created with owner-only permissions and the documentation must recommend encryption before off-host storage.
 
@@ -518,13 +547,15 @@ Updates must be versioned and deliberate:
 7. Confirm health.
 8. Enable publishing.
 
+For production, these steps are subject to the published-image compatibility/provenance gate in section 8.4 and a separate operator-approved field operation. A template script or passing automated acceptance is not deployment authority.
+
 ### 12.4 Rollback
 
 Rollback must support:
 
-- Returning to the previous fleet image version when schema compatibility permits.
+- Returning to the previous compatible fleet image version when schema compatibility permits.
 - Restoring the pre-update backup when state migration is not backward-compatible.
-- Exporting fleet state back to the historical one-container-per-bot layout through the existing exporter when abandoning fleet mode.
+- Preserving dry-run/publishing mode explicitly and never enabling publishing automatically.
 
 ## 13. Managed platform adaptations
 
@@ -606,6 +637,10 @@ Tests must cover:
 - Import/export round trips.
 - Backup/restore consistency helpers.
 - Secret redaction.
+- A 59-worker, 30-second authentication stagger through virtual time, including identifier-free startup progress.
+- Isolation of one persistent feed HTTP 500 while the other 58 synthetic workers continue queueing and draining.
+- Separate feed-retrieval, Open Graph fallback, and item-handler failure categories.
+- Optional custom CA validation with and without a selected bundle.
 
 ### 14.2 Docker verification
 
@@ -651,7 +686,7 @@ A tagged `bsky.rss` release must:
 2. Build the image.
 3. Run solo and fleet image smoke tests.
 4. Publish versioned AMD64 and ARM64 images.
-5. Produce release metadata describing configuration-schema compatibility.
+5. Produce release metadata describing configuration-schema compatibility, image revision/provenance, state compatibility, optional custom-CA support, and supported logging profiles.
 6. Validate the fleet template against the released image.
 7. Automatically create a companion-repository update PR that:
    - changes the pinned application version,
@@ -675,7 +710,7 @@ Both modes must use structured, consistent log categories for:
 - Health transitions.
 - Shutdown.
 
-The fleet template must configure bounded container log rotation.
+Every deployment must document and verify bounded log retention and privacy regardless of backend. Supported Docker profiles include host-managed `journald` with a documented/tested retention policy and a portable bounded `json-file` profile. Production adoption must not force a logging-driver switch merely to satisfy this design. Logs and support artifacts must keep feed retrieval, Open Graph fallback, and item-handler failures distinct while excluding identifiers, URLs, titles, bodies, credentials, sessions, and raw errors.
 
 Metrics are desirable but not required for the first implementation cycle. The design must leave a clear interface for later Prometheus metrics without coupling health responses to a specific monitoring stack.
 
@@ -725,6 +760,8 @@ This specification defines one coordinated program, not one giant pull request. 
 - Shared dry-run semantics.
 - Shared health/readiness/status model.
 - Lifecycle and secret-redaction tests.
+- Virtual-time 59-worker readiness and isolated feed-failure acceptance.
+- Optional custom-CA validation.
 
 ### Workstream 2: Docker references and fleet template
 
@@ -732,7 +769,7 @@ This specification defines one coordinated program, not one giant pull request. 
 - Verified fleet Docker deployment.
 - Template safety defaults.
 - Initialization, backup, restore, update, and rollback tooling.
-- Version pinning and log rotation.
+- Version pinning and bounded log-retention profiles.
 
 ### Workstream 3: Documentation and managed providers
 
@@ -747,6 +784,10 @@ This specification defines one coordinated program, not one giant pull request. 
 - Configuration compatibility metadata.
 - Automated companion update PR workflow.
 - Cross-repository consistency, security, and documentation review.
+
+### Phase 0: Documentation reconciliation gate
+
+Before Workstream 1 begins, the production baseline report, drift matrix, this design, all detailed plans, and the normative review decisions must agree on the production-preserving compatibility contract. The documentation-only reconciliation PR must be approved before runtime implementation starts. Phase 0 authorizes no production access or deployment action.
 
 The workstreams must preserve this dependency order. Changes may be split into multiple focused PRs, but each PR must leave its repository internally consistent and must include its verification evidence.
 
@@ -772,6 +813,11 @@ The design is implemented when:
 16. Release automation detects or prevents cross-repository configuration drift.
 17. No documentation claims field verification without recorded evidence.
 18. No real secret appears in tests, logs, fixtures, commits, or generated artifacts.
+19. A virtual-time test covers 59 worker-equivalents with the 30-second stagger while `starting` remains live and ready enough.
+20. One persistent feed HTTP 500 is isolated while the other 58 synthetic workers continue, with separate Open Graph and item-handler evidence and identifier-free aggregate status.
+21. Logging retention is bounded and privacy-preserving under either supported `journald` or bounded `json-file` profiles.
+22. Optional custom CA behavior is documented and tested generically.
+23. A published-image production transition has compatibility/provenance, backup, change-window, readiness, previous-compatible-image recovery, and Field-verified evidence; automated acceptance alone does not authorize it.
 
 ## 21. Decision summary
 

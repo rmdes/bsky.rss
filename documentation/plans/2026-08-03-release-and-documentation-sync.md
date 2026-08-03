@@ -17,6 +17,9 @@
 - Release tests run before image publication.
 - A compatibility change that requires operator action must produce explicit upgrade notes.
 - Documentation tests fail on stale paths, unsupported evidence claims, `latest` production examples, or `v`-prefixed image tags.
+- Release metadata must support comparison between the locally built image from the **Production-proven baseline** and a published image; a shared `2.2.0` version string is insufficient.
+- Compatibility covers existing configuration shapes, per-bot state separation, direct Node entrypoint, single-replica behavior, logging backend/retention, and optional custom CA support.
+- Automation never connects to the production host, changes publishing mode, performs container lifecycle actions, or deploys a release. Production transitions require explicit approval and a Field-verified record.
 
 ---
 
@@ -52,13 +55,31 @@
     "solo": "/build/data",
     "fleet": "/build/data/fleet"
   },
-  "minimumTemplateFormatVersion": 1
+  "minimumTemplateFormatVersion": 1,
+  "imageProvenance": {
+    "sourceRevision": "<full-git-commit>",
+    "runtimeContractDigest": "sha256:<digest>"
+  },
+  "stateCompatibility": {
+    "minimumSchemaVersion": 1,
+    "maximumSchemaVersion": 1,
+    "sqliteContractVersion": 1,
+    "perBotStateIsolation": true
+  },
+  "logging": {
+    "supportedBackends": ["journald", "json-file"],
+    "boundedRetentionRequired": true
+  },
+  "optionalCapabilities": {
+    "customCaEnvironment": "NODE_EXTRA_CA_CERTS"
+  },
+  "failureCategories": ["feed-retrieval", "open-graph-fallback", "item-handler"]
 }
 ```
 
 - [ ] **Step 1: Write failing metadata tests**
 
-Assert version comes from `package.json`, image tag is numeric without leading `v`, entrypoints match checked-in files, schema version matches `shared/config/schemaRegistry.ts`, and health paths match shared health constants.
+Assert version comes from `package.json`, image tag is numeric without leading `v`, source revision and runtime-contract digest are non-placeholder provenance, entrypoints match checked-in files, schema/state compatibility matches checked-in contracts, health paths match shared health constants, `journald` and `json-file` are supported only with bounded retention, optional custom CA maps generically to `NODE_EXTRA_CA_CERTS`, and the three failure categories remain distinct.
 
 - [ ] **Step 2: Run and confirm failure**
 
@@ -117,6 +138,8 @@ docker run --rm <image> node -e "const x=require('fs').readFileSync('/build/rele
 ```
 
 It compares image metadata against the source-generated file.
+
+The verifier also checks OCI source/revision/version labels and proves the embedded revision/provenance fields agree with the image. These fields are required for later comparison with a locally built production image; matching application-version strings alone must fail the transition comparison.
 
 - [ ] **Step 2: Run and confirm failure**
 
@@ -198,6 +221,11 @@ Use a fake image metadata JSON and assert the script rejects:
 - missing fleet entrypoint;
 - missing validation entrypoint;
 - unexpected state path.
+- missing or mismatched source revision/runtime-contract digest;
+- an unsupported existing configuration or state-schema range;
+- missing logging-profile retention metadata;
+- missing optional custom-CA capability metadata; and
+- collapsed or missing feed-retrieval, Open Graph fallback, or item-handler categories.
 
 - [ ] **Step 2: Run and confirm failure**
 
@@ -250,6 +278,7 @@ git commit -m "feat: enforce application template compatibility"
   - updated `applicationVersion` and `schemaVersion` in `template-format.json`;
   - synchronized example config files when schema-compatible changes require them;
   - generated upgrade notes.
+  - compatibility/provenance comparison instructions and required Field-verified production-transition evidence.
 
 - [ ] **Step 1: Write failing update-render tests**
 
@@ -329,11 +358,8 @@ git commit -m "ci: propose fleet template updates on release"
 - Create: `documentation/architecture/state-and-queues.md`
 - Create: `documentation/architecture/scheduling.md`
 - Create: `documentation/architecture/authentication.md`
-- Create: `documentation/operations/migrate-legacy-fleet.md`
-- Create: `documentation/operations/rollback-to-legacy.md`
 - Create: `documentation/operations/backup-and-restore.md`
 - Create: `documentation/operations/provider-verification.md`
-- Modify: `documentation/fleet.md`
 - Modify: `documentation/v1-to-v2.md`
 - Modify: `README.md`
 
@@ -345,13 +371,13 @@ git commit -m "ci: propose fleet template updates on release"
 **Interfaces:**
 - Produces stable public documentation boundaries without relying on gitignored `CLAUDE.md`.
 
-- [ ] **Step 1: Move authoritative architecture content out of machine-local notes**
+- [ ] **Step 1: Move current runtime architecture content out of machine-local notes**
 
-Document public contracts for configuration layout, SQLite tables/state, authentication staggering, shared limiters, queue behavior, startup, shutdown, migration, and rollback. Do not copy private scratchpad commentary or unverified claims.
+Document public contracts for configuration layout, SQLite tables/state, authentication staggering, shared limiters, queue behavior, startup, shutdown, backup, update compatibility, and previous-compatible-image recovery. Include distinct feed-retrieval, Open Graph fallback, and item-handler diagnostics; selected log backend/retention; optional custom CA behavior; and identifier-free status. Do not copy private scratchpad commentary or unverified claims. Leave the existing legacy documentation structure and current fleet guide unchanged.
 
-- [ ] **Step 2: Turn `documentation/fleet.md` into a navigational overview**
+- [ ] **Step 2: Add current architecture navigation without changing the fleet guide**
 
-Preserve external links by keeping the path. Link to focused architecture, operations, and template documents.
+Link the new focused architecture, operations, and template documents from the main README and other newly created current-deployment documents.
 
 - [ ] **Step 3: Archive historical v1-to-v2 material**
 
@@ -378,17 +404,19 @@ deploymentDate: 2026-08-03
 healthVerified: true
 persistenceRestartVerified: true
 upgradeVerified: true
-rollbackVerified: false
+previousImageRecoveryVerified: false
 verifiedBy: rmdes
 limitations:
-  - rollback not yet exercised
+  - previous image recovery not yet exercised
 ```
 
 Store real records under `documentation/verification/<provider>/<mode>/<date>.yaml`. Do not create fabricated records during automated implementation.
 
+Any production image transition record must additionally include the approved change window, source local-image digest/provenance, target published-image digest/provenance, configuration/state validation evidence, controlled fixture dry-run result, consistent backup reference, readiness evidence, and previous-compatible-image recovery evidence. Use sanitized artifact references only; never record private identifiers, URLs, environment values, database contents, or raw logs.
+
 - [ ] **Step 5: Add troubleshooting decision trees**
 
-Cover validation failure, placeholder secret, lock conflict, partial activation, all bots failed, stale scheduler, volume missing, database recovery, health mismatch, update failure, and rollback.
+Cover validation failure, placeholder secret, lock conflict, partial activation, all bots failed, stale scheduler, volume missing, database recovery, health mismatch, update failure, and previous-image recovery.
 
 - [ ] **Step 6: Commit repository-specific documentation**
 
@@ -451,6 +479,13 @@ Reject `Field-verified` unless the document references an existing verification 
 - [ ] **Step 5: Add stale architecture tests**
 
 Reject links from current deployment documents to `documentation/v1-to-v2.md` and references to gitignored `CLAUDE.md` as authoritative documentation.
+
+Add drift assertions that current deployment documents:
+
+- distinguish feed-retrieval, Open Graph fallback, and item-handler failures;
+- declare the selected logging backend and bounded retention policy;
+- describe optional custom CA support generically when available; and
+- never claim a production image transition is Field-verified without its transition record.
 
 - [ ] **Step 6: Integrate checks**
 
@@ -532,6 +567,7 @@ Record:
 - managed manifest validation results;
 - untested live-provider boundary;
 - untested live-Bluesky boundary.
+- untested production-deployment boundary unless an explicitly approved field operation produced the required record.
 
 - [ ] **Step 7: Request final review and merge in dependency order**
 
@@ -555,4 +591,4 @@ cd ../bsky-rss-fleet-template
 bash tests/run-all.sh
 ```
 
-all exit 0, the compatibility update dry run produces the expected patch, and the final report explicitly distinguishes local verification from field verification.
+all exit 0, the compatibility update dry run produces the expected patch, and the final report explicitly distinguishes local verification from field verification. No release or documentation workflow deploys to production; a production image transition is complete only when a separate approved Field-verified record satisfies the compatibility/provenance gate.

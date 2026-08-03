@@ -4,9 +4,11 @@
 
 **Goal:** Deliver aligned, testable solo and fleet deployments for Docker, Fly.io, Railway, Render, and DigitalOcean across `rmdes/bsky.rss` and `rmdes/bsky-rss-fleet-template` without claiming live-provider or live-Bluesky verification that was not performed.
 
-**Architecture:** `rmdes/bsky.rss` remains the source of truth for runtime contracts, schemas, health semantics, image releases, solo manifests, and compatibility metadata. `rmdes/bsky-rss-fleet-template` consumes a pinned release and owns the fleet operator experience, lifecycle scripts, and fleet provider overlays. Docker is the verified behavioral reference; managed platforms are validated statically and through local image/mode smoke tests until field evidence is recorded.
+**Architecture:** `rmdes/bsky.rss` remains the source of truth for runtime contracts, schemas, health semantics, image releases, solo manifests, and compatibility metadata. `rmdes/bsky-rss-fleet-template` consumes a verified pinned release and owns the fleet operator experience, lifecycle scripts, and fleet provider overlays. Docker is the verified behavioral reference; managed platforms adapt that reference and are validated statically and through local image/mode smoke tests until field evidence is recorded. The authoritative `/home/skyfleet-next` production fleet is an in-place compatibility baseline, not an automated deployment target.
 
 **Tech Stack:** Node.js 24, TypeScript 6, Yarn 4, Node test runner, Ajv JSON Schema validation, Docker/Compose, GitHub Actions, Fly TOML, Railway TOML, Render Blueprint YAML, DigitalOcean App Spec YAML, SQLite.
+
+This program incrementally hardens the working production fleet in place; existing generic tooling remains unchanged, and migration/legacy export are outside production adoption.
 
 ## Global Constraints
 
@@ -21,7 +23,10 @@
 - Managed deployments are marked `Validated` until real provider evidence exists.
 - No live Bluesky publishing is required for automated acceptance.
 - Tests use controlled RSS/Atom fixtures and mocked AT Protocol responses.
-- Every implementation PR must preserve the existing one-container-per-bot migration and rollback tooling.
+- A versioned production update requires a consistent pre-update backup and a tested recovery path using the previous compatible fleet image.
+- Preserve current configuration shapes, 59 per-bot SQLite stores and state separation, 30-second sequential authentication staggering, queue/freshness/rate-limit behavior, direct Node PID 1, durable mounts, one publisher, 45-second stop grace, and optional custom CA behavior.
+- Bounded, privacy-preserving logging is required regardless of backend; supported profiles include host-managed `journald` with tested retention and portable bounded `json-file`.
+- Runtime implementation and automated acceptance do not authorize production-host access, lifecycle actions, publishing changes, or deployment.
 
 ---
 
@@ -36,6 +41,17 @@ Read [`2026-08-03-plan-review-decisions.md`](2026-08-03-plan-review-decisions.md
 - graceful-stop filesystem backups;
 - valid mounted secrets for image acceptance;
 - exact Render and DigitalOcean deployment choices.
+
+## Phase 0: Normative Production Preconditions
+
+Before runtime work begins, read and preserve:
+
+- [Production fleet baseline](../reports/2026-08-03-production-fleet-baseline.md)
+- [Repository/production drift matrix](../reports/2026-08-03-repository-production-drift-matrix.md)
+
+The documentation-only reconciliation PR covering the authoritative design, complete plan suite, and review decisions must be approved before Task 1 of the runtime plan starts. `/home/skyfleet-next` remains the **Production-proven baseline**. Stable process evidence does not make health, shutdown, backup, restore, update, or recovery **Verified**. Production adoption remains a separate operator-approved and **Field-verified** operation.
+
+A published GHCR image must not replace the locally built production image merely because both report `2.2.0`. The transition gate requires compatibility/provenance comparison, existing config/state validation, controlled fixture dry-run, consistent backup, an operator-approved change window, readiness evidence, and previous-compatible-image recovery evidence.
 
 ## Plan Suite
 
@@ -97,13 +113,18 @@ The implementation program is complete only when all of the following are eviden
 - Fleet configuration validation rejects malformed, duplicate, placeholder, and incompatible inputs.
 - Solo and fleet health endpoints expose consistent liveness, readiness, health, and status semantics.
 - Fleet startup reports `starting` during staggered activation rather than becoming falsely unhealthy.
+- A virtual-time acceptance case exercises 59 configured worker-equivalents with the 30-second stagger without a real 29-minute wait, keeping `starting` live and ready enough.
+- A persistent feed HTTP 500 affecting one synthetic worker is isolated while the other 58 continue queueing and draining; feed retrieval, Open Graph fallback, and item-handler failures remain distinct and aggregate-only.
 - The fleet template starts in dry-run with a pinned image and cannot accidentally commit runtime secrets or state.
 - Backup and restore tests prove SQLite-consistent state recovery.
+- Logging retention and privacy checks pass for documented `journald` and bounded `json-file` profiles without forcing a driver switch.
+- Optional custom CA mounting/selection passes absent, valid, and invalid-bundle tests without any private endpoint or path.
 - Fly.io, Railway, Render, and DigitalOcean manifests parse and satisfy the capability matrix or explicitly document unsupported features.
 - Every deployment document declares mode, provider, evidence status, state requirement, and version policy.
 - A release compatibility check verifies that the template examples and pinned image agree with application schemas and entry points.
 - The release workflow can open a version-update PR in the companion repository.
 - No document claims field verification without a dated provider verification record.
+- Any production image transition record includes the explicit GHCR compatibility gate and previous-compatible-image recovery evidence; no test or workflow performs production deployment.
 
 ## PR and Review Gates
 
