@@ -25,6 +25,18 @@
 
 ---
 
+## Normative Plan Review
+
+Read [`2026-08-03-plan-review-decisions.md`](2026-08-03-plan-review-decisions.md) before executing any detailed plan. Those reviewed decisions override conflicting illustrative snippets in the task documents, including:
+
+- Ajv 2020-12 initialization;
+- non-breaking schema-version placement;
+- application-owned `FLEET_SECRETS_JSON` parsing;
+- configurable healthcheck ports;
+- graceful-stop filesystem backups;
+- valid mounted secrets for image acceptance;
+- exact Render and DigitalOcean deployment choices.
+
 ## Plan Suite
 
 Execute the plans in this order:
