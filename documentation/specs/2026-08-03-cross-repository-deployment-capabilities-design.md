@@ -124,7 +124,7 @@ Docker Compose is the behavioral reference implementation. Other providers must 
 
 ## 5. Support and verification states
 
-Every deployment document and manifest must declare one of three evidence levels.
+Every deployment document and its corresponding manifest set must declare one of three evidence levels.
 
 ### 5.1 Verified
 
@@ -182,7 +182,7 @@ The target support matrix is:
 | Fly.io | Yes | Yes | Validated | Fleet requires one machine and persistent volume |
 | Railway | Yes | Yes | Validated | Fleet requires one replica and persistent volume |
 | Render | Yes | Yes | Validated | Fleet requires paid persistent disk and always-on worker/service |
-| DigitalOcean App Platform | Yes | Conditional | Validated with limitation | Fleet unsupported when durable worker storage is unavailable |
+| DigitalOcean App Platform | Yes | Conditional | Validated | App Platform fleet is unsupported without durable state; a Droplet may provide the Docker reference instead |
 
 DigitalOcean fleet support must not be presented as equivalent when its state cannot survive replacement. The implementation may provide an adapted deployment using a supported persistent service type, or explicitly mark fleet mode unsupported on App Platform and recommend a Droplet with Docker Compose.
 
@@ -312,7 +312,7 @@ environment:
 
 Publishing becomes active only through an explicit operator action.
 
-Solo mode should support the same dry-run contract so deployment behavior is consistent across modes.
+Solo mode must support the same dry-run contract so deployment behavior is consistent across modes.
 
 ### 8.2 Credentials
 
@@ -322,7 +322,7 @@ Solo mode should support the same dry-run contract so deployment behavior is con
 - Validation must reject known placeholder values.
 - Secrets must not appear in logs, thrown errors, health payloads, or generated support bundles.
 - Managed deployments must use provider secret stores.
-- File-based secrets should be supported where the provider can mount secrets as files.
+- File-based secrets must be supported where the provider can mount secrets as files.
 
 ### 8.3 Runtime state
 
@@ -339,13 +339,13 @@ A fleet deployment without durable state must be marked unsupported for producti
 
 ### 8.4 Version pinning
 
-The fleet template must pin a released application version by default:
+The fleet template must pin the currently supported released application version. At the date of this specification, the baseline is:
 
 ```text
 BSKY_RSS_VERSION=2.2.0
 ```
 
-The Compose image must resolve through that value. `latest` may be documented as an opt-in development convenience but not used as the production default.
+The Compose image must resolve through that value. `latest` may be documented as an opt-in development convenience but not used as the production default. Release synchronization must update the baseline when a newer supported release is adopted.
 
 Published image tag documentation must match the release workflow. If a Git tag `v2.2.0` publishes image tag `2.2.0`, documentation must use `2.2.0`.
 
@@ -377,7 +377,7 @@ Validation must detect:
 
 - Invalid JSON.
 - Missing required fields.
-- Unknown fields where strict validation is appropriate.
+- Unknown fields in schema-controlled files by default, with backwards-compatibility exceptions explicitly encoded in the schema version.
 - Invalid URLs.
 - Invalid intervals and limiter values.
 - Bot directory/id mismatch.
@@ -428,7 +428,7 @@ unhealthy
 shutting_down
 ```
 
-Suggested interpretation:
+Required interpretation:
 
 - `starting`: valid configuration loaded; activation in progress.
 - `operational`: expected workers active and scheduler running.
@@ -478,7 +478,7 @@ Docker and provider shutdown timeouts must be longer than the application shutdo
 
 ### 11.3 Fleet replica invariant
 
-All fleet manifests must declare one replica. Documentation must warn that autoscaling is unsupported. Health and startup logs should identify a lock conflict clearly.
+All fleet manifests must declare one replica. Documentation must warn that autoscaling is unsupported. Health and startup logs must identify a lock conflict clearly.
 
 ## 12. Backup, restore, update, and rollback
 
@@ -492,6 +492,8 @@ Fleet backup must capture:
 - Version metadata.
 
 The preferred backup procedure must either stop the fleet briefly or use a SQLite-consistent backup method. Copying live database files without consistency guarantees is not sufficient.
+
+Backup archives containing secrets must be created with owner-only permissions and the documentation must recommend encryption before off-host storage.
 
 ### 12.2 Restore
 
@@ -651,13 +653,13 @@ A tagged `bsky.rss` release must:
 4. Publish versioned AMD64 and ARM64 images.
 5. Produce release metadata describing configuration-schema compatibility.
 6. Validate the fleet template against the released image.
-7. Open or prepare a companion-repository update that:
+7. Automatically create a companion-repository update PR that:
    - changes the pinned application version,
    - synchronizes canonical example configuration,
    - updates upgrade notes,
    - records compatibility results.
 
-The template must not silently advance to a new major or incompatible release.
+The template must not silently advance to a new major or incompatible release. If cross-repository credentials are not yet configured, the workflow and its documented secret requirements must still be committed and testable without performing the write.
 
 ## 16. Logging and observability
 
@@ -712,22 +714,41 @@ This implementation cycle does not require:
 
 Mocks and dry-run must nevertheless cover behavior up to the final external publication boundary.
 
-## 19. Implementation sequencing
+## 19. Implementation sequencing and decomposition
 
-The implementation plan must preserve this order:
+This specification defines one coordinated program, not one giant pull request. The implementation plan must decompose it into sequential workstreams with independent verification and review gates.
 
-1. Application test and validation foundations.
-2. Shared solo/fleet health model.
-3. Docker reference deployments and smoke tests.
-4. Fleet template safety and lifecycle tooling.
-5. Documentation restructuring and mode labeling.
-6. Managed provider manifests for solo and fleet.
-7. Provider static validation.
-8. Cross-repository release synchronization.
-9. Full consistency and security review.
-10. Focused pull requests with verification evidence.
+### Workstream 1: Application contracts
 
-Changes may be split into multiple PRs, but each PR must leave its repository internally consistent.
+- Canonical test commands.
+- Configuration schemas and validation.
+- Shared dry-run semantics.
+- Shared health/readiness/status model.
+- Lifecycle and secret-redaction tests.
+
+### Workstream 2: Docker references and fleet template
+
+- Verified solo Docker deployment.
+- Verified fleet Docker deployment.
+- Template safety defaults.
+- Initialization, backup, restore, update, and rollback tooling.
+- Version pinning and log rotation.
+
+### Workstream 3: Documentation and managed providers
+
+- Documentation restructuring and mode metadata.
+- Solo and fleet manifests for Fly.io, Railway, and Render.
+- DigitalOcean decision based on current durable-storage capabilities.
+- Static provider validation and field-verification checklists.
+
+### Workstream 4: Release synchronization and final audit
+
+- Image smoke tests.
+- Configuration compatibility metadata.
+- Automated companion update PR workflow.
+- Cross-repository consistency, security, and documentation review.
+
+The workstreams must preserve this dependency order. Changes may be split into multiple focused PRs, but each PR must leave its repository internally consistent and must include its verification evidence.
 
 ## 20. Acceptance criteria
 
