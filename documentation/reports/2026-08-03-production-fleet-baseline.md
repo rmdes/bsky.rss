@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-08-03
 
-**Authoritative running fleet:** `/home/skyfleet-next` on `ssh ob`
+**Authoritative running fleet:** `/home/skyfleet-next` on the production host
 
 **Historical deployment:** `/home/skyfleet` (evidence only; not a migration or rollback target)
 
@@ -14,7 +14,7 @@
 
 The current production fleet is one directly executed Node.js fleet process in one Docker container. At the observation time, the container had been up for four days, had zero restarts, had not been OOM-killed, and exposed no Docker health status because neither the fleet runtime nor Compose currently defines a fleet healthcheck.
 
-The operator attests that `/home/skyfleet-next` has run flawlessly for at least three days. That attestation is recorded as an attestation, not upgraded to direct verification. Direct process evidence supports uninterrupted container operation. The available sanitized log window also contains recurring feed-fetch errors and one uncertain publish result, so this report does not reinterpret “flawlessly” as “no per-feed or per-item errors.” No raw log messages were inspected because they may contain identifiers, feed URLs, or post contents.
+The operator attests that `/home/skyfleet-next` has run flawlessly for at least three days. That attestation is recorded as an attestation, not upgraded to direct verification. Direct process evidence supports uninterrupted container operation. Sanitized log aggregation also shows one persistent, isolated upstream feed failure, caught Open Graph failures, and one uncertain publish result in the original audit window, so this report does not reinterpret “flawlessly” as “no per-feed or per-item errors.” No raw log messages were inspected because they may contain identifiers, feed URLs, or post contents.
 
 The production image contains application version `2.2.0`. Its selected runtime-file hashes exactly match both `/home/skyfleet/bsky.rss` at commit `29530113c7cf46531b48fd28c4cd019b538223ed` and the current local runtime worktree. The image is locally tagged `bsky.rss:fleet`; it has no OCI revision or version label and is not pinned by a numeric image tag in the production Compose file.
 
@@ -118,6 +118,20 @@ The available sanitized log interval was `2026-08-02T17:00:52Z` through `2026-08
 
 These are event counts, not database verification. Raw messages and database rows were deliberately excluded.
 
+### Follow-up error classification
+
+The original 229 count specifically matched `[bsky.rss FEED] Error fetching feed`: failure to retrieve an RSS/Atom feed. It did not include `[bsky.rss FETCH] Error fetching Open Graph data`, which is a separate source-defined category. **Directly observed (coordinator-supplied recount):** a fresh allowlisted aggregation during review of the then-available rolling log stream produced:
+
+| Category | Events | Anonymous bot count | Production-safe assessment |
+|---|---:|---:|---|
+| Feed retrieval | 187 | 3 | One anonymous bot/feed accounted for 185 HTTP 500 responses and had zero queue and zero posted events in the same rolling window. The two other anonymous bots each had one retrieval error and continued processing. |
+| Open Graph retrieval | 196 | 22 | The source catches these failures and constructs its fallback embed/description path; these are not feed retrieval failures. |
+| Item handler | 0 | 0 | No item-handler errors matched. |
+
+For the two bots that continued after one feed retrieval error, the same window contained 18 queued/16 posted events and 1 queued/1 posted event respectively. The status-only projection classified 185 events as HTTP 500 and the two remaining events as having no HTTP status. The 185 HTTP 500 responses are direct evidence of a real, isolated upstream feed failure: not an Open Graph failure and not fleet-wide. The identity and URL were intentionally excluded.
+
+The earlier 229 and later 187 feed-retrieval counts are observations of different rolling `journald` availability windows, not contradictory counts over one fixed interval. Whether the persistent HTTP 500 condition predates the new fleet is unverified because older logs are unavailable.
+
 ## Health, shutdown, and orchestration
 
 Fleet health is **not implemented or externally exposed** in the observed baseline. There is no fleet health endpoint in the current source, no port publication, and no Docker healthcheck. Docker therefore reports only that the process is running, not that all publishers are ready or useful.
@@ -173,7 +187,7 @@ No memory, CPU, PID, swap, OOM, or replica resource limits are declared. One poi
 - Any host-wide cron-based backup not represented by the inspected deployment tree or matching systemd timers.
 - Compatibility of the current production state with a published numeric GHCR image.
 - Provider deployments and any field-verification claims.
-- The underlying causes and affected feeds for sanitized feed-fetch error counts.
+- Whether the isolated persistent HTTP 500 feed failure predates the new fleet; older logs are unavailable.
 
 The current process-safety module logs and continues after an unhandled rejection or uncaught exception. No source-defined match for either category appeared in the available sanitized log interval, but without health/readiness there is presently no verified mechanism to detect whether a process that survived such an event remains useful. The runtime-contract plan should define and test this failure policy.
 
