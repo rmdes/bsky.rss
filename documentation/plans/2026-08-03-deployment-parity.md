@@ -242,9 +242,10 @@ Railway:
 
 Render:
 
-- paid always-on web service if HTTP health is required, or background worker with explicit external health limitation;
+- one paid, always-on web service;
 - persistent disk;
 - one instance;
+- HTTP health/readiness;
 - no free-tier recommendation.
 
 DigitalOcean:
