@@ -103,7 +103,8 @@ export class BskyClient {
     service: string,
     private store: BotStore,
     private logger: FleetLogger,
-    private dryRun: boolean = false
+    private dryRun: boolean = false,
+    private alreadyExistsClassifier: (error: unknown) => boolean = isAlreadyExistsError
   ) {
     this.agent = new BskyAgent({
       service,
@@ -199,7 +200,7 @@ export class BskyClient {
       );
       return { ok: true, uri: result.uri };
     } catch (error) {
-      if (isAlreadyExistsError(error)) {
+      if (this.alreadyExistsClassifier(error)) {
         this.logger.verbose(
           "POST",
           `rkey ${params.rkey} already exists — treating as already published, not a duplicate`,

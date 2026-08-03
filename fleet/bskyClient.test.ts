@@ -4,7 +4,11 @@ import { XRPCError, ResponseType } from "@atproto/xrpc";
 import { BskyClient, classifyPostError, isAlreadyExistsError, toAtprotoRkey } from "./bskyClient.ts";
 import { FleetLogger, type FleetLogLevel, type FleetLogRecord } from "./logging.ts";
 
-function makeClient(level: FleetLogLevel, dryRun = false) {
+function makeClient(
+  level: FleetLogLevel,
+  dryRun = false,
+  alreadyExistsClassifier?: (error: unknown) => boolean
+) {
   const records: FleetLogRecord[] = [];
   const logger = new FleetLogger({
     defaultLevel: level,
@@ -15,7 +19,14 @@ function makeClient(level: FleetLogLevel, dryRun = false) {
     readSession: () => undefined,
     writeSession: () => undefined,
   };
-  const client = new BskyClient("test-bot", "https://bsky.social", store as any, logger, dryRun);
+  const client = new BskyClient(
+    "test-bot",
+    "https://bsky.social",
+    store as any,
+    logger,
+    dryRun,
+    alreadyExistsClassifier
+  );
   return { client, records };
 }
 
@@ -168,4 +179,35 @@ test("dry-run post content is verbose and absent at summary", async () => {
   assert.equal(verbose.records.length, 1);
   assert.equal(verbose.records[0]!.level, "verbose");
   assert.match(verbose.records[0]!.message, /private dry-run content/);
+});
+
+test("an existing-rkey post message is verbose and cannot leak the rkey at summary", async () => {
+  for (const level of ["summary", "verbose"] as const) {
+    const runtime = makeClient(level, false, () => true);
+    (runtime.client as any).agent = {
+      accountDid: "did:plc:test",
+      app: {
+        bsky: {
+          feed: {
+            post: {
+              create: async () => {
+                throw new Error("record already exists");
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = await runtime.client.post({ content: "plain content", rkey: "private-rkey" });
+
+    assert.deepEqual(result, { ok: true });
+    if (level === "summary") {
+      assert.equal(runtime.records.length, 0);
+    } else {
+      assert.equal(runtime.records.length, 1);
+      assert.equal(runtime.records[0]!.level, "verbose");
+      assert.match(runtime.records[0]!.message, /private-rkey/);
+    }
+  }
 });
