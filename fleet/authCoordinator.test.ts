@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import { AuthCoordinator } from "./authCoordinator.ts";
 import type { BotSpec } from "./configLoader.ts";
 import type { BotWorker } from "./botWorker.ts";
+import { FleetLogger, type FleetLogRecord } from "./logging.ts";
+
+function quietLogger(): FleetLogger {
+  return new FleetLogger({ defaultLevel: "summary", sink: () => undefined });
+}
 
 function makeSpec(botId: string): BotSpec {
   return {
@@ -27,6 +32,7 @@ test("activates every bot in order via the injected factory", async () => {
   const activatedOrder: string[] = [];
 
   const coordinator = new AuthCoordinator({
+    logger: quietLogger(),
     bots: specs,
     staggerSeconds: 0,
     activateBot: async (spec) => {
@@ -46,6 +52,7 @@ test("one bot's activation failure is isolated: the rest still activate", async 
   const specs = [makeSpec("bot-1"), makeSpec("bot-2"), makeSpec("bot-3")];
 
   const coordinator = new AuthCoordinator({
+    logger: quietLogger(),
     bots: specs,
     staggerSeconds: 0,
     activateBot: async (spec) => {
@@ -71,6 +78,7 @@ test("waits at least staggerSeconds between activations", async () => {
   const staggerSeconds = 0.05;
 
   const coordinator = new AuthCoordinator({
+    logger: quietLogger(),
     bots: specs,
     staggerSeconds,
     activateBot: async (spec) => fakeWorker(spec.botId),
@@ -88,6 +96,7 @@ test("does not wait after the last bot", async () => {
   const staggerSeconds = 5;
 
   const coordinator = new AuthCoordinator({
+    logger: quietLogger(),
     bots: specs,
     staggerSeconds,
     activateBot: async (spec) => fakeWorker(spec.botId),
@@ -103,6 +112,7 @@ test("does not wait after the last bot", async () => {
 test("abortActivation stops the loop before activating any not-yet-activated bot", async () => {
   const specs = [makeSpec("bot-1"), makeSpec("bot-2"), makeSpec("bot-3")];
   const coordinator = new AuthCoordinator({
+    logger: quietLogger(),
     bots: specs,
     staggerSeconds: 0.05,
     activateBot: async (spec) => fakeWorker(spec.botId),
@@ -119,6 +129,7 @@ test("abortActivation stops the loop before activating any not-yet-activated bot
 test("abortActivation interrupts an in-progress stagger wait immediately rather than after the full delay", async () => {
   const specs = [makeSpec("bot-1"), makeSpec("bot-2")];
   const coordinator = new AuthCoordinator({
+    logger: quietLogger(),
     bots: specs,
     staggerSeconds: 5, // long enough that a real remaining wait would fail this test's timing
     activateBot: async (spec) => fakeWorker(spec.botId),
@@ -138,6 +149,7 @@ test("shutdownAll calls shutdown on every active worker in parallel with the giv
   const specs = [makeSpec("bot-1"), makeSpec("bot-2")];
   const shutdownCalls: { botId: string; timeoutMs: number }[] = [];
   const coordinator = new AuthCoordinator({
+    logger: quietLogger(),
     bots: specs,
     staggerSeconds: 0,
     activateBot: async (spec) =>
@@ -154,4 +166,34 @@ test("shutdownAll calls shutdown on every active worker in parallel with the giv
 
   assert.equal(shutdownCalls.length, 2);
   assert.ok(shutdownCalls.every((c) => c.timeoutMs === 1234));
+});
+
+test("activation summaries are privacy-safe while debug retains failure detail and stored status is unchanged", async () => {
+  const records: FleetLogRecord[] = [];
+  const logger = new FleetLogger({
+    defaultLevel: "debug",
+    sink: (_line, record) => records.push(record),
+  });
+  const coordinator = new AuthCoordinator({
+    logger,
+    bots: [makeSpec("good-bot"), makeSpec("failed-bot")],
+    staggerSeconds: 0,
+    activateBot: async (spec) => {
+      if (spec.botId === "failed-bot") throw new Error("private raw login failure");
+      return fakeWorker(spec.botId);
+    },
+  });
+
+  await coordinator.start();
+
+  const summaries = records.filter((record) => record.level === "summary");
+  assert.deepEqual(
+    summaries.map((record) => ({ botId: record.botId, message: record.message })),
+    [
+      { botId: "good-bot", message: "Activated" },
+      { botId: "failed-bot", message: "Failed to activate, skipping" },
+    ]
+  );
+  assert.ok(records.some((record) => record.level === "debug" && record.botId === "failed-bot" && record.message.includes("private raw login failure")));
+  assert.equal(coordinator.activationFailures()[0]!.error, "Error: private raw login failure");
 });

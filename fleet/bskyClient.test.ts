@@ -1,7 +1,23 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { XRPCError, ResponseType } from "@atproto/xrpc";
-import { classifyPostError, isAlreadyExistsError, toAtprotoRkey } from "./bskyClient.ts";
+import { BskyClient, classifyPostError, isAlreadyExistsError, toAtprotoRkey } from "./bskyClient.ts";
+import { FleetLogger, type FleetLogLevel, type FleetLogRecord } from "./logging.ts";
+
+function makeClient(level: FleetLogLevel, dryRun = false) {
+  const records: FleetLogRecord[] = [];
+  const logger = new FleetLogger({
+    defaultLevel: level,
+    now: () => new Date("2026-08-03T12:00:00.000Z"),
+    sink: (_line, record) => records.push(record),
+  });
+  const store = {
+    readSession: () => undefined,
+    writeSession: () => undefined,
+  };
+  const client = new BskyClient("test-bot", "https://bsky.social", store as any, logger, dryRun);
+  return { client, records };
+}
 
 function makeXRPCError(status: number, headers?: Record<string, string>): XRPCError {
   const err = new XRPCError(status, "TestError", "test error");
@@ -89,4 +105,67 @@ test("toAtprotoRkey matches the real TID format across many varied inputs, not j
     const rkey = toAtprotoRkey(`dedupe-key-${i}-${"x".repeat(i % 50)}`);
     assert.match(rkey, REAL_ATPROTO_TID_REGEX, `failed for input index ${i}: got "${rkey}"`);
   }
+});
+
+test("summary login records omit the account handle while verbose records may include it", async () => {
+  const summary = makeClient("summary");
+  (summary.client as any).agent = {
+    login: async () => ({ success: true, data: { handle: "private-handle.bsky.social" } }),
+  };
+  await summary.client.login("identifier", "password");
+  assert.equal(summary.records.length, 1);
+  assert.equal(summary.records[0]!.level, "summary");
+  assert.doesNotMatch(summary.records[0]!.message, /private-handle|identifier|password/);
+
+  const verbose = makeClient("verbose");
+  (verbose.client as any).agent = {
+    login: async () => ({ success: true, data: { handle: "private-handle.bsky.social" } }),
+  };
+  await verbose.client.login("identifier", "password");
+  assert.ok(verbose.records.some((record) => record.level === "verbose" && record.message.includes("private-handle.bsky.social")));
+});
+
+test("resumed-session summary omits the handle and retains the successful short-circuit", async () => {
+  const records: FleetLogRecord[] = [];
+  const logger = new FleetLogger({
+    defaultLevel: "summary",
+    sink: (_line, record) => records.push(record),
+  });
+  const store = {
+    readSession: () => ({ accessJwt: "secret" }),
+    writeSession: () => undefined,
+  };
+  const client = new BskyClient("test-bot", "https://bsky.social", store as any, logger);
+  let passwordLoginCalled = false;
+  (client as any).agent = {
+    resumeSession: async () => ({ success: true, data: { handle: "resumed-private.bsky.social" } }),
+    login: async () => {
+      passwordLoginCalled = true;
+      return { success: true, data: { handle: "unused" } };
+    },
+  };
+
+  await client.login("identifier", "password");
+
+  assert.equal(passwordLoginCalled, false);
+  assert.equal(records.length, 1);
+  assert.doesNotMatch(records[0]!.message, /resumed-private|secret|identifier|password/);
+});
+
+test("dry-run post content is verbose and absent at summary", async () => {
+  const summary = makeClient("summary", true);
+  assert.deepEqual(await summary.client.post({ content: "private dry-run content", rkey: "key" }), {
+    ok: true,
+    uri: "dry-run://noop",
+  });
+  assert.equal(summary.records.length, 0);
+
+  const verbose = makeClient("verbose", true);
+  assert.deepEqual(await verbose.client.post({ content: "private dry-run content", rkey: "key" }), {
+    ok: true,
+    uri: "dry-run://noop",
+  });
+  assert.equal(verbose.records.length, 1);
+  assert.equal(verbose.records[0]!.level, "verbose");
+  assert.match(verbose.records[0]!.message, /private dry-run content/);
 });

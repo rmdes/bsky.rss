@@ -1,73 +1,51 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { installProcessSafetyNet } from "./processSafety.ts";
+import { FleetLogger, type FleetLogRecord } from "./logging.ts";
 
-test("installProcessSafetyNet does not stack duplicate listeners when called more than once", () => {
-  const before = process.listenerCount("unhandledRejection");
-  installProcessSafetyNet();
-  installProcessSafetyNet();
-  const after = process.listenerCount("unhandledRejection");
-  assert.equal(after, before + 1, "a second install must not add a second listener");
-});
+test("process safety installs once, keeps running, and routes safe summaries plus debug errors", () => {
+  const records: FleetLogRecord[] = [];
+  const logger = new FleetLogger({
+    defaultLevel: "debug",
+    sink: (_line, record) => records.push(record),
+  });
+  const rejectionListenersBefore = process.listeners("unhandledRejection");
+  const exceptionListenersBefore = process.listeners("uncaughtException");
 
-test("installProcessSafetyNet installs an unhandledRejection listener that does not exit the process", () => {
-  installProcessSafetyNet();
-  const listenersBefore = process.listenerCount("unhandledRejection");
-  assert.ok(listenersBefore >= 1);
+  installProcessSafetyNet(logger);
+  installProcessSafetyNet(new FleetLogger({ defaultLevel: "debug", sink: () => assert.fail("second logger used") }));
+
+  const rejectionListenersAfter = process.listeners("unhandledRejection");
+  const exceptionListenersAfter = process.listeners("uncaughtException");
+  assert.equal(rejectionListenersAfter.length, rejectionListenersBefore.length + 1);
+  assert.equal(exceptionListenersAfter.length, exceptionListenersBefore.length + 1);
+
+  const rejectionHandler = rejectionListenersAfter.find((listener) => !rejectionListenersBefore.includes(listener));
+  const exceptionHandler = exceptionListenersAfter.find((listener) => !exceptionListenersBefore.includes(listener));
+  assert.ok(rejectionHandler);
+  assert.ok(exceptionHandler);
 
   let exited = false;
   const originalExit = process.exit;
   (process as any).exit = () => {
     exited = true;
   };
-
-  // Save and remove test framework's listeners to avoid false test failure from synthetic event
-  const allListeners = process.listeners("unhandledRejection");
-  const testFrameworkListeners = allListeners.filter((l) => {
-    const str = l.toString();
-    return !str.includes("bsky.rss") && !str.includes("synthetic");
-  });
-
   try {
-    // Temporarily remove test framework's listeners
-    testFrameworkListeners.forEach((l) => process.removeListener("unhandledRejection", l));
-
-    process.emit("unhandledRejection", new Error("synthetic rejection for test"), Promise.resolve());
+    rejectionHandler(new Error("private rejection detail"), Promise.resolve());
+    exceptionHandler(new TypeError("private exception detail"), "uncaughtException");
   } finally {
-    // Restore test framework's listeners
-    testFrameworkListeners.forEach((l) => process.on("unhandledRejection", l));
     process.exit = originalExit;
   }
-  assert.equal(exited, false, "the handler must not call process.exit()");
-});
 
-test("installProcessSafetyNet installs an uncaughtException listener that does not exit the process", () => {
-  installProcessSafetyNet();
-  const listenersBefore = process.listenerCount("uncaughtException");
-  assert.ok(listenersBefore >= 1);
-
-  let exited = false;
-  const originalExit = process.exit;
-  (process as any).exit = () => {
-    exited = true;
-  };
-
-  // Save and remove test framework's listeners to avoid false test failure from synthetic event
-  const allListeners = process.listeners("uncaughtException");
-  const testFrameworkListeners = allListeners.filter((l) => {
-    const str = l.toString();
-    return !str.includes("bsky.rss") && !str.includes("synthetic");
-  });
-
-  try {
-    // Temporarily remove test framework's listeners
-    testFrameworkListeners.forEach((l) => process.removeListener("uncaughtException", l));
-
-    process.emit("uncaughtException", new Error("synthetic exception for test"));
-  } finally {
-    // Restore test framework's listeners
-    testFrameworkListeners.forEach((l) => process.on("uncaughtException", l));
-    process.exit = originalExit;
-  }
-  assert.equal(exited, false, "the handler must not call process.exit()");
+  assert.equal(exited, false);
+  assert.deepEqual(
+    records.filter((record) => record.level === "summary").map((record) => record.message),
+    [
+      "Unhandled rejection (process continues): Error",
+      "Uncaught exception (process continues): TypeError",
+    ]
+  );
+  assert.ok(records.some((record) => record.level === "debug" && record.message.includes("private rejection detail")));
+  assert.ok(records.some((record) => record.level === "debug" && record.message.includes("private exception detail")));
+  assert.ok(records.filter((record) => record.level === "summary").every((record) => !record.message.includes("private")));
 });

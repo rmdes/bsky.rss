@@ -1,20 +1,22 @@
+import { FleetLogger, formatDebugError } from "./logging.ts";
+
 let installed = false;
 
-export function installProcessSafetyNet(): void {
+function exceptionClass(error: unknown): string {
+  return error instanceof Error ? error.constructor.name : typeof error;
+}
+
+export function installProcessSafetyNet(logger: FleetLogger): void {
   if (installed) return;
   installed = true;
 
   process.on("unhandledRejection", (reason) => {
-    console.log(
-      `[${new Date().toUTCString()}] - [bsky.rss FATAL] Unhandled rejection (process continues): ${reason}`
-    );
+    logger.summary("FATAL", `Unhandled rejection (process continues): ${exceptionClass(reason)}`);
+    logger.debug("FATAL", formatDebugError(reason));
   });
 
   process.on("uncaughtException", (error) => {
-    console.log(
-      `[${new Date().toUTCString()}] - [bsky.rss FATAL] Uncaught exception (process continues): ${
-        error?.stack ?? error
-      }`
-    );
+    logger.summary("FATAL", `Uncaught exception (process continues): ${exceptionClass(error)}`);
+    logger.debug("FATAL", formatDebugError(error));
   });
 }

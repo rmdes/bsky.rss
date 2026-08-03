@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { BskyAgent, RichText, AtpSessionEvent, AtpSessionData } from "@atproto/api";
 import { XRPCError, ResponseType } from "@atproto/xrpc";
 import { BotStore } from "./botStore.ts";
+import { FleetLogger } from "./logging.ts";
 
 const TID_CHARSET = "234567abcdefghijklmnopqrstuvwxyz";
 const TID_FIRST_CHAR_CHARSET = "234567abcdefghij";
@@ -101,6 +102,7 @@ export class BskyClient {
     private botId: string,
     service: string,
     private store: BotStore,
+    private logger: FleetLogger,
     private dryRun: boolean = false
   ) {
     this.agent = new BskyAgent({
@@ -118,9 +120,8 @@ export class BskyClient {
       try {
         const resumed = await this.agent.resumeSession(persisted);
         if (resumed.success) {
-          console.log(
-            `[${new Date().toUTCString()}] - [bsky.rss LOGIN] [${this.botId}] Resumed session for ${resumed.data.handle}`
-          );
+          this.logger.summary("LOGIN", "Session resumed", this.botId);
+          this.logger.verbose("LOGIN", `Resumed session for ${resumed.data.handle}`, this.botId);
           return;
         }
       } catch (e) {
@@ -130,9 +131,8 @@ export class BskyClient {
     }
     const loginResult = await this.agent.login({ identifier, password });
     if (!loginResult.success) throw new Error("Login failed (identifier/password)");
-    console.log(
-      `[${new Date().toUTCString()}] - [bsky.rss LOGIN] [${this.botId}] Logged in as ${loginResult.data.handle}`
-    );
+    this.logger.summary("LOGIN", "Logged in", this.botId);
+    this.logger.verbose("LOGIN", `Logged in as ${loginResult.data.handle}`, this.botId);
   }
 
   async post(params: {
@@ -143,9 +143,7 @@ export class BskyClient {
     embed?: ResolvedEmbed;
   }): Promise<PostResult> {
     if (this.dryRun) {
-      console.log(
-        `[${new Date().toUTCString()}] - [bsky.rss POST] [${this.botId}] [dry-run] would publish: ${params.content}`
-      );
+      this.logger.verbose("POST", `[dry-run] would publish: ${params.content}`, this.botId);
       return { ok: true, uri: "dry-run://noop" };
     }
 
@@ -202,8 +200,10 @@ export class BskyClient {
       return { ok: true, uri: result.uri };
     } catch (error) {
       if (isAlreadyExistsError(error)) {
-        console.log(
-          `[${new Date().toUTCString()}] - [bsky.rss POST] [${this.botId}] rkey ${params.rkey} already exists — treating as already published, not a duplicate`
+        this.logger.verbose(
+          "POST",
+          `rkey ${params.rkey} already exists — treating as already published, not a duplicate`,
+          this.botId
         );
         return { ok: true };
       }

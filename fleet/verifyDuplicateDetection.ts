@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { BotStore } from "./botStore.ts";
 import { BskyClient } from "./bskyClient.ts";
+import { FleetLogger } from "./logging.ts";
 
 function env(name: string): string {
   const value = process.env[name];
@@ -23,7 +24,7 @@ async function main(): Promise<void> {
   const instanceUrl = env("VERIFY_INSTANCE_URL");
 
   const store = new BotStore("./data/verify-duplicate-detection.sqlite");
-  const client = new BskyClient("verify-script", instanceUrl, store, false);
+  const client = new BskyClient("verify-script", instanceUrl, store, new FleetLogger({ defaultLevel: "debug" }), false);
   await client.login(identifier, password);
 
   const testRkey = `dupe-test-${Date.now()}`;

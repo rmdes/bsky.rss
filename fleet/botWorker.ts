@@ -4,6 +4,8 @@ import { BskyClient, ResolvedEmbed } from "./bskyClient.ts";
 import { BotStore } from "./botStore.ts";
 import { selectEligibleItems, isStillFresh, FreshnessConfig } from "./freshnessPolicy.ts";
 import type { QueueItemRow } from "./botStore.ts";
+import { BotOperations, type BotOperationalSnapshot } from "./botOperations.ts";
+import { FleetLogger, formatDebugError } from "./logging.ts";
 
 export interface BotWorkerOptions {
   botId: string;
@@ -14,24 +16,26 @@ export interface BotWorkerOptions {
   runIntervalSeconds: number;
   freshnessConfig: FreshnessConfig;
   perBotQueueMaxLength: number;
-}
-
-function log(botId: string, scope: string, message: string): void {
-  console.log(`[${new Date().toUTCString()}] - [bsky.rss ${scope}] [${botId}] ${message}`);
+  operations: BotOperations;
+  logger: FleetLogger;
 }
 
 export class BotWorker {
+  readonly botId: string;
   private queueRunning = false;
   private intervalHandle: NodeJS.Timeout | null = null;
 
-  constructor(private options: BotWorkerOptions) {}
+  constructor(private options: BotWorkerOptions) {
+    this.botId = options.botId;
+  }
 
   async start(): Promise<void> {
     this.options.feedReader.onItem((item: ParsedItem) => this.enqueue(item));
     this.options.feedReader.start();
     this.intervalHandle = setInterval(() => {
       this.drainOnce().catch((err) => {
-        log(this.options.botId, "QUEUE", `Unexpected error during drain: ${err}`);
+        this.options.logger.summary("QUEUE", "Unexpected error during drain", this.botId);
+        this.options.logger.debug("QUEUE", formatDebugError(err), this.botId);
       });
     }, this.options.runIntervalSeconds * 1000);
   }
@@ -64,12 +68,16 @@ export class BotWorker {
     return this.options.store.countQueued();
   }
 
+  operationalSnapshot(): BotOperationalSnapshot {
+    return this.options.operations.snapshot();
+  }
+
   private enqueue(item: ParsedItem): void {
     if (this.options.store.countQueued() >= this.options.perBotQueueMaxLength) {
-      log(
-        this.options.botId,
+      this.options.logger.verbose(
         "QUEUE",
-        `Queue at capacity (${this.options.perBotQueueMaxLength}), dropping item: ${item.title}`
+        `Queue at capacity (${this.options.perBotQueueMaxLength}), dropping item: ${item.title}`,
+        this.botId
       );
       return;
     }
@@ -82,10 +90,15 @@ export class BotWorker {
       dedupeKey: item.dedupeKey,
     });
     if (id === 0) {
-      log(this.options.botId, "QUEUE", `Duplicate item ignored (already queued or previously published): ${item.title}`);
+      this.options.logger.verbose(
+        "QUEUE",
+        `Duplicate item ignored (already queued or previously published): ${item.title}`,
+        this.botId
+      );
       return;
     }
-    log(this.options.botId, "QUEUE", `Queuing item (${item.title})`);
+    this.options.operations.recordQueued();
+    this.options.logger.verbose("QUEUE", `Queuing item (${item.title})`, this.botId);
   }
 
   private async resolveEmbed(row: QueueItemRow): Promise<ResolvedEmbed | undefined> {
@@ -111,7 +124,8 @@ export class BotWorker {
     const { toPublish, toSkip } = selectEligibleItems(rows, this.options.freshnessConfig);
     for (const row of toSkip) {
       this.options.store.setQueueItemStatus(row.id, "skipped");
-      log(this.options.botId, "QUEUE", `Skipping stale or over-catchup-limit item (${row.title})`);
+      this.options.operations.recordPolicySkip();
+      this.options.logger.verbose("QUEUE", `Skipping stale or over-catchup-limit item (${row.title})`, this.botId);
     }
     if (toPublish.length === 0) return;
     if (!this.options.scheduler.isEligibleNow(toPublish.length)) return;
@@ -125,7 +139,8 @@ export class BotWorker {
         // can let an item go stale after it was selected (design spec §6).
         if (!isStillFresh(row.itemDate, this.options.freshnessConfig.maxItemAgeMinutes)) {
           this.options.store.setQueueItemStatus(row.id, "skipped");
-          log(this.options.botId, "QUEUE", `Item went stale mid-pass, skipping (${row.title})`);
+          this.options.operations.recordPolicySkip();
+          this.options.logger.verbose("QUEUE", `Item went stale mid-pass, skipping (${row.title})`, this.botId);
           continue;
         }
 
@@ -140,30 +155,36 @@ export class BotWorker {
             embed,
           });
         } catch (err) {
-          log(this.options.botId, "POST", `Unexpected error posting: ${err}`);
+          this.options.operations.recordPostException();
+          this.options.logger.summary("POST", "Unexpected error posting; item remains queued", this.botId);
+          this.options.logger.debug("POST", formatDebugError(err), this.botId);
           break;
         }
 
         if (!result.ok) {
           if (result.ratelimit) {
+            this.options.operations.recordPostDeferred();
             this.options.scheduler.setRateLimitDeadline(result.retryAfterSeconds ?? 30);
-            log(
-              this.options.botId,
+            this.options.logger.summary(
               "QUEUE",
-              `Post rate limit exceeded - process will resume after ${result.retryAfterSeconds ?? 30} seconds`
+              `Post rate limit exceeded - process will resume after ${result.retryAfterSeconds ?? 30} seconds`,
+              this.botId
             );
             break;
           }
           // Uncertain, non-rate-limit outcome: skip this one item, keep draining the rest.
           this.options.store.setQueueItemStatus(row.id, "skipped");
-          log(this.options.botId, "POST", `Uncertain result for item, skipping without retry (${row.title})`);
+          this.options.operations.recordPostUncertain();
+          this.options.logger.summary("POST", "Uncertain result for item; skipped without retry", this.botId);
+          this.options.logger.verbose("POST", `Uncertain result for item, skipping without retry (${row.title})`, this.botId);
           continue;
         }
 
         this.options.store.setQueueItemStatus(row.id, "published");
+        this.options.operations.recordPostSuccess();
         this.options.scheduler.recordPost();
         this.options.store.writeCursor(new Date(row.itemDate));
-        log(this.options.botId, "POST", `Posted item (${row.content.slice(0, 40)})`);
+        this.options.logger.verbose("POST", `Posted item (${row.content.slice(0, 40)})`, this.botId);
       }
     } finally {
       this.queueRunning = false;

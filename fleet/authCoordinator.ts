@@ -1,14 +1,12 @@
 import type { BotWorker } from "./botWorker.ts";
 import type { BotSpec } from "./configLoader.ts";
+import { FleetLogger, formatDebugError } from "./logging.ts";
 
 export interface AuthCoordinatorOptions {
   bots: BotSpec[];
   staggerSeconds: number;
   activateBot: (spec: BotSpec) => Promise<BotWorker>;
-}
-
-function log(botId: string, message: string): void {
-  console.log(`[${new Date().toUTCString()}] - [bsky.rss AUTH] [${botId}] ${message}`);
+  logger: FleetLogger;
 }
 
 export class AuthCoordinator {
@@ -27,10 +25,11 @@ export class AuthCoordinator {
       try {
         const worker = await activateBot(spec);
         this.workers.push(worker);
-        log(spec.botId, "Activated");
+        this.options.logger.summary("AUTH", "Activated", spec.botId);
       } catch (err) {
         this.failures.push({ botId: spec.botId, error: String(err) });
-        log(spec.botId, `Failed to activate, skipping: ${err}`);
+        this.options.logger.summary("AUTH", "Failed to activate, skipping", spec.botId);
+        this.options.logger.debug("AUTH", formatDebugError(err), spec.botId);
       }
       if (this.aborted) break;
       if (i < bots.length - 1) await this.interruptibleSleep(staggerSeconds * 1000);

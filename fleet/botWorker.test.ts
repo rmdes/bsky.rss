@@ -6,6 +6,8 @@ import { Scheduler } from "./scheduler.ts";
 import type { ParsedItem } from "./feedReader.ts";
 import type { PostResult, ResolvedEmbed } from "./bskyClient.ts";
 import type { QueueItemRow } from "./botStore.ts";
+import { BotOperations } from "./botOperations.ts";
+import { FleetLogger, type FleetLogLevel, type FleetLogRecord } from "./logging.ts";
 
 class FakeFeedReader {
   private handler: ((item: ParsedItem) => void) | null = null;
@@ -79,27 +81,50 @@ class FakeBotStore {
   close(): void {}
 }
 
-function makeWorker(t: TestContext, overrides?: { feedReader?: any; bskyClient?: any; store?: any }) {
+function makeWorker(
+  t: TestContext,
+  overrides?: {
+    feedReader?: any;
+    bskyClient?: any;
+    store?: any;
+    scheduler?: any;
+    freshnessConfig?: { maxCatchupItems: number; maxItemAgeMinutes: number };
+    logger?: FleetLogger;
+    logLevel?: FleetLogLevel;
+    botId?: string;
+  }
+) {
+  const botId = overrides?.botId ?? "test-bot";
   const feedReader = overrides?.feedReader ?? new FakeFeedReader();
   const bskyClient = overrides?.bskyClient ?? new FakeBskyClient();
   const store = overrides?.store ?? new FakeBotStore();
-  const scheduler = new Scheduler({ minSpacing: 0, maxSpacing: 60, spacingWindow: 600, adaptiveSpacing: false });
+  const operations = new BotOperations(botId, () => new Date("2026-08-03T12:00:00.000Z"));
+  const records: FleetLogRecord[] = [];
+  const logger = overrides?.logger ??
+    new FleetLogger({
+      defaultLevel: overrides?.logLevel ?? "debug",
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+      sink: (_line, record) => records.push(record),
+    });
+  const scheduler = overrides?.scheduler ?? new Scheduler({ minSpacing: 0, maxSpacing: 60, spacingWindow: 600, adaptiveSpacing: false });
   const worker = new BotWorker({
-    botId: "test-bot",
+    botId,
     feedReader: feedReader as any,
     scheduler,
     bskyClient: bskyClient as any,
     store: store as any,
     runIntervalSeconds: 60,
-    freshnessConfig: { maxCatchupItems: 5, maxItemAgeMinutes: 120 },
+    freshnessConfig: overrides?.freshnessConfig ?? { maxCatchupItems: 5, maxItemAgeMinutes: 120 },
     perBotQueueMaxLength: 500,
+    operations,
+    logger,
   });
   t.after(() => worker.stop());
-  return { worker, feedReader, bskyClient, store };
+  return { worker, feedReader, bskyClient, store, operations, logger, records };
 }
 
 test("an emitted item is durably queued via BotStore, then drained on the next tick", async (t) => {
-  const { worker, bskyClient, store } = makeWorker(t);
+  const { worker, bskyClient, store, operations } = makeWorker(t);
   await worker.start();
   assert.equal(worker.queueLength(), 0);
 
@@ -115,6 +140,10 @@ test("an emitted item is durably queued via BotStore, then drained on the next t
   assert.equal(bskyClient.posted[0]!.content, "hello world");
   assert.equal(bskyClient.posted[0]!.rkey, "key-1");
   assert.equal(store.cursor, now);
+  assert.equal(worker.botId, "test-bot");
+  assert.deepEqual(worker.operationalSnapshot(), operations.snapshot());
+  assert.equal(worker.operationalSnapshot().counters.queued, 1);
+  assert.equal(worker.operationalSnapshot().counters.postSucceeded, 1);
 });
 
 test("rkey passed to BskyClient.post matches the item's dedupeKey exactly", async (t) => {
@@ -167,7 +196,7 @@ test("an embed with no imageUrl posts with embed.image undefined, no resolve cal
   assert.equal(bskyClient.posted[0]!.embed?.image, undefined);
 });
 
-test("a rate-limited post leaves the row 'queued', cursor untouched", async (t) => {
+test("a rate-limited post leaves the row queued and records one deferred outcome", async (t) => {
   const { worker, bskyClient, store } = makeWorker(t);
   await worker.start();
   const feedReader = (worker as any).options.feedReader as FakeFeedReader;
@@ -183,9 +212,11 @@ test("a rate-limited post leaves the row 'queued', cursor untouched", async (t) 
 
   assert.equal(worker.queueLength(), 1, "item should remain queued, not be lost");
   assert.equal(store.cursor, "", "cursor must not advance for an item that was not actually published");
+  assert.equal(worker.operationalSnapshot().counters.postDeferred, 1);
+  assert.equal(worker.operationalSnapshot().counters.postUncertain, 0);
 });
 
-test("an uncertain (non-rate-limit) failure marks the item skipped and continues to the next item", async (t) => {
+test("an uncertain failure skips each attempted item and records each outcome exactly once", async (t) => {
   const { worker, bskyClient, store } = makeWorker(t);
   await worker.start();
   const feedReader = (worker as any).options.feedReader as FakeFeedReader;
@@ -216,6 +247,8 @@ test("an uncertain (non-rate-limit) failure marks the item skipped and continues
   assert.equal(store.cursor, "", "cursor must not advance for a skipped, unpublished item");
   assert.equal(bskyClient.posted.length, 2, "both items should be attempted, proving loop continued after first uncertain failure");
   assert.equal(worker.queueLength(), 0, "both items should be marked skipped, proving second item was processed");
+  assert.equal(worker.operationalSnapshot().counters.postUncertain, 2);
+  assert.equal(worker.operationalSnapshot().counters.postDeferred, 0);
 });
 
 test("freshness policy skips a stale item at selection time without calling BskyClient", async (t) => {
@@ -228,6 +261,33 @@ test("freshness policy skips a stale item at selection time without calling Bsky
 
   assert.equal(bskyClient.posted.length, 0, "a stale item must never reach BskyClient.post");
   assert.equal(worker.queueLength(), 0, "the stale item should be marked skipped, not left queued forever");
+  assert.equal(worker.operationalSnapshot().counters.policySkipped, 1);
+});
+
+test("freshness re-check records one policy skip when an item goes stale mid-pass", async (t) => {
+  const freshnessConfig = { maxCatchupItems: 5, maxItemAgeMinutes: 120 };
+  const scheduler = {
+    isEligibleNow: () => {
+      freshnessConfig.maxItemAgeMinutes = -1;
+      return true;
+    },
+    setRateLimitDeadline: () => undefined,
+    recordPost: () => undefined,
+  };
+  const { worker, feedReader, bskyClient } = makeWorker(t, { freshnessConfig, scheduler });
+  await worker.start();
+  feedReader.emit({
+    title: "becomes-stale",
+    content: "not posted",
+    languages: [],
+    itemDate: new Date().toISOString(),
+    dedupeKey: "mid-pass-stale",
+  });
+  await worker.drainOnce();
+
+  assert.equal(bskyClient.posted.length, 0);
+  assert.equal(worker.queueLength(), 0);
+  assert.equal(worker.operationalSnapshot().counters.policySkipped, 1);
 });
 
 test("multiple queued items drain in item_date order", async (t) => {
@@ -256,11 +316,20 @@ test("multiple queued items drain in item_date order", async (t) => {
   );
 });
 
-test("a thrown exception from BskyClient.post does not crash drainOnce, item stays queued", async (t) => {
+test("a thrown post exception stays queued, records once, and keeps raw detail debug-only for its bot", async (t) => {
+  const records: FleetLogRecord[] = [];
+  const logger = new FleetLogger({
+    defaultLevel: "summary",
+    sink: (_line, record) => records.push(record),
+  });
+  logger.replaceOverrides(new Map([["test-bot", { level: "debug", expiresAt: "2099-01-01T00:00:00.000Z" }]]));
+  const thrown = new Error("unexpected network explosion");
+  thrown.stack = "Error: unexpected network explosion\n    at only-this-bot.ts:7:9";
   const { worker } = makeWorker(t, {
+    logger,
     bskyClient: {
       post: async () => {
-        throw new Error("unexpected network explosion");
+        throw thrown;
       },
     },
   });
@@ -270,6 +339,96 @@ test("a thrown exception from BskyClient.post does not crash drainOnce, item sta
 
   await assert.doesNotReject(() => worker.drainOnce());
   assert.equal(worker.queueLength(), 1);
+  assert.equal(worker.operationalSnapshot().counters.postException, 1);
+
+  const other = makeWorker(t, {
+    botId: "other-bot",
+    logger,
+    bskyClient: {
+      post: async () => {
+        throw new Error("other private failure");
+      },
+    },
+  });
+  await other.worker.start();
+  other.feedReader.emit({
+    title: "other",
+    content: "other private content",
+    languages: [],
+    itemDate: new Date().toISOString(),
+    dedupeKey: "other-key",
+  });
+  await other.worker.drainOnce();
+
+  const summary = records.filter((record) => record.level === "summary");
+  assert.equal(summary.length, 2);
+  assert.ok(summary.every((record) => !/boom|unexpected network explosion|only-this-bot|other private/.test(record.message)));
+  const debug = records.filter((record) => record.level === "debug");
+  assert.equal(debug.length, 1);
+  assert.equal(debug[0]!.botId, "test-bot");
+  assert.match(debug[0]!.message, /only-this-bot\.ts:7:9/);
+});
+
+test("duplicate and capacity-drop enqueue paths do not increment the queued counter", async (t) => {
+  const { worker, feedReader } = makeWorker(t, { store: new FakeBotStore() });
+  (worker as any).options.perBotQueueMaxLength = 2;
+  await worker.start();
+  const item = { title: "first", content: "one", languages: [], itemDate: new Date().toISOString(), dedupeKey: "k1" };
+  feedReader.emit(item);
+  feedReader.emit(item);
+  feedReader.emit({ ...item, title: "second", content: "two", dedupeKey: "k2" });
+  feedReader.emit({ ...item, title: "dropped", content: "three", dedupeKey: "k3" });
+
+  assert.equal(worker.queueLength(), 2);
+  assert.equal(worker.operationalSnapshot().counters.queued, 2);
+});
+
+test("per-item queue and successful-post context is verbose and absent at summary", async (t) => {
+  const summaryRuntime = makeWorker(t, { logLevel: "summary", botId: "summary-bot" });
+  await summaryRuntime.worker.start();
+  summaryRuntime.feedReader.emit({
+    title: "private title",
+    content: "private post content",
+    languages: [],
+    itemDate: new Date().toISOString(),
+    dedupeKey: "summary-key",
+  });
+  await summaryRuntime.worker.drainOnce();
+  assert.equal(summaryRuntime.records.length, 0);
+
+  const verboseRuntime = makeWorker(t, { logLevel: "verbose", botId: "verbose-bot" });
+  await verboseRuntime.worker.start();
+  verboseRuntime.feedReader.emit({
+    title: "private title",
+    content: "private post content",
+    languages: [],
+    itemDate: new Date().toISOString(),
+    dedupeKey: "verbose-key",
+  });
+  await verboseRuntime.worker.drainOnce();
+  assert.ok(verboseRuntime.records.some((record) => record.level === "verbose" && record.message.includes("private title")));
+  assert.ok(verboseRuntime.records.some((record) => record.level === "verbose" && record.message.includes("private post content")));
+});
+
+test("uncertain and rate-limit summaries omit item content and raw error detail", async (t) => {
+  for (const [botId, result] of [
+    ["uncertain-bot", { ok: false, ratelimit: false }],
+    ["rate-limit-bot", { ok: false, ratelimit: true, retryAfterSeconds: 17 }],
+  ] as const) {
+    const runtime = makeWorker(t, { logLevel: "summary", botId });
+    await runtime.worker.start();
+    runtime.feedReader.emit({
+      title: "private title",
+      content: "private item content",
+      languages: [],
+      itemDate: new Date().toISOString(),
+      dedupeKey: `${botId}-key`,
+    });
+    runtime.bskyClient.setNextResult(result);
+    await runtime.worker.drainOnce();
+    assert.equal(runtime.records.length, 1);
+    assert.doesNotMatch(runtime.records[0]!.message, /private title|private item content|raw failure/);
+  }
 });
 
 test("enqueue drops a new item once the queue is at perBotQueueMaxLength, keeping the existing items", async (t) => {
@@ -286,6 +445,8 @@ test("enqueue drops a new item once the queue is at perBotQueueMaxLength, keepin
     runIntervalSeconds: 60,
     freshnessConfig: { maxCatchupItems: 5, maxItemAgeMinutes: 120 },
     perBotQueueMaxLength: 2,
+    operations: new BotOperations("test-bot"),
+    logger: new FleetLogger({ defaultLevel: "debug", sink: () => undefined }),
   });
   t.after(() => worker.stop());
   await worker.start();
@@ -333,6 +494,8 @@ test("shutdown stops the FeedReader immediately, waits for an in-flight drain, t
     runIntervalSeconds: 60,
     freshnessConfig: { maxCatchupItems: 5, maxItemAgeMinutes: 120 },
     perBotQueueMaxLength: 500,
+    operations: new BotOperations("test-bot"),
+    logger: new FleetLogger({ defaultLevel: "debug", sink: () => undefined }),
   });
   await worker.start();
   feedReader.emit({ title: "t", content: "c", languages: [], itemDate: new Date().toISOString(), dedupeKey: "k" });
@@ -366,6 +529,8 @@ test("shutdown does not wait past its timeout even if the in-flight drain never 
     runIntervalSeconds: 60,
     freshnessConfig: { maxCatchupItems: 5, maxItemAgeMinutes: 120 },
     perBotQueueMaxLength: 500,
+    operations: new BotOperations("test-bot"),
+    logger: new FleetLogger({ defaultLevel: "debug", sink: () => undefined }),
   });
   await worker.start();
   feedReader.emit({ title: "t", content: "c", languages: [], itemDate: new Date().toISOString(), dedupeKey: "k" });
