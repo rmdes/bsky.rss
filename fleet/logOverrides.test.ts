@@ -76,6 +76,10 @@ test("readValidOverrides rejects an entire document when any entry is invalid", 
   const invalidDocuments: unknown[] = [
     {"bot-a": valid, "unknown-bot": valid},
     {"bot-a": valid, "bot-b": {level: "trace", expiresAt: valid.expiresAt}},
+    {"bot-a": valid, "bot-b": {
+      level: "trace",
+      expiresAt: "2026-08-03T11:59:59.999Z",
+    }},
     {"bot-a": valid, "bot-b": {level: "debug", expiresAt: "not-a-date"}},
     {"bot-a": valid, "bot-b": null},
     [valid],
@@ -140,6 +144,46 @@ test("watcher applies one bot override, expires it, and does not repeat administ
 
   assert.equal(logger.effectiveLevel("bot-a"), "summary");
   assert.equal(records.filter((record) => /override expired/i.test(record.message)).length, 1);
+});
+
+test("watcher warns only when an active override transitions into debug", (t) => {
+  const path = join(tempDirectory(t), "log-overrides.json");
+  const records: FleetLogRecord[] = [];
+  const now = new Date("2026-08-03T12:00:00.000Z");
+  const logger = new FleetLogger({
+    defaultLevel: "summary",
+    now: () => now,
+    sink: (_line, record) => records.push(record),
+  });
+  const watcher = new LogOverrideWatcher({
+    path,
+    knownBotIds: new Set(["bot-a"]),
+    logger,
+    now: () => now,
+  });
+
+  writeOverrides(path, new Map([
+    ["bot-a", {level: "verbose", expiresAt: "2026-08-03T12:05:00.000Z"}],
+  ]));
+  watcher.poll();
+  writeOverrides(path, new Map([
+    ["bot-a", {level: "debug", expiresAt: "2026-08-03T12:10:00.000Z"}],
+  ]));
+  watcher.poll();
+  writeOverrides(path, new Map([
+    ["bot-a", {level: "debug", expiresAt: "2026-08-03T12:15:00.000Z"}],
+  ]));
+  watcher.poll();
+
+  assert.deepEqual(logger.overrideFor("bot-a"), {
+    level: "debug",
+    expiresAt: "2026-08-03T12:15:00.000Z",
+  });
+  assert.equal(records.filter((record) => /override set/i.test(record.message)).length, 3);
+  assert.equal(
+    records.filter((record) => /private feed URLs, titles, and post text/i.test(record.message)).length,
+    1
+  );
 });
 
 test("watcher logs a valid clear once, including when deletion supplies the empty document", (t) => {

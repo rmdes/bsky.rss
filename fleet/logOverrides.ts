@@ -115,6 +115,11 @@ export class LogOverrideWatcher {
     const changedOverrides = [...nextOverrides].filter(([botId, override]) =>
       !sameOverride(this.activeOverrides.get(botId), override)
     );
+    const debugActivations = new Set(changedOverrides
+      .filter(([botId, override]) =>
+        override.level === "debug" && this.activeOverrides.get(botId)?.level !== "debug"
+      )
+      .map(([botId]) => botId));
     if (removedBotIds.length === 0 && changedOverrides.length === 0) return;
 
     this.activeOverrides = cloneOverrides(nextOverrides);
@@ -133,7 +138,7 @@ export class LogOverrideWatcher {
         `Log override set to ${override.level} until ${override.expiresAt}`,
         botId
       );
-      if (override.level === "debug") {
+      if (debugActivations.has(botId)) {
         this.options.logger.summary(
           "log-control",
           "Debug logging may contain private feed URLs, titles, and post text",

@@ -217,3 +217,49 @@ test("missing or malformed status rejects set and clear without creating or repl
     assert.equal(statSync(path).ino, originalInode);
   }
 });
+
+test("schema-invalid status rejects set and clear without mutating overrides", (t) => {
+  const dataRoot = tempDirectory(t);
+  const path = overridesPath(dataRoot);
+  writeFileSync(statusPath(dataRoot), JSON.stringify({
+    schemaVersion: 1,
+    phase: "running",
+  }));
+  writeOverrides(path, new Map([
+    ["bot-b", {level: "verbose", expiresAt: "2026-08-03T12:10:00.000Z"}],
+  ]));
+  const original = readFileSync(path, "utf8");
+  const originalInode = statSync(path).ino;
+
+  for (const args of [
+    ["set", "bot-a", "debug", "--for", "15m"],
+    ["clear", "bot-a"],
+  ]) {
+    assert.throws(() => runLogControl(args, {dataRoot, now: () => fixedNow}), /status/i);
+    assert.equal(readFileSync(path, "utf8"), original);
+    assert.equal(statSync(path).ino, originalInode);
+  }
+});
+
+test("an invalid existing override document rejects mutations without replacing it", (t) => {
+  const dataRoot = tempDirectory(t);
+  writeStatus(dataRoot);
+  const path = overridesPath(dataRoot);
+  writeFileSync(path, JSON.stringify({
+    "bot-b": {level: "trace", expiresAt: "2026-08-03T12:10:00.000Z"},
+  }));
+  const original = readFileSync(path, "utf8");
+  const originalInode = statSync(path).ino;
+
+  for (const args of [
+    ["set", "bot-a", "debug", "--for", "15m"],
+    ["clear", "bot-a"],
+  ]) {
+    assert.throws(
+      () => runLogControl(args, {dataRoot, now: () => fixedNow}),
+      /invalid log override/i
+    );
+    assert.equal(readFileSync(path, "utf8"), original);
+    assert.equal(statSync(path).ino, originalInode);
+  }
+});
