@@ -33,6 +33,14 @@ Dockerfile and image - only the container's `command:` differs.
   keeps N bots polling concurrently from each spawning unbounded scraping/
   image work.
 
+- **Health check**: the fleet daemon exposes the same `/health` HTTP endpoint
+  (`app/utils/healthHandler.ts`, port `HEALTH_CHECK_PORT`, default `8080`) as
+  single-bot mode. It reports `ready: true` once `AuthCoordinator` has
+  finished its startup activation pass, and refreshes its liveness timestamp
+  every 60 seconds for as long as the fleet's operations runtime keeps
+  running - this is a process-liveness signal (is the fleet ticking), not a
+  per-bot posting-success signal.
+
 Per-bot config lives at `<configRoot>/bots/<botId>/{bot.json,config.json}`
 (see `config.example/bots/*` for the shape). App passwords are never stored
 in `bot.json` - each bot's `secretKey` is looked up in a separate secrets

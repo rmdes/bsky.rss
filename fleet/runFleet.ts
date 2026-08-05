@@ -15,6 +15,7 @@ import {FleetOperationsRuntime} from './fleetOperationsRuntime.ts';
 import {FleetLogger, formatDebugError, parseFleetLogLevel} from './logging.ts';
 import {overridesPath} from './logOverrides.ts';
 import {statusPath} from './status.ts';
+import health from '../app/utils/healthHandler.ts';
 import type {FreshnessConfig} from './freshnessPolicy.ts';
 import type {BotSpec} from './configLoader.ts';
 
@@ -82,6 +83,7 @@ async function main(): Promise<void> {
   const logger = new FleetLogger({defaultLevel: logLevel});
   startupLogger = logger;
   installProcessSafetyNet(logger);
+  health.start();
   if (logLevel === 'debug') {
     logger.summary('FLEET', 'Debug logging may contain private feed URLs, titles, and post text');
   }
@@ -142,11 +144,18 @@ async function main(): Promise<void> {
     configInvalidCount: errors.length,
   });
 
+  const healthHeartbeatIntervalMs = 60_000;
+  const healthHeartbeatHandle = setInterval(
+    () => health.updateActivity(),
+    healthHeartbeatIntervalMs,
+  );
+
   let shuttingDown = false;
   async function shutdown(signal: string): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.summary('FLEET', `Received ${signal}, shutting down gracefully`);
+    clearInterval(healthHeartbeatHandle);
     coordinator.abortActivation();
     operationsRuntime.markStopping();
     operationsRuntime.stop();
@@ -163,7 +172,10 @@ async function main(): Promise<void> {
 
   operationsRuntime.start();
   await coordinator.start();
-  if (!shuttingDown) operationsRuntime.markRunning();
+  if (!shuttingDown) {
+    operationsRuntime.markRunning();
+    health.markReady();
+  }
 
   reportFleetStarted(
     logger,
