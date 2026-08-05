@@ -16,6 +16,7 @@ services:
       - FLEET_SECRETS_PATH=/build/secrets/bsky-fleet.json
       - FLEET_DATA_ROOT=/build/data/fleet
       - FLEET_LOCK_PATH=/build/data/fleet/fleet.pid
+      - FLEET_LOG_LEVEL=verbose
       # rappel.conso.gouv.fr doesn't send its own intermediate cert (a real
       # server misconfiguration, verified directly) - see certs/README.md
       - NODE_EXTRA_CA_CERTS=/build/certs/sectigo-public-server-authentication-ca-ov-r36.pem
