@@ -15,13 +15,13 @@
     },
     {
       "description": "Group ATProto packages together",
-      "matchPackagePatterns": ["^@atproto/"],
+      "matchPackageNames": ["/^@atproto//"],
       "groupName": "ATProto packages",
       "automerge": true
     },
     {
       "description": "Group TypeScript related packages",
-      "matchPackagePatterns": ["^@types/", "typescript", "tsx", "gts"],
+      "matchPackageNames": ["/^@types//", "/typescript/", "/tsx/", "/gts/"],
       "groupName": "TypeScript tooling",
       "automerge": true
     },
