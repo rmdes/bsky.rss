@@ -1,4 +1,4 @@
-import { importLegacyFleet } from "./legacyImport.ts";
+import {importLegacyFleet} from './legacyImport.ts';
 
 function log(message: string): void {
   console.log(`[${new Date().toUTCString()}] - [bsky.rss IMPORT] ${message}`);
@@ -9,26 +9,26 @@ function log(message: string): void {
 // last.txt/persist.json while this reads them. Never logs a secret value:
 // only bot ids, identifiers, and error messages ever reach the console.
 async function main(): Promise<void> {
-  const sourceRoot = process.env.LEGACY_SOURCE_ROOT ?? "/home/skyfleet";
-  const targetConfigRoot = process.env.FLEET_TARGET_CONFIG_ROOT ?? "/home/skyfleet-next/config";
-  const targetDataRoot = process.env.FLEET_TARGET_DATA_ROOT ?? "/home/skyfleet-next/data/fleet";
+  const sourceRoot = process.env.LEGACY_SOURCE_ROOT ?? '/home/skyfleet';
+  const targetConfigRoot = process.env.FLEET_TARGET_CONFIG_ROOT ?? '/home/skyfleet-next/config';
+  const targetDataRoot = process.env.FLEET_TARGET_DATA_ROOT ?? '/home/skyfleet-next/data/fleet';
   const secretsFilePath =
-    process.env.FLEET_TARGET_SECRETS_PATH ?? "/home/skyfleet-next/secrets/bsky-fleet.json";
+    process.env.FLEET_TARGET_SECRETS_PATH ?? '/home/skyfleet-next/secrets/bsky-fleet.json';
   const only = process.env.LEGACY_ONLY_BOT
-    ? process.env.LEGACY_ONLY_BOT.split(",").map((s) => s.trim())
+    ? process.env.LEGACY_ONLY_BOT.split(',').map(s => s.trim())
     : undefined;
 
   log(
     `Importing from ${sourceRoot} into ${targetConfigRoot} (state: ${targetDataRoot})` +
-      (only ? ` [only: ${only.join(", ")}]` : "")
+      (only ? ` [only: ${only.join(', ')}]` : ''),
   );
 
-  const { imported, errors } = importLegacyFleet(
+  const {imported, errors} = importLegacyFleet(
     sourceRoot,
     targetConfigRoot,
     targetDataRoot,
     secretsFilePath,
-    only
+    only,
   );
 
   log(`Imported ${imported.length} bot(s), ${errors.length} error(s)`);
@@ -36,12 +36,12 @@ async function main(): Promise<void> {
   for (const e of errors) log(`  FAIL ${e.botId}: ${e.error}`);
 
   if (imported.length === 0) {
-    log("No bots imported - exiting non-zero");
+    log('No bots imported - exiting non-zero');
     process.exit(1);
   }
 }
 
-main().catch((err) => {
+main().catch(err => {
   console.error(err);
   process.exit(1);
 });

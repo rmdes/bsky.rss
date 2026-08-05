@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import {randomBytes} from 'node:crypto';
 import {
   chmodSync,
   closeSync,
@@ -7,27 +7,27 @@ import {
   renameSync,
   unlinkSync,
   writeFileSync,
-} from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+} from 'node:fs';
+import {basename, dirname, join, resolve} from 'node:path';
 
 export function writePrivateJsonAtomic(path: string, value: unknown): void {
   const destinationPath = resolve(path);
   const parentDirectory = dirname(destinationPath);
-  const randomSuffix = randomBytes(8).toString("hex");
+  const randomSuffix = randomBytes(8).toString('hex');
   const tempPath = resolve(
-    join(parentDirectory, `.${basename(destinationPath)}.${process.pid}.${randomSuffix}.tmp`)
+    join(parentDirectory, `.${basename(destinationPath)}.${process.pid}.${randomSuffix}.tmp`),
   );
   let ownsTempPath = false;
 
   try {
     const serialized = JSON.stringify(value, null, 2);
-    if (serialized === undefined) throw new TypeError("Value is not JSON-serializable");
+    if (serialized === undefined) throw new TypeError('Value is not JSON-serializable');
 
-    mkdirSync(parentDirectory, { recursive: true });
-    const descriptor = openSync(tempPath, "wx", 0o600);
+    mkdirSync(parentDirectory, {recursive: true});
+    const descriptor = openSync(tempPath, 'wx', 0o600);
     ownsTempPath = true;
     try {
-      writeFileSync(descriptor, `${serialized}\n`, "utf8");
+      writeFileSync(descriptor, `${serialized}\n`, 'utf8');
     } finally {
       closeSync(descriptor);
     }

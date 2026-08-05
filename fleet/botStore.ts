@@ -1,6 +1,6 @@
-import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import {DatabaseSync} from 'node:sqlite';
+import {mkdirSync} from 'node:fs';
+import {dirname} from 'node:path';
 
 export interface QueueItemRow {
   id: number;
@@ -10,7 +10,7 @@ export interface QueueItemRow {
   languagesJson: string | null;
   itemDate: string;
   dedupeKey: string;
-  status: "queued" | "publishing" | "published" | "skipped" | "failed";
+  status: 'queued' | 'publishing' | 'published' | 'skipped' | 'failed';
   enqueuedAt: string;
   publishedAt: string | null;
 }
@@ -22,7 +22,7 @@ export class BotStore {
     // configLoader computes nested per-bot paths (dataRoot/bots/<botId>/state.sqlite)
     // that won't exist on a fresh checkout - create the parent dir so DatabaseSync
     // doesn't fail with "unable to open database file".
-    mkdirSync(dirname(dbPath), { recursive: true });
+    mkdirSync(dirname(dbPath), {recursive: true});
     this.db = new DatabaseSync(dbPath);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS session (
@@ -59,14 +59,14 @@ export class BotStore {
     this.db
       .prepare(
         `INSERT INTO session (id, data, updated_at) VALUES (1, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
+         ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
       )
       .run(json, now);
   }
 
   readSession<T>(): T | null {
-    const row = this.db.prepare(`SELECT data FROM session WHERE id = 1`).get() as
-      | { data: string }
+    const row = this.db.prepare('SELECT data FROM session WHERE id = 1').get() as
+      | {data: string}
       | undefined;
     return row ? (JSON.parse(row.data) as T) : null;
   }
@@ -75,37 +75,39 @@ export class BotStore {
     this.db
       .prepare(
         `INSERT INTO cursor (id, last_item_date) VALUES (1, ?)
-         ON CONFLICT(id) DO UPDATE SET last_item_date = excluded.last_item_date`
+         ON CONFLICT(id) DO UPDATE SET last_item_date = excluded.last_item_date`,
       )
       .run(date.toISOString());
   }
 
   readCursor(): string {
-    const row = this.db.prepare(`SELECT last_item_date FROM cursor WHERE id = 1`).get() as
-      | { last_item_date: string }
+    const row = this.db.prepare('SELECT last_item_date FROM cursor WHERE id = 1').get() as
+      | {last_item_date: string}
       | undefined;
-    return row ? row.last_item_date : "";
+    return row ? row.last_item_date : '';
   }
 
   seenValueExists(value: string): boolean {
-    const row = this.db.prepare(`SELECT 1 FROM seen_items WHERE value = ?`).get(value);
+    const row = this.db.prepare('SELECT 1 FROM seen_items WHERE value = ?').get(value);
     return row !== undefined;
   }
 
   writeSeenValue(value: string): void {
     const now = new Date().toISOString();
-    this.db.prepare(`INSERT OR IGNORE INTO seen_items (value, seen_at) VALUES (?, ?)`).run(value, now);
+    this.db
+      .prepare('INSERT OR IGNORE INTO seen_items (value, seen_at) VALUES (?, ?)')
+      .run(value, now);
   }
 
-  listSeenValues(): { value: string; seenAt: string }[] {
+  listSeenValues(): {value: string; seenAt: string}[] {
     return this.db
-      .prepare(`SELECT value, seen_at as seenAt FROM seen_items ORDER BY seen_at ASC`)
-      .all() as { value: string; seenAt: string }[];
+      .prepare('SELECT value, seen_at as seenAt FROM seen_items ORDER BY seen_at ASC')
+      .all() as {value: string; seenAt: string}[];
   }
 
   cleanupOldSeenValues(maxAgeHours: number): void {
     const cutoff = new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString();
-    this.db.prepare(`DELETE FROM seen_items WHERE seen_at < ?`).run(cutoff);
+    this.db.prepare('DELETE FROM seen_items WHERE seen_at < ?').run(cutoff);
   }
 
   enqueue(item: {
@@ -120,9 +122,17 @@ export class BotStore {
     const result = this.db
       .prepare(
         `INSERT OR IGNORE INTO queue_items (title, content, embed_json, languages_json, item_date, dedupe_key, status, enqueued_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)`
+         VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)`,
       )
-      .run(item.title, item.content, item.embedJson, item.languagesJson, item.itemDate, item.dedupeKey, now);
+      .run(
+        item.title,
+        item.content,
+        item.embedJson,
+        item.languagesJson,
+        item.itemDate,
+        item.dedupeKey,
+        now,
+      );
     // A UNIQUE dedupe_key collision makes INSERT OR IGNORE a no-op: result.changes is 0,
     // and lastInsertRowid still reflects this connection's PREVIOUS successful insert
     // (an unrelated row), not this attempt. Return 0 rather than handing back that
@@ -136,20 +146,24 @@ export class BotStore {
       .prepare(
         `SELECT id, title, content, embed_json as embedJson, languages_json as languagesJson,
                 item_date as itemDate, dedupe_key as dedupeKey, status, enqueued_at as enqueuedAt, published_at as publishedAt
-         FROM queue_items WHERE status = 'queued' ORDER BY item_date ASC`
+         FROM queue_items WHERE status = 'queued' ORDER BY item_date ASC`,
       )
-      .all() as QueueItemRow[];
+      .all() as unknown as QueueItemRow[];
   }
 
-  setQueueItemStatus(id: number, status: QueueItemRow["status"]): void {
-    const publishedAt = status === "published" ? new Date().toISOString() : null;
+  setQueueItemStatus(id: number, status: QueueItemRow['status']): void {
+    const publishedAt = status === 'published' ? new Date().toISOString() : null;
     this.db
-      .prepare(`UPDATE queue_items SET status = ?, published_at = COALESCE(?, published_at) WHERE id = ?`)
+      .prepare(
+        'UPDATE queue_items SET status = ?, published_at = COALESCE(?, published_at) WHERE id = ?',
+      )
       .run(status, publishedAt, id);
   }
 
   countQueued(): number {
-    const row = this.db.prepare(`SELECT COUNT(*) as n FROM queue_items WHERE status = 'queued'`).get() as {
+    const row = this.db
+      .prepare("SELECT COUNT(*) as n FROM queue_items WHERE status = 'queued'")
+      .get() as {
       n: number;
     };
     return row.n;

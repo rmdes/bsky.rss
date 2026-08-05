@@ -1,27 +1,27 @@
-import bsky from "./bskyHandler";
-import db from "./dbHandler";
-import health from "./healthHandler";
+import bsky from './bskyHandler';
+import db from './dbHandler';
+import health from './healthHandler';
 
-let queue: QueueItems[] = [];
+const queue: QueueItems[] = [];
 let rateLimited: boolean = false;
 let queueRunning: boolean = false;
 let queueSnapshot: QueueItems[] = [];
 let lastPostTimestamp = 0;
 
 let config: Config = {
-  string: "",
+  string: '',
   publishEmbed: false,
-  embedType: "card",
-  languages: ["en"],
+  embedType: 'card',
+  languages: ['en'],
   truncate: true,
   runInterval: 60,
-  dateField: "",
+  dateField: '',
   publishDate: false,
-  imageField: "",
-  ogUserAgent: "bsky.rss/1.0 (Open Graph Scraper)",
+  imageField: '',
+  ogUserAgent: 'bsky.rss/1.0 (Open Graph Scraper)',
   descriptionClearHTML: true,
   forceDescriptionEmbed: false,
-  imageAlt: "",
+  imageAlt: '',
   removeDuplicate: false,
   titleClearHTML: false,
   adaptiveSpacing: false,
@@ -35,10 +35,10 @@ async function start() {
   console.log(
     `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Starting queue handler. Running every ${
       config.runInterval
-    } seconds`
+    } seconds`,
   );
-  setInterval(function () {
-    runQueue();
+  setInterval(() => {
+    void runQueue();
   }, config.runInterval * 1000);
 }
 
@@ -47,12 +47,12 @@ async function createLimitTimer(timeoutSeconds: number = 30) {
   rateLimited = true;
   setTimeout(() => {
     rateLimited = false;
-    runQueue();
+    void runQueue();
     console.log(
-      `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Post rate limit expired - resuming queue`
+      `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Post rate limit expired - resuming queue`,
     );
   }, timeoutSeconds * 1000);
-  return "";
+  return '';
 }
 
 async function runQueue() {
@@ -62,14 +62,14 @@ async function runQueue() {
   console.log(
     `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Running queue with ${
       queueSnapshot.length
-    } items`
+    } items`,
   );
   health.updateActivity();
-  if (rateLimited) return { ratelimit: true };
+  if (rateLimited) return {ratelimit: true};
   if (queueSnapshot.length > 0) {
     queueRunning = true;
     for (let i = 0; i < queueSnapshot.length; i++) {
-      let item = queueSnapshot[i] as QueueItems;
+      const item = queueSnapshot[i] as QueueItems;
       queue.splice(i, 1);
       queueSnapshot.splice(i, 1);
       i--;
@@ -79,34 +79,31 @@ async function runQueue() {
         if (waitMs > 0) {
           const waitSec = Math.ceil(waitMs / 1000);
           console.log(
-            `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Waiting ${waitSec} seconds before next post`
+            `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Waiting ${waitSec} seconds before next post`,
           );
           await sleep(waitMs);
         }
       }
-      let post = await bsky.post({
+      const post = await bsky.post({
         content: item.content,
         embed: item.embed,
         languages: item.languages,
-        date: config.publishDate ? new Date(item.date) : undefined
+        date: config.publishDate ? new Date(item.date) : undefined,
       });
-      // @ts-ignore
-      if (post.ratelimit) {
+      if ('ratelimit' in post) {
         queue.unshift(item);
-        let timeoutSeconds: number = post.retryAfter ? post.retryAfter : 30;
+        const timeoutSeconds: number = post.retryAfter ? post.retryAfter : 30;
         await createLimitTimer(timeoutSeconds);
         queueRunning = false;
         console.log(
-          `[${new Date().toUTCString()}] - [bsky.rss POST] Post rate limit exceeded - process will resume after ${timeoutSeconds} seconds`
+          `[${new Date().toUTCString()}] - [bsky.rss POST] Post rate limit exceeded - process will resume after ${timeoutSeconds} seconds`,
         );
         break;
       } else {
         console.log(
-          `[${new Date().toUTCString()}] - [bsky.rss POST] Posting new item (${
-            item.title
-          })`
+          `[${new Date().toUTCString()}] - [bsky.rss POST] Posting new item (${item.title})`,
         );
-        db.writeDate(new Date(item.date));
+        void db.writeDate(new Date(item.date));
         lastPostTimestamp = Date.now();
         if (config.adaptiveSpacing && queueSnapshot.length > 0) {
           const remaining = queueSnapshot.length;
@@ -114,7 +111,7 @@ async function runQueue() {
 
           if (delaySec > 0) {
             console.log(
-              `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Waiting ${delaySec} seconds before next post`
+              `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Waiting ${delaySec} seconds before next post`,
             );
             await sleep(delaySec * 1000);
           }
@@ -125,9 +122,9 @@ async function runQueue() {
           console.log(
             `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Finished running queue. Next run in ${
               config.runInterval
-            } seconds`
+            } seconds`,
           );
-          if (config.removeDuplicate) db.cleanupOldValues();
+          if (config.removeDuplicate) void db.cleanupOldValues();
         }
       }
     }
@@ -137,17 +134,9 @@ async function runQueue() {
   }
 }
 
-async function writeQueue({
-  content,
-  embed,
-  languages,
-  title,
-  date,
-}: QueueItems) {
-  console.log(
-    `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Queuing item (${title})`
-  );
-  queue.push({ content, embed, languages, title, date });
+async function writeQueue({content, embed, languages, title, date}: QueueItems) {
+  console.log(`[${new Date().toUTCString()}] - [bsky.rss QUEUE] Queuing item (${title})`);
+  queue.push({content, embed, languages, title, date});
   return queue;
 }
 
@@ -168,4 +157,4 @@ function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export default { writeQueue, start };
+export default {writeQueue, start};

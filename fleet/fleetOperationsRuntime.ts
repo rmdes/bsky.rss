@@ -1,17 +1,10 @@
-import type { BotOperations, BotOperationalSnapshot, BotCounters } from "./botOperations.ts";
-import type { BotWorker } from "./botWorker.ts";
-import {
-  formatFleetIntervalSummary,
-  subtractBotCounters,
-  sumBotCounters,
-} from "./fleetSummary.ts";
-import { LogOverrideWatcher } from "./logOverrides.ts";
-import { FleetLogger, formatDebugError } from "./logging.ts";
-import { writePrivateJsonAtomic } from "./atomicJson.ts";
-import {
-  buildFleetStatusSnapshot,
-  type FleetPhase,
-} from "./statusSnapshot.ts";
+import type {BotOperations, BotOperationalSnapshot, BotCounters} from './botOperations.ts';
+import type {BotWorker} from './botWorker.ts';
+import {formatFleetIntervalSummary, subtractBotCounters, sumBotCounters} from './fleetSummary.ts';
+import {LogOverrideWatcher} from './logOverrides.ts';
+import {FleetLogger, formatDebugError} from './logging.ts';
+import {writePrivateJsonAtomic} from './atomicJson.ts';
+import {buildFleetStatusSnapshot, type FleetPhase} from './statusSnapshot.ts';
 
 const statusIntervalMs = 60_000;
 const overrideIntervalMs = 5_000;
@@ -25,19 +18,19 @@ export interface FleetOperationsRuntimeTimers {
 export interface FleetOperationsRuntimeOptions {
   timers: FleetOperationsRuntimeTimers;
   now: () => Date;
-  memoryUsage: () => Pick<NodeJS.MemoryUsage, "rss" | "heapUsed">;
-  paths: { status: string; overrides: string };
+  memoryUsage: () => Pick<NodeJS.MemoryUsage, 'rss' | 'heapUsed'>;
+  paths: {status: string; overrides: string};
   logger: FleetLogger;
   operations: ReadonlyMap<string, BotOperations>;
   coordinator: {
     activeWorkers(): readonly BotWorker[];
-    activationFailures(): readonly { botId: string }[];
+    activationFailures(): readonly {botId: string}[];
   };
   configInvalidCount: number;
 }
 
 export class FleetOperationsRuntime {
-  private phase: FleetPhase = "starting";
+  private phase: FleetPhase = 'starting';
   private startedAt: Date | null = null;
   private previousCounters: BotCounters | null = null;
   private timerHandles: unknown[] = [];
@@ -55,7 +48,7 @@ export class FleetOperationsRuntime {
 
   start(): void {
     if (this.timerHandles.length > 0) return;
-    this.phase = "starting";
+    this.phase = 'starting';
     this.startedAt = this.options.now();
     this.writeSnapshot();
     this.previousCounters = sumBotCounters(this.operationalStates());
@@ -68,12 +61,12 @@ export class FleetOperationsRuntime {
   }
 
   markRunning(): void {
-    this.phase = "running";
+    this.phase = 'running';
     this.writeSnapshot();
   }
 
   markStopping(): void {
-    this.phase = "stopping";
+    this.phase = 'stopping';
     this.writeSnapshot();
   }
 
@@ -85,10 +78,10 @@ export class FleetOperationsRuntime {
   private writeSnapshot(): void {
     try {
       const activeWorkers = new Map(
-        this.options.coordinator.activeWorkers().map((worker) => [worker.botId, worker])
+        this.options.coordinator.activeWorkers().map(worker => [worker.botId, worker]),
       );
       const activationFailureIds = new Set(
-        this.options.coordinator.activationFailures().map((failure) => failure.botId)
+        this.options.coordinator.activationFailures().map(failure => failure.botId),
       );
       const now = this.options.now();
       const snapshot = buildFleetStatusSnapshot({
@@ -107,12 +100,12 @@ export class FleetOperationsRuntime {
     } catch (error) {
       if (!this.snapshotWriteWarningEmitted) {
         this.options.logger.summary(
-          "STATUS",
-          "Status snapshot write failed; fleet execution continues"
+          'STATUS',
+          'Status snapshot write failed; fleet execution continues',
         );
         this.snapshotWriteWarningEmitted = true;
       }
-      this.options.logger.debug("STATUS", formatDebugError(error));
+      this.options.logger.debug('STATUS', formatDebugError(error));
     }
   }
 
@@ -121,10 +114,10 @@ export class FleetOperationsRuntime {
       this.overrideWatcher.poll();
     } catch (error) {
       this.options.logger.summary(
-        "log-control",
-        "Log override observation failed; fleet execution continues"
+        'log-control',
+        'Log override observation failed; fleet execution continues',
       );
-      this.options.logger.debug("log-control", formatDebugError(error));
+      this.options.logger.debug('log-control', formatDebugError(error));
     }
   }
 
@@ -134,20 +127,20 @@ export class FleetOperationsRuntime {
       const current = sumBotCounters(states);
       const previous = this.previousCounters ?? current;
       const activeWorkers = this.options.coordinator.activeWorkers();
-      this.options.logger.summary("FLEET", formatFleetIntervalSummary({
-        delta: subtractBotCounters(current, previous),
-        queueDepth: activeWorkers.reduce((total, worker) => total + worker.queueLength(), 0),
-        feedsFailing: states.filter((state) => state.feedState === "failing").length,
-        rssBytes: this.options.memoryUsage().rss,
-      }));
+      this.options.logger.summary(
+        'FLEET',
+        formatFleetIntervalSummary({
+          delta: subtractBotCounters(current, previous),
+          queueDepth: activeWorkers.reduce((total, worker) => total + worker.queueLength(), 0),
+          feedsFailing: states.filter(state => state.feedState === 'failing').length,
+          rssBytes: this.options.memoryUsage().rss,
+        }),
+      );
       this.previousCounters = current;
     } catch (error) {
       try {
-        this.options.logger.summary(
-          "FLEET",
-          "Interval summary failed; fleet execution continues"
-        );
-        this.options.logger.debug("FLEET", formatDebugError(error));
+        this.options.logger.summary('FLEET', 'Interval summary failed; fleet execution continues');
+        this.options.logger.debug('FLEET', formatDebugError(error));
       } catch {
         // A failing log sink cannot be allowed to escape its timer callback.
       }
@@ -155,6 +148,6 @@ export class FleetOperationsRuntime {
   }
 
   private operationalStates(): BotOperationalSnapshot[] {
-    return [...this.options.operations.values()].map((operations) => operations.snapshot());
+    return [...this.options.operations.values()].map(operations => operations.snapshot());
   }
 }

@@ -1,22 +1,22 @@
 // fleet/runFleet.ts
-import "dotenv/config";
-import { BotStore } from "./botStore.ts";
-import { Scheduler } from "./scheduler.ts";
-import { BskyClient } from "./bskyClient.ts";
-import { FeedReader } from "./feedReader.ts";
-import { BotWorker } from "./botWorker.ts";
-import { SharedLimiters } from "./sharedLimiters.ts";
-import { installProcessSafetyNet } from "./processSafety.ts";
-import { loadFleet } from "./configLoader.ts";
-import { AuthCoordinator } from "./authCoordinator.ts";
-import { acquireLock, releaseLock } from "./pidLock.ts";
-import { BotOperations } from "./botOperations.ts";
-import { FleetOperationsRuntime } from "./fleetOperationsRuntime.ts";
-import { FleetLogger, formatDebugError, parseFleetLogLevel } from "./logging.ts";
-import { overridesPath } from "./logOverrides.ts";
-import { statusPath } from "./status.ts";
-import type { FreshnessConfig } from "./freshnessPolicy.ts";
-import type { BotSpec } from "./configLoader.ts";
+import 'dotenv/config';
+import {BotStore} from './botStore.ts';
+import {Scheduler} from './scheduler.ts';
+import {BskyClient} from './bskyClient.ts';
+import {FeedReader} from './feedReader.ts';
+import {BotWorker} from './botWorker.ts';
+import {SharedLimiters} from './sharedLimiters.ts';
+import {installProcessSafetyNet} from './processSafety.ts';
+import {loadFleet} from './configLoader.ts';
+import {AuthCoordinator} from './authCoordinator.ts';
+import {acquireLock, releaseLock} from './pidLock.ts';
+import {BotOperations} from './botOperations.ts';
+import {FleetOperationsRuntime} from './fleetOperationsRuntime.ts';
+import {FleetLogger, formatDebugError, parseFleetLogLevel} from './logging.ts';
+import {overridesPath} from './logOverrides.ts';
+import {statusPath} from './status.ts';
+import type {FreshnessConfig} from './freshnessPolicy.ts';
+import type {BotSpec} from './configLoader.ts';
 
 async function buildWorker(
   spec: BotSpec,
@@ -26,7 +26,7 @@ async function buildWorker(
   dryRun: boolean,
   runIntervalSeconds: number,
   freshnessConfig: FreshnessConfig,
-  perBotQueueMaxLength: number
+  perBotQueueMaxLength: number,
 ): Promise<BotWorker> {
   const store = new BotStore(spec.dbPath);
   try {
@@ -40,7 +40,7 @@ async function buildWorker(
       spec.feedReaderConfig,
       store,
       sharedLimiters,
-      { operations, logger }
+      {operations, logger},
     );
 
     const worker = new BotWorker({
@@ -66,61 +66,54 @@ async function buildWorker(
 // Runs in dry-run mode by default (no real posts); set DRY_RUN=false to actually publish.
 // Point FLEET_CONFIG_ROOT/FLEET_SECRETS_PATH/FLEET_DATA_ROOT at a real config tree
 // (see config.example/ for the shape) before running against real bot accounts.
-let startupLogger = new FleetLogger({ defaultLevel: "summary" });
+let startupLogger = new FleetLogger({defaultLevel: 'summary'});
 
 export function reportFleetStarted(
   logger: FleetLogger,
-  counts: { active: number; failed: number },
-  shuttingDown: boolean
+  counts: {active: number; failed: number},
+  shuttingDown: boolean,
 ): void {
   if (shuttingDown) return;
-  logger.summary(
-    "FLEET",
-    `Fleet started: ${counts.active} active, ${counts.failed} failed`
-  );
+  logger.summary('FLEET', `Fleet started: ${counts.active} active, ${counts.failed} failed`);
 }
 
 async function main(): Promise<void> {
   const logLevel = parseFleetLogLevel(process.env.FLEET_LOG_LEVEL);
-  const logger = new FleetLogger({ defaultLevel: logLevel });
+  const logger = new FleetLogger({defaultLevel: logLevel});
   startupLogger = logger;
   installProcessSafetyNet(logger);
-  if (logLevel === "debug") {
-    logger.summary(
-      "FLEET",
-      "Debug logging may contain private feed URLs, titles, and post text"
-    );
+  if (logLevel === 'debug') {
+    logger.summary('FLEET', 'Debug logging may contain private feed URLs, titles, and post text');
   }
 
-  const configRoot = process.env.FLEET_CONFIG_ROOT ?? "./config.example";
-  const secretsFilePath = process.env.FLEET_SECRETS_PATH ?? "./config.example/secrets/bsky-fleet.json";
-  const dataRoot = process.env.FLEET_DATA_ROOT ?? "./data/fleet";
-  const dryRun = process.env.DRY_RUN !== "false";
-  const lockFilePath = process.env.FLEET_LOCK_PATH ?? "./data/fleet/fleet.pid";
-  const shutdownPerBotTimeoutMs = Number(process.env.FLEET_SHUTDOWN_PER_BOT_TIMEOUT_MS ?? "10000");
-  const shutdownOverallTimeoutMs = Number(process.env.FLEET_SHUTDOWN_OVERALL_TIMEOUT_MS ?? "30000");
+  const configRoot = process.env.FLEET_CONFIG_ROOT ?? './config.example';
+  const secretsFilePath =
+    process.env.FLEET_SECRETS_PATH ?? './config.example/secrets/bsky-fleet.json';
+  const dataRoot = process.env.FLEET_DATA_ROOT ?? './data/fleet';
+  const dryRun = process.env.DRY_RUN !== 'false';
+  const lockFilePath = process.env.FLEET_LOCK_PATH ?? './data/fleet/fleet.pid';
+  const shutdownPerBotTimeoutMs = Number(process.env.FLEET_SHUTDOWN_PER_BOT_TIMEOUT_MS ?? '10000');
+  const shutdownOverallTimeoutMs = Number(process.env.FLEET_SHUTDOWN_OVERALL_TIMEOUT_MS ?? '30000');
 
   acquireLock(lockFilePath);
-  process.on("exit", () => releaseLock(lockFilePath));
+  process.on('exit', () => releaseLock(lockFilePath));
 
-  const { fleetConfig, bots, errors } = loadFleet(configRoot, secretsFilePath, dataRoot);
+  const {fleetConfig, bots, errors} = loadFleet(configRoot, secretsFilePath, dataRoot);
 
-  logger.summary("FLEET", `Loaded ${bots.length} bot(s), ${errors.length} config error(s)`);
+  logger.summary('FLEET', `Loaded ${bots.length} bot(s), ${errors.length} config error(s)`);
   for (const error of errors) {
-    logger.summary("CONFIG", "Config invalid", error.botId);
-    logger.debug("CONFIG", formatDebugError(error.error), error.botId);
+    logger.summary('CONFIG', 'Config invalid', error.botId);
+    logger.debug('CONFIG', formatDebugError(error.error), error.botId);
   }
 
   const sharedLimiters = new SharedLimiters(fleetConfig.sharedLimiters);
-  const operations = new Map(
-    bots.map((spec) => [spec.botId, new BotOperations(spec.botId)])
-  );
+  const operations = new Map(bots.map(spec => [spec.botId, new BotOperations(spec.botId)]));
 
   const coordinator = new AuthCoordinator({
     logger,
     bots,
     staggerSeconds: fleetConfig.staggerSeconds,
-    activateBot: (spec) => {
+    activateBot: spec => {
       const botOperations = operations.get(spec.botId);
       if (!botOperations) throw new Error(`Missing operational state for ${spec.botId}`);
       return buildWorker(
@@ -131,18 +124,18 @@ async function main(): Promise<void> {
         dryRun,
         fleetConfig.runIntervalSeconds,
         fleetConfig.freshness,
-        fleetConfig.perBotQueueMaxLength
+        fleetConfig.perBotQueueMaxLength,
       );
     },
   });
   const operationsRuntime = new FleetOperationsRuntime({
     timers: {
       setInterval: (callback, intervalMs) => setInterval(callback, intervalMs),
-      clearInterval: (handle) => clearInterval(handle as NodeJS.Timeout),
+      clearInterval: handle => clearInterval(handle as NodeJS.Timeout),
     },
     now: () => new Date(),
     memoryUsage: () => process.memoryUsage(),
-    paths: { status: statusPath(dataRoot), overrides: overridesPath(dataRoot) },
+    paths: {status: statusPath(dataRoot), overrides: overridesPath(dataRoot)},
     logger,
     operations,
     coordinator,
@@ -153,45 +146,49 @@ async function main(): Promise<void> {
   async function shutdown(signal: string): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
-    logger.summary("FLEET", `Received ${signal}, shutting down gracefully`);
+    logger.summary('FLEET', `Received ${signal}, shutting down gracefully`);
     coordinator.abortActivation();
     operationsRuntime.markStopping();
     operationsRuntime.stop();
     await Promise.race([
       coordinator.shutdownAll(shutdownPerBotTimeoutMs),
-      new Promise((resolve) => setTimeout(resolve, shutdownOverallTimeoutMs)),
+      new Promise(resolve => setTimeout(resolve, shutdownOverallTimeoutMs)),
     ]);
     releaseLock(lockFilePath);
-    logger.summary("FLEET", "Shutdown complete");
+    logger.summary('FLEET', 'Shutdown complete');
     process.exit(0);
   }
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
-  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
 
   operationsRuntime.start();
   await coordinator.start();
   if (!shuttingDown) operationsRuntime.markRunning();
 
-  reportFleetStarted(logger, {
-    active: coordinator.activeWorkers().length,
-    failed: coordinator.activationFailures().length,
-  }, shuttingDown);
+  reportFleetStarted(
+    logger,
+    {
+      active: coordinator.activeWorkers().length,
+      failed: coordinator.activationFailures().length,
+    },
+    shuttingDown,
+  );
 
   // A SIGTERM arriving before any bot has activated resolves coordinator.start()
   // (via abortActivation's interrupted stagger wait) at nearly the same moment
   // shutdown() is already tearing things down - defer to shutdown()'s own exit
   // path rather than racing it with a second, contradictory process.exit() call.
   if (!shuttingDown && coordinator.activeWorkers().length === 0 && bots.length > 0) {
-    logger.summary("FLEET", "No bots activated - exiting non-zero");
+    logger.summary('FLEET', 'No bots activated - exiting non-zero');
     releaseLock(lockFilePath);
     process.exit(1);
   }
 }
 
 if (require.main === module) {
-  main().catch((error) => {
-    startupLogger.summary("FATAL", "Fleet startup failed");
-    startupLogger.debug("FATAL", formatDebugError(error));
+  main().catch(error => {
+    startupLogger.summary('FATAL', 'Fleet startup failed');
+    startupLogger.debug('FATAL', formatDebugError(error));
     process.exit(1);
   });
 }

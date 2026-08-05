@@ -28,6 +28,9 @@ interface Item {
   published?: string;
   pubdate?: string;
   description: string;
+  // Feeds may carry arbitrary extra fields (config.dateField/imageField reference
+  // these by name), so their shape can't be known statically.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
 

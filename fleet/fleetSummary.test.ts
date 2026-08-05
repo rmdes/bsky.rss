@@ -1,32 +1,24 @@
-import assert from "node:assert/strict";
-import { test } from "node:test";
-import {
-  emptyBotCounters,
-  type BotCounters,
-  type BotOperationalSnapshot,
-} from "./botOperations.ts";
-import {
-  formatFleetIntervalSummary,
-  subtractBotCounters,
-  sumBotCounters,
-} from "./fleetSummary.ts";
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {emptyBotCounters, type BotCounters, type BotOperationalSnapshot} from './botOperations.ts';
+import {formatFleetIntervalSummary, subtractBotCounters, sumBotCounters} from './fleetSummary.ts';
 
 function state(botId: string, counters: Partial<BotCounters>): BotOperationalSnapshot {
   return {
     botId,
-    feedState: "starting",
+    feedState: 'starting',
     lastFeedSuccessAt: null,
     lastFeedFailureAt: null,
     consecutiveFeedFailures: 0,
     lastFeedFailureCategory: null,
     lastPostSuccessAt: null,
-    counters: { ...emptyBotCounters(), ...counters },
+    counters: {...emptyBotCounters(), ...counters},
   };
 }
 
-test("sumBotCounters totals every operational counter across bots", () => {
+test('sumBotCounters totals every operational counter across bots', () => {
   const totals = sumBotCounters([
-    state("bot-a", {
+    state('bot-a', {
       feedPollSucceeded: 5,
       feedPollFailed: 1,
       openGraphAttempted: 4,
@@ -39,7 +31,7 @@ test("sumBotCounters totals every operational counter across bots", () => {
       postDeferred: 1,
       postException: 0,
     }),
-    state("bot-b", {
+    state('bot-b', {
       feedPollSucceeded: 7,
       feedPollFailed: 2,
       openGraphAttempted: 5,
@@ -69,7 +61,7 @@ test("sumBotCounters totals every operational counter across bots", () => {
   });
 });
 
-test("subtractBotCounters returns exact per-counter interval deltas", () => {
+test('subtractBotCounters returns exact per-counter interval deltas', () => {
   const previous: BotCounters = {
     feedPollSucceeded: 100,
     feedPollFailed: 5,
@@ -112,7 +104,7 @@ test("subtractBotCounters returns exact per-counter interval deltas", () => {
   });
 });
 
-test("formatFleetIntervalSummary uses approved compact denominators and optional post outcomes", () => {
+test('formatFleetIntervalSummary uses approved compact denominators and optional post outcomes', () => {
   assert.equal(
     formatFleetIntervalSummary({
       delta: {
@@ -132,11 +124,11 @@ test("formatFleetIntervalSummary uses approved compact denominators and optional
       feedsFailing: 1,
       rssBytes: 241 * 1024 * 1024,
     }),
-    "5m: feeds 1059/1062 ok · OG 80/114 ok, 34 fallbacks · posts 95/95 ok, 2 deferred, 1 exception · 10 policy-skipped · queue 14 · 1 feed failing · RSS 241.0MB"
+    '5m: feeds 1059/1062 ok · OG 80/114 ok, 34 fallbacks · posts 95/95 ok, 2 deferred, 1 exception · 10 policy-skipped · queue 14 · 1 feed failing · RSS 241.0MB',
   );
 });
 
-test("formatFleetIntervalSummary reports n/a for zero attempts and omits zero optional post outcomes", () => {
+test('formatFleetIntervalSummary reports n/a for zero attempts and omits zero optional post outcomes', () => {
   assert.equal(
     formatFleetIntervalSummary({
       delta: emptyBotCounters(),
@@ -144,6 +136,6 @@ test("formatFleetIntervalSummary reports n/a for zero attempts and omits zero op
       feedsFailing: 0,
       rssBytes: 0,
     }),
-    "5m: feeds n/a · OG n/a, 0 fallbacks · posts n/a · 0 policy-skipped · queue 0 · 0 feeds failing · RSS 0.0MB"
+    '5m: feeds n/a · OG n/a, 0 fallbacks · posts n/a · 0 policy-skipped · queue 0 · 0 feeds failing · RSS 0.0MB',
   );
 });

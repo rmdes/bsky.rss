@@ -1,21 +1,21 @@
-import process from "process";
-import bsky from "./utils/bskyHandler";
-import reader from "./utils/rssHandler";
-import queue from "./utils/queueHandler";
-import health from "./utils/healthHandler";
+import process from 'process';
+import bsky from './utils/bskyHandler';
+import reader from './utils/rssHandler';
+import queue from './utils/queueHandler';
+import health from './utils/healthHandler';
 
-require("dotenv").config();
+require('dotenv').config();
 
-if (!process.env.IDENTIFIER) throw new Error("No identifier provided.");
-if (!process.env.APP_PASSWORD) throw new Error("No app password provided.");
-if (!process.env.FETCH_URL) throw new Error("No fetch URL provided.");
-if (!process.env.INSTANCE_URL) throw new Error("No instance URL provided.");
+if (!process.env.IDENTIFIER) throw new Error('No identifier provided.');
+if (!process.env.APP_PASSWORD) throw new Error('No app password provided.');
+if (!process.env.FETCH_URL) throw new Error('No fetch URL provided.');
+if (!process.env.INSTANCE_URL) throw new Error('No instance URL provided.');
 
 let fetch_interval: number;
 if (!process.env.FETCH_INTERVAL) fetch_interval = 5;
 else fetch_interval = parseFloat(process.env.FETCH_INTERVAL);
 
-main();
+void main();
 async function main() {
   try {
     /* Start health check endpoint */
@@ -32,7 +32,7 @@ async function main() {
     console.log(
       `[${new Date().toUTCString()}] - [bsky.rss APP] Started RSS reader. Fetching from ${
         process.env.FETCH_URL
-      } every ${fetch_interval} minutes.`
+      } every ${fetch_interval} minutes.`,
     );
     await reader.init({
       fetch_interval,
@@ -44,13 +44,11 @@ async function main() {
 
     /* Mark application as ready */
     health.markReady();
-    console.log(
-      `[${new Date().toUTCString()}] - [bsky.rss APP] Application is ready and healthy`
-    );
+    console.log(`[${new Date().toUTCString()}] - [bsky.rss APP] Application is ready and healthy`);
   } catch (e) {
-    if (e == "Error: Rate Limit Exceeded") {
+    if (e === 'Error: Rate Limit Exceeded') {
       console.log(
-        `[${new Date().toUTCString()}] - [bsky.rss APP] Authentication rate limit exceeded`
+        `[${new Date().toUTCString()}] - [bsky.rss APP] Authentication rate limit exceeded`,
       );
       return;
     }

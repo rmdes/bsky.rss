@@ -1,17 +1,17 @@
 // fleet/benchmarkHarness.ts
-import { createServer, Server } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import jimp from "jimp";
-import { BotStore } from "./botStore.ts";
-import { Scheduler } from "./scheduler.ts";
-import { BskyClient } from "./bskyClient.ts";
-import { FeedReader } from "./feedReader.ts";
-import { BotWorker } from "./botWorker.ts";
-import { SharedLimiters } from "./sharedLimiters.ts";
-import { BotOperations } from "./botOperations.ts";
-import { FleetLogger } from "./logging.ts";
+import {createServer, Server} from 'node:http';
+import {mkdtempSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import jimp from 'jimp';
+import {BotStore} from './botStore.ts';
+import {Scheduler} from './scheduler.ts';
+import {BskyClient} from './bskyClient.ts';
+import {FeedReader} from './feedReader.ts';
+import {BotWorker} from './botWorker.ts';
+import {SharedLimiters} from './sharedLimiters.ts';
+import {BotOperations} from './botOperations.ts';
+import {FleetLogger} from './logging.ts';
 
 export interface BenchmarkOptions {
   botCount: number;
@@ -45,14 +45,14 @@ function buildFeedXml(itemsPerPoll: number, port: number): string {
       </item>`);
   }
   return `<?xml version="1.0"?><rss version="2.0"><channel><title>Synthetic Feed</title>${items.join(
-    ""
+    '',
   )}</channel></rss>`;
 }
 
 function buildArticleHtml(uid: string, withImage: boolean, port: number): string {
   const imageTag = withImage
     ? `<meta property="og:image" content="http://127.0.0.1:${port}/image.jpg" />`
-    : "";
+    : '';
   return `<html><head>
     <meta property="og:title" content="Synthetic article ${uid}" />
     <meta property="og:description" content="Synthetic OG description ${uid}" />
@@ -67,31 +67,31 @@ async function createSyntheticImage(): Promise<Buffer> {
 
 export async function createMockFeedServer(
   itemsPerPoll: number,
-  imageEveryNItems: number
-): Promise<{ server: Server; port: number }> {
+  imageEveryNItems: number,
+): Promise<{server: Server; port: number}> {
   const syntheticImage = await createSyntheticImage();
   let port = 0; // set once listen() resolves, closed over by the handler below - never re-queried
 
   const server = createServer((req, res) => {
-    const url = req.url ?? "";
+    const url = req.url ?? '';
 
-    if (url === "/feed") {
-      res.writeHead(200, { "Content-Type": "application/rss+xml" });
+    if (url === '/feed') {
+      res.writeHead(200, {'Content-Type': 'application/rss+xml'});
       res.end(buildFeedXml(itemsPerPoll, port));
       return;
     }
 
-    if (url.startsWith("/article/")) {
-      const uid = url.slice("/article/".length);
-      const itemIndex = Number(uid.split("-")[1] ?? 0);
+    if (url.startsWith('/article/')) {
+      const uid = url.slice('/article/'.length);
+      const itemIndex = Number(uid.split('-')[1] ?? 0);
       const withImage = imageEveryNItems > 0 && itemIndex % imageEveryNItems === 0;
-      res.writeHead(200, { "Content-Type": "text/html" });
+      res.writeHead(200, {'Content-Type': 'text/html'});
       res.end(buildArticleHtml(uid, withImage, port));
       return;
     }
 
-    if (url === "/image.jpg") {
-      res.writeHead(200, { "Content-Type": "image/jpeg" });
+    if (url === '/image.jpg') {
+      res.writeHead(200, {'Content-Type': 'image/jpeg'});
       res.end(syntheticImage);
       return;
     }
@@ -100,14 +100,14 @@ export async function createMockFeedServer(
     res.end();
   });
 
-  await new Promise<void>((resolve) => server.listen(0, resolve));
-  port = (server.address() as { port: number }).port;
-  return { server, port };
+  await new Promise<void>(resolve => server.listen(0, resolve));
+  port = (server.address() as {port: number}).port;
+  return {server, port};
 }
 
 export async function runBenchmark(options: BenchmarkOptions): Promise<BenchmarkReport> {
-  const { server, port } = await createMockFeedServer(options.itemsPerPoll, options.imageEveryNItems);
-  const tmpDir = mkdtempSync(join(tmpdir(), "fleet-benchmark-"));
+  const {server, port} = await createMockFeedServer(options.itemsPerPoll, options.imageEveryNItems);
+  const tmpDir = mkdtempSync(join(tmpdir(), 'fleet-benchmark-'));
 
   const sharedLimiters = new SharedLimiters({
     maxConcurrentOpenGraphFetches: 6,
@@ -119,23 +119,23 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
   const workers: BotWorker[] = [];
   const stores: BotStore[] = [];
   const feedReaders: FeedReader[] = [];
-  const logger = new FleetLogger({ defaultLevel: "summary", sink: () => undefined });
+  const logger = new FleetLogger({defaultLevel: 'summary', sink: () => undefined});
 
   for (let i = 0; i < options.botCount; i++) {
     const botId = `bench-bot-${i}`;
     const store = new BotStore(join(tmpDir, `${botId}.sqlite`));
     stores.push(store);
     const operations = new BotOperations(botId);
-    const bskyClient = new BskyClient(botId, "https://bsky.social", store, logger, true);
+    const bskyClient = new BskyClient(botId, 'https://bsky.social', store, logger, true);
     const feedReader = new FeedReader(
       botId,
       new URL(`http://127.0.0.1:${port}/feed`),
       options.fetchIntervalMinutes,
       {
-        string: "$title",
+        string: '$title',
         publishEmbed: true,
-        embedType: "card",
-        languages: ["en"],
+        embedType: 'card',
+        languages: ['en'],
         truncate: true,
         removeDuplicate: true,
         titleClearHTML: false,
@@ -143,17 +143,22 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
       },
       store,
       sharedLimiters,
-      { operations, logger }
+      {operations, logger},
     );
     feedReaders.push(feedReader);
     const worker = new BotWorker({
       botId,
       feedReader,
-      scheduler: new Scheduler({ minSpacing: 0, maxSpacing: 5, spacingWindow: 60, adaptiveSpacing: false }),
+      scheduler: new Scheduler({
+        minSpacing: 0,
+        maxSpacing: 5,
+        spacingWindow: 60,
+        adaptiveSpacing: false,
+      }),
       bskyClient,
       store,
       runIntervalSeconds: 1,
-      freshnessConfig: { maxCatchupItems: 50, maxItemAgeMinutes: 60 },
+      freshnessConfig: {maxCatchupItems: 50, maxItemAgeMinutes: 60},
       perBotQueueMaxLength: 500,
       operations,
       logger,
@@ -164,7 +169,7 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
 
   const samples: number[] = [];
   const startTime = Date.now();
-  await new Promise<void>((resolve) => {
+  await new Promise<void>(resolve => {
     const sampleHandle = setInterval(() => {
       samples.push(process.memoryUsage().rss);
       if (Date.now() - startTime >= options.durationMs) {
@@ -180,17 +185,17 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
   // interval firing async work has no way to be awaited from the outside) a moment
   // to settle before the stores go away underneath it - otherwise it logs a stray
   // "database is not open" instead of completing or being cleanly skipped.
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await new Promise(resolve => setTimeout(resolve, 500));
   for (const store of stores) store.close();
   server.close();
   server.closeAllConnections(); // force-close any still-open sockets rather than waiting on them
-  rmSync(tmpDir, { recursive: true, force: true });
+  rmSync(tmpDir, {recursive: true, force: true});
 
   const steadyStateWindow = samples.slice(Math.floor(samples.length / 2));
   const steadyStateRssBytes = Math.round(
-    steadyStateWindow.reduce((a, b) => a + b, 0) / steadyStateWindow.length
+    steadyStateWindow.reduce((a, b) => a + b, 0) / steadyStateWindow.length,
   );
   const peakRssBytes = samples.reduce((max, sample) => Math.max(max, sample), 0);
 
-  return { steadyStateRssBytes, peakRssBytes, sampleCount: samples.length };
+  return {steadyStateRssBytes, peakRssBytes, sampleCount: samples.length};
 }

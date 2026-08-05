@@ -28,7 +28,7 @@ export function start() {
           timeSinceActivity: `${Math.round(timeSinceActivity / 1000)}s`,
           uptime: process.uptime(),
           version: require('../../package.json').version,
-        })
+        }),
       );
     } else {
       res.writeHead(404);
@@ -38,7 +38,7 @@ export function start() {
 
   server.listen(PORT, () => {
     console.log(
-      `[${new Date().toUTCString()}] - [bsky.rss HEALTH] Health check endpoint listening on port ${PORT}`
+      `[${new Date().toUTCString()}] - [bsky.rss HEALTH] Health check endpoint listening on port ${PORT}`,
     );
   });
 }

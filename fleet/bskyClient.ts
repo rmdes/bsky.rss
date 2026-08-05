@@ -1,11 +1,11 @@
-import { createHash } from "node:crypto";
-import { BskyAgent, RichText, AtpSessionEvent, AtpSessionData } from "@atproto/api";
-import { XRPCError, ResponseType } from "@atproto/xrpc";
-import { BotStore } from "./botStore.ts";
-import { FleetLogger, formatDebugError } from "./logging.ts";
+import {createHash} from 'node:crypto';
+import {BskyAgent, RichText, AtpSessionEvent, AtpSessionData} from '@atproto/api';
+import {XRPCError, ResponseType} from '@atproto/xrpc';
+import {BotStore} from './botStore.ts';
+import {FleetLogger, formatDebugError} from './logging.ts';
 
-const TID_CHARSET = "234567abcdefghijklmnopqrstuvwxyz";
-const TID_FIRST_CHAR_CHARSET = "234567abcdefghij";
+const TID_CHARSET = '234567abcdefghijklmnopqrstuvwxyz';
+const TID_FIRST_CHAR_CHARSET = '234567abcdefghij';
 
 /**
  * AT-Proto requires the rkey for an app.bsky.feed.post record to be a valid
@@ -21,7 +21,7 @@ const TID_FIRST_CHAR_CHARSET = "234567abcdefghij";
  * PDS needs this conversion.
  */
 export function toAtprotoRkey(dedupeKey: string): string {
-  const hash = createHash("sha256").update(dedupeKey).digest();
+  const hash = createHash('sha256').update(dedupeKey).digest();
   let rkey = TID_FIRST_CHAR_CHARSET[hash[0]! % TID_FIRST_CHAR_CHARSET.length]!;
   for (let i = 1; i < 13; i++) {
     rkey += TID_CHARSET[hash[i]! % TID_CHARSET.length]!;
@@ -42,7 +42,7 @@ export interface PostResult {
   ok: boolean;
   uri?: string;
   ratelimit?: boolean;
-  deferralReason?: "upload-failure";
+  deferralReason?: 'upload-failure';
   retryAfterSeconds?: number;
 }
 
@@ -60,21 +60,25 @@ const DEFAULT_RETRY_SECONDS = 30;
  * design spec §4.2: anything that isn't a confirmed success or a confirmed duplicate
  * must be marked skipped, never auto-retried forever.
  */
-export function classifyPostError(error: unknown): { ratelimit: boolean; retryAfterSeconds: number } {
-  if (error && typeof error === "object" && (error as any).constructor?.name === XRPCError.name) {
+export function classifyPostError(error: unknown): {
+  ratelimit: boolean;
+  retryAfterSeconds: number;
+} {
+  if (error && typeof error === 'object' && (error as any).constructor?.name === XRPCError.name) {
     const xrpcError = error as XRPCError;
     const isRateLimitStatus =
       xrpcError.status === ResponseType.RateLimitExceeded ||
       xrpcError.status === ResponseType.UpstreamTimeout;
     if (isRateLimitStatus) {
       const headers = (xrpcError as any).headers as Record<string, string> | undefined;
-      const raw = headers ? headers["retry-after"] : undefined;
+      const raw = headers ? headers['retry-after'] : undefined;
       const parsed = raw ? Number(raw) : NaN;
-      const retryAfterSeconds = !Number.isNaN(parsed) && parsed > 0 ? parsed : DEFAULT_RETRY_SECONDS;
-      return { ratelimit: true, retryAfterSeconds };
+      const retryAfterSeconds =
+        !Number.isNaN(parsed) && parsed > 0 ? parsed : DEFAULT_RETRY_SECONDS;
+      return {ratelimit: true, retryAfterSeconds};
     }
   }
-  return { ratelimit: false, retryAfterSeconds: DEFAULT_RETRY_SECONDS };
+  return {ratelimit: false, retryAfterSeconds: DEFAULT_RETRY_SECONDS};
 }
 
 /**
@@ -105,7 +109,7 @@ export class BskyClient {
     private store: BotStore,
     private logger: FleetLogger,
     private dryRun: boolean = false,
-    private alreadyExistsClassifier: (error: unknown) => boolean = isAlreadyExistsError
+    private alreadyExistsClassifier: (error: unknown) => boolean = isAlreadyExistsError,
   ) {
     this.agent = new BskyAgent({
       service,
@@ -123,32 +127,28 @@ export class BskyClient {
       try {
         const resumed = await this.agent.resumeSession(persisted);
         if (resumed.success) {
-          this.logger.summary("LOGIN", "Session resumed", this.botId);
-          this.logger.verbose("LOGIN", `Resumed session for ${resumed.data.handle}`, this.botId);
+          this.logger.summary('LOGIN', 'Session resumed', this.botId);
+          this.logger.verbose('LOGIN', `Resumed session for ${resumed.data.handle}`, this.botId);
           return;
         }
       } catch (error) {
         // resumeSession throws on any failure (expired token, network error, etc.)
         // Fall through to password login below
-        this.logger.debug(
-          "LOGIN",
-          `Session resume failed\n${formatDebugError(error)}`,
-          this.botId
-        );
+        this.logger.debug('LOGIN', `Session resume failed\n${formatDebugError(error)}`, this.botId);
       } finally {
-        this.logDuration("Session resume", resumeStartedAt);
+        this.logDuration('Session resume', resumeStartedAt);
       }
     }
     const loginStartedAt = Date.now();
     let loginResult;
     try {
-      loginResult = await this.agent.login({ identifier, password });
+      loginResult = await this.agent.login({identifier, password});
     } finally {
-      this.logDuration("Password login", loginStartedAt);
+      this.logDuration('Password login', loginStartedAt);
     }
-    if (!loginResult.success) throw new Error("Login failed (identifier/password)");
-    this.logger.summary("LOGIN", "Logged in", this.botId);
-    this.logger.verbose("LOGIN", `Logged in as ${loginResult.data.handle}`, this.botId);
+    if (!loginResult.success) throw new Error('Login failed (identifier/password)');
+    this.logger.summary('LOGIN', 'Logged in', this.botId);
+    this.logger.verbose('LOGIN', `Logged in as ${loginResult.data.handle}`, this.botId);
   }
 
   async post(params: {
@@ -159,53 +159,51 @@ export class BskyClient {
     embed?: ResolvedEmbed;
   }): Promise<PostResult> {
     if (this.dryRun) {
-      this.logger.verbose("POST", `[dry-run] would publish: ${params.content}`, this.botId);
-      return { ok: true, uri: "dry-run://noop" };
+      this.logger.verbose('POST', `[dry-run] would publish: ${params.content}`, this.botId);
+      return {ok: true, uri: 'dry-run://noop'};
     }
 
-    const richText = new RichText({ text: params.content });
+    const richText = new RichText({text: params.content});
     const facetStartedAt = Date.now();
     try {
       await richText.detectFacets(this.agent);
     } finally {
-      this.logDuration("Facet detection", facetStartedAt);
+      this.logDuration('Facet detection', facetStartedAt);
     }
 
     let uploadedBlob: unknown;
     if (params.embed?.image) {
       const uploadStartedAt = Date.now();
       try {
-        const uploadResult = await this.agent.uploadBlob(params.embed.image, { encoding: "image/jpeg" });
+        const uploadResult = await this.agent.uploadBlob(params.embed.image, {
+          encoding: 'image/jpeg',
+        });
         uploadedBlob = uploadResult.data.blob;
       } catch (error) {
         // No record has been created yet at this point, so it's always safe to retry.
-        this.logger.debug(
-          "POST",
-          `Blob upload failed\n${formatDebugError(error)}`,
-          this.botId
-        );
-        return { ok: false, deferralReason: "upload-failure", retryAfterSeconds: 30 };
+        this.logger.debug('POST', `Blob upload failed\n${formatDebugError(error)}`, this.botId);
+        return {ok: false, deferralReason: 'upload-failure', retryAfterSeconds: 30};
       } finally {
-        this.logDuration("Blob upload", uploadStartedAt);
+        this.logDuration('Blob upload', uploadStartedAt);
       }
     }
 
     let embed_data: unknown;
     if (params.embed) {
-      if (params.embed.type === "image") {
+      if (params.embed.type === 'image') {
         if (uploadedBlob) {
           embed_data = {
-            $type: "app.bsky.embed.images",
-            images: [{ image: uploadedBlob, alt: params.embed.imageAlt ?? "" }],
+            $type: 'app.bsky.embed.images',
+            images: [{image: uploadedBlob, alt: params.embed.imageAlt ?? ''}],
           };
         }
       } else {
         embed_data = {
-          $type: "app.bsky.embed.external",
+          $type: 'app.bsky.embed.external',
           external: {
             uri: params.embed.uri,
             title: params.embed.title,
-            description: params.embed.description ?? "",
+            description: params.embed.description ?? '',
             thumb: uploadedBlob,
           },
         };
@@ -213,7 +211,7 @@ export class BskyClient {
     }
 
     const record = {
-      $type: "app.bsky.feed.post",
+      $type: 'app.bsky.feed.post',
       text: richText.text,
       facets: richText.facets,
       embed: embed_data,
@@ -224,35 +222,31 @@ export class BskyClient {
     const createStartedAt = Date.now();
     try {
       const result = await this.agent.app.bsky.feed.post.create(
-        { repo: this.agent.accountDid, rkey: toAtprotoRkey(params.rkey) },
-        record as any
+        {repo: this.agent.accountDid, rkey: toAtprotoRkey(params.rkey)},
+        record as any,
       );
-      return { ok: true, uri: result.uri };
+      return {ok: true, uri: result.uri};
     } catch (error) {
-      this.logger.debug(
-        "POST",
-        `Create record failed\n${formatDebugError(error)}`,
-        this.botId
-      );
+      this.logger.debug('POST', `Create record failed\n${formatDebugError(error)}`, this.botId);
       if (this.alreadyExistsClassifier(error)) {
         this.logger.verbose(
-          "POST",
+          'POST',
           `rkey ${params.rkey} already exists — treating as already published, not a duplicate`,
-          this.botId
+          this.botId,
         );
-        return { ok: true };
+        return {ok: true};
       }
-      const { ratelimit, retryAfterSeconds } = classifyPostError(error);
+      const {ratelimit, retryAfterSeconds} = classifyPostError(error);
       // Design spec §4.2: any outcome that isn't a confirmed success or a confirmed
       // duplicate is uncertain — skip, never auto-retry.
-      return { ok: false, ratelimit, retryAfterSeconds };
+      return {ok: false, ratelimit, retryAfterSeconds};
     } finally {
-      this.logDuration("Create record", createStartedAt);
+      this.logDuration('Create record', createStartedAt);
     }
   }
 
   private logDuration(operation: string, startedAt: number): void {
     const elapsed = Math.max(0, Date.now() - startedAt);
-    this.logger.debug("TIMING", `${operation} completed in ${elapsed}ms`, this.botId);
+    this.logger.debug('TIMING', `${operation} completed in ${elapsed}ms`, this.botId);
   }
 }

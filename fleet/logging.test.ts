@@ -1,111 +1,106 @@
-import assert from "node:assert/strict";
-import { test } from "node:test";
-import {
-  FleetLogger,
-  formatDebugError,
-  parseFleetLogLevel,
-} from "./logging.ts";
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {FleetLogger, formatDebugError, parseFleetLogLevel} from './logging.ts';
 
-test("parseFleetLogLevel defaults an unset value to summary", () => {
-  assert.equal(parseFleetLogLevel(undefined), "summary");
+test('parseFleetLogLevel defaults an unset value to summary', () => {
+  assert.equal(parseFleetLogLevel(undefined), 'summary');
 });
 
-test("parseFleetLogLevel accepts each supported level and rejects other values", () => {
-  assert.equal(parseFleetLogLevel("summary"), "summary");
-  assert.equal(parseFleetLogLevel("verbose"), "verbose");
-  assert.equal(parseFleetLogLevel("debug"), "debug");
-  assert.throws(
-    () => parseFleetLogLevel("trace"),
-    /summary, verbose, debug/,
-  );
+test('parseFleetLogLevel accepts each supported level and rejects other values', () => {
+  assert.equal(parseFleetLogLevel('summary'), 'summary');
+  assert.equal(parseFleetLogLevel('verbose'), 'verbose');
+  assert.equal(parseFleetLogLevel('debug'), 'debug');
+  assert.throws(() => parseFleetLogLevel('trace'), /summary, verbose, debug/);
 });
 
-test("a summary logger emits only summary records", () => {
+test('a summary logger emits only summary records', () => {
   const records: string[] = [];
   const logger = new FleetLogger({
-    defaultLevel: "summary",
+    defaultLevel: 'summary',
     sink: (_line, record) => records.push(record.level),
   });
 
-  logger.summary("worker", "started");
-  logger.verbose("worker", "details");
-  logger.debug("worker", "diagnostics");
+  logger.summary('worker', 'started');
+  logger.verbose('worker', 'details');
+  logger.debug('worker', 'diagnostics');
 
-  assert.deepEqual(records, ["summary"]);
+  assert.deepEqual(records, ['summary']);
 });
 
-test("a verbose logger emits summary and verbose records", () => {
+test('a verbose logger emits summary and verbose records', () => {
   const records: string[] = [];
   const logger = new FleetLogger({
-    defaultLevel: "verbose",
+    defaultLevel: 'verbose',
     sink: (_line, record) => records.push(record.level),
   });
 
-  logger.summary("worker", "started");
-  logger.verbose("worker", "details");
-  logger.debug("worker", "diagnostics");
+  logger.summary('worker', 'started');
+  logger.verbose('worker', 'details');
+  logger.debug('worker', 'diagnostics');
 
-  assert.deepEqual(records, ["summary", "verbose"]);
+  assert.deepEqual(records, ['summary', 'verbose']);
 });
 
-test("a debug logger emits every record level", () => {
+test('a debug logger emits every record level', () => {
   const records: string[] = [];
   const logger = new FleetLogger({
-    defaultLevel: "debug",
+    defaultLevel: 'debug',
     sink: (_line, record) => records.push(record.level),
   });
 
-  logger.summary("worker", "started");
-  logger.verbose("worker", "details");
-  logger.debug("worker", "diagnostics");
+  logger.summary('worker', 'started');
+  logger.verbose('worker', 'details');
+  logger.debug('worker', 'diagnostics');
 
-  assert.deepEqual(records, ["summary", "verbose", "debug"]);
+  assert.deepEqual(records, ['summary', 'verbose', 'debug']);
 });
 
-test("a temporary debug override affects only its bot", () => {
-  const records: Array<{ level: string; botId?: string }> = [];
+test('a temporary debug override affects only its bot', () => {
+  const records: Array<{level: string; botId?: string}> = [];
   const logger = new FleetLogger({
-    defaultLevel: "summary",
-    now: () => new Date("2026-08-03T12:00:00.000Z"),
+    defaultLevel: 'summary',
+    now: () => new Date('2026-08-03T12:00:00.000Z'),
     sink: (_line, record) => records.push(record),
   });
-  logger.replaceOverrides(new Map([
-    ["bot-a", { level: "debug", expiresAt: "2026-08-03T12:05:00.000Z" }],
-  ]));
+  logger.replaceOverrides(
+    new Map([['bot-a', {level: 'debug', expiresAt: '2026-08-03T12:05:00.000Z'}]]),
+  );
 
-  logger.debug("worker", "diagnostics", "bot-a");
-  logger.debug("worker", "diagnostics", "bot-b");
+  logger.debug('worker', 'diagnostics', 'bot-a');
+  logger.debug('worker', 'diagnostics', 'bot-b');
 
-  assert.deepEqual(records, [{
-    level: "debug",
-    scope: "worker",
-    botId: "bot-a",
-    message: "diagnostics",
-  }]);
+  assert.deepEqual(records, [
+    {
+      level: 'debug',
+      scope: 'worker',
+      botId: 'bot-a',
+      message: 'diagnostics',
+    },
+  ]);
 });
 
-test("an expired override is ignored using the injected clock", () => {
+test('an expired override is ignored using the injected clock', () => {
   const logger = new FleetLogger({
-    defaultLevel: "summary",
-    now: () => new Date("2026-08-03T12:00:00.000Z"),
+    defaultLevel: 'summary',
+    now: () => new Date('2026-08-03T12:00:00.000Z'),
   });
-  logger.replaceOverrides(new Map([
-    ["bot-a", { level: "debug", expiresAt: "2026-08-03T11:59:59.999Z" }],
-  ]));
+  logger.replaceOverrides(
+    new Map([['bot-a', {level: 'debug', expiresAt: '2026-08-03T11:59:59.999Z'}]]),
+  );
 
-  assert.equal(logger.overrideFor("bot-a"), undefined);
-  assert.equal(logger.effectiveLevel("bot-a"), "summary");
+  assert.equal(logger.overrideFor('bot-a'), undefined);
+  assert.equal(logger.effectiveLevel('bot-a'), 'summary');
 });
 
-test("formatDebugError exposes only Error name message and stack", () => {
-  const error = new Error("request failed");
-  error.name = "RequestError";
-  error.stack = "RequestError: request failed\n    at test";
+test('formatDebugError exposes only Error name message and stack', () => {
+  const error = new Error('request failed');
+  error.name = 'RequestError';
+  error.stack = 'RequestError: request failed\n    at test';
   Object.assign(error, {
-    config: { secret: "config-secret" },
-    headers: { authorization: "header-secret" },
-    session: "session-secret",
-    password: "password-secret",
+    config: {secret: 'config-secret'},
+    headers: {authorization: 'header-secret'},
+    session: 'session-secret',
+    password: 'password-secret',
   });
 
   const formatted = formatDebugError(error);
@@ -116,40 +111,40 @@ test("formatDebugError exposes only Error name message and stack", () => {
   assert.doesNotMatch(formatted, /config-secret|header-secret|session-secret|password-secret/);
 });
 
-test("formatDebugError redacts embedded credentials from both message and stack", () => {
+test('formatDebugError redacts embedded credentials from both message and stack', () => {
   const error = new Error(
-    "request failed for https://alice:url-password@api.example.test/post?token=query-token " +
-    "Authorization: Bearer auth-token password=message-password " +
-    "appPassword='message-app-password' accessJwt=message-access " +
-    "refresh_token=message-refresh session=message-session clientSecret=message-secret"
+    'request failed for https://alice:url-password@api.example.test/post?token=query-token ' +
+      'Authorization: Bearer auth-token password=message-password ' +
+      "appPassword='message-app-password' accessJwt=message-access " +
+      'refresh_token=message-refresh session=message-session clientSecret=message-secret',
   );
-  error.name = "CredentialError";
+  error.name = 'CredentialError';
   error.stack = [
-    "CredentialError: ECONNRESET while retrying",
-    "    at retryRequest (https://bob:stack-password@api.example.test/retry)",
-    "    Authorization=Basic stack-authorization",
-    "    Bearer stack-bearer token=stack-token access_token=stack-access",
-  ].join("\n");
+    'CredentialError: ECONNRESET while retrying',
+    '    at retryRequest (https://bob:stack-password@api.example.test/retry)',
+    '    Authorization=Basic stack-authorization',
+    '    Bearer stack-bearer token=stack-token access_token=stack-access',
+  ].join('\n');
 
   const formatted = formatDebugError(error);
 
   for (const secret of [
-    "alice",
-    "url-password",
-    "query-token",
-    "auth-token",
-    "message-password",
-    "message-app-password",
-    "message-access",
-    "message-refresh",
-    "message-session",
-    "message-secret",
-    "bob",
-    "stack-password",
-    "stack-authorization",
-    "stack-bearer",
-    "stack-token",
-    "stack-access",
+    'alice',
+    'url-password',
+    'query-token',
+    'auth-token',
+    'message-password',
+    'message-app-password',
+    'message-access',
+    'message-refresh',
+    'message-session',
+    'message-secret',
+    'bob',
+    'stack-password',
+    'stack-authorization',
+    'stack-bearer',
+    'stack-token',
+    'stack-access',
   ]) {
     assert.doesNotMatch(formatted, new RegExp(secret));
   }
@@ -160,26 +155,29 @@ test("formatDebugError redacts embedded credentials from both message and stack"
   assert.match(formatted, /retryRequest/);
   assert.match(formatted, /\[REDACTED\]/);
 
-  assert.doesNotMatch(formatDebugError("Bearer primitive-secret after timeout"), /primitive-secret/);
-  assert.match(formatDebugError("Bearer primitive-secret after timeout"), /after timeout/);
+  assert.doesNotMatch(
+    formatDebugError('Bearer primitive-secret after timeout'),
+    /primitive-secret/,
+  );
+  assert.match(formatDebugError('Bearer primitive-secret after timeout'), /after timeout/);
 });
 
-test("formatDebugError redacts secrets embedded in JSON-quoted keys", () => {
+test('formatDebugError redacts secrets embedded in JSON-quoted keys', () => {
   const error = new Error(
     'Failed request body {"identifier":"bot.bsky.social","password":"hunter2-secret"} ' +
-    'session {"accessJwt":"eyJSECRETJWT","refreshJwt":"eyJSECRETREFRESH"}'
+      'session {"accessJwt":"eyJSECRETJWT","refreshJwt":"eyJSECRETREFRESH"}',
   );
-  error.name = "RequestError";
-  error.stack = "RequestError: Failed request body";
+  error.name = 'RequestError';
+  error.stack = 'RequestError: Failed request body';
 
   const formatted = formatDebugError(error);
 
-  for (const secret of ["hunter2-secret", "eyJSECRETJWT", "eyJSECRETREFRESH"]) {
+  for (const secret of ['hunter2-secret', 'eyJSECRETJWT', 'eyJSECRETREFRESH']) {
     assert.doesNotMatch(formatted, new RegExp(secret));
   }
   assert.match(formatted, /"identifier":"bot\.bsky\.social"/);
   assert.match(formatted, /\[REDACTED\]/);
 
   // The bearer-token rule that lives beside this one must still work unchanged.
-  assert.doesNotMatch(formatDebugError("Authorization: Bearer still-a-secret"), /still-a-secret/);
+  assert.doesNotMatch(formatDebugError('Authorization: Bearer still-a-secret'), /still-a-secret/);
 });

@@ -1,17 +1,17 @@
-import FeedSub from "feedsub";
-import jimp from "jimp";
-import axios from "axios";
-import og from "open-graph-scraper";
-import { decode } from "html-entities";
-import { BotStore } from "./botStore.ts";
-import { computeDedupeKey } from "./dedupeKey.ts";
-import { SharedLimiters } from "./sharedLimiters.ts";
-import { BotOperations, classifyFeedFailure } from "./botOperations.ts";
-import { FleetLogger, formatDebugError } from "./logging.ts";
+import FeedSub from 'feedsub';
+import jimp from 'jimp';
+import axios from 'axios';
+import og from 'open-graph-scraper';
+import {decode} from 'html-entities';
+import {BotStore} from './botStore.ts';
+import {computeDedupeKey} from './dedupeKey.ts';
+import {SharedLimiters} from './sharedLimiters.ts';
+import {BotOperations, classifyFeedFailure} from './botOperations.ts';
+import {FleetLogger, formatDebugError} from './logging.ts';
 
 export interface FeedItem {
   title: string;
-  link: { href: string } | string;
+  link: {href: string} | string;
   description?: string;
   content?: string;
   published?: string;
@@ -41,9 +41,7 @@ export interface FeedReaderRuntime {
   fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>;
 }
 
-type OpenGraphFetchOutcome =
-  | { ok: true; result: unknown }
-  | { ok: false; error: unknown };
+type OpenGraphFetchOutcome = {ok: true; result: unknown} | {ok: false; error: unknown};
 
 export interface ParsedEmbed {
   uri: string;
@@ -65,10 +63,10 @@ export interface ParsedItem {
 
 export function removeHTMLTags(htmlString: string): string {
   return htmlString
-    ?.replace(/<\/?[^>]+(>|$)/g, " ")
-    .replaceAll("&nbsp;", " ")
+    ?.replace(/<\/?[^>]+(>|$)/g, ' ')
+    .replaceAll('&nbsp;', ' ')
     .trim()
-    .replace(/ +/g, " ");
+    .replace(/ +/g, ' ');
 }
 
 export function decodeHTMLTwice(htmlString: string): string {
@@ -76,7 +74,7 @@ export function decodeHTMLTwice(htmlString: string): string {
 }
 
 export function fixMalformedUrl(urlString: string): string {
-  return urlString.replace(/^https\/\//i, "https://").replace(/^http\/\//i, "http://");
+  return urlString.replace(/^https\/\//i, 'https://').replace(/^http\/\//i, 'http://');
 }
 
 // feedme (feedsub's underlying parser) returns a tag as a plain string only when it has
@@ -85,7 +83,7 @@ export function fixMalformedUrl(urlString: string): string {
 // actual text out of either shape; also treats an empty string as absent so a blank
 // tag (e.g. <link/>) falls through to the next candidate rather than "winning".
 export function textOf(v: unknown): string | undefined {
-  const text = v && typeof v === "object" ? (v as any).text : v;
+  const text = v && typeof v === 'object' ? (v as any).text : v;
   return text || undefined;
 }
 
@@ -94,35 +92,35 @@ export function parseString(
   item: FeedItem,
   truncate: boolean,
   titleClearHTML: boolean,
-  descriptionClearHTML: boolean
+  descriptionClearHTML: boolean,
 ): string {
   let result = template;
 
-  if (template.includes("$title")) {
-    if (!item.title) throw new Error("No title provided from RSS reader.");
+  if (template.includes('$title')) {
+    if (!item.title) throw new Error('No title provided from RSS reader.');
     result = result.replace(
-      "$title",
-      titleClearHTML ? decodeHTMLTwice(removeHTMLTags(item.title)) : item.title
+      '$title',
+      titleClearHTML ? decodeHTMLTwice(removeHTMLTags(item.title)) : item.title,
     );
   }
 
-  if (template.includes("$link")) {
-    if (!item.link) throw new Error("No link provided from RSS reader.");
-    const href = typeof item.link === "object" ? item.link.href : item.link;
-    result = result.replace("$link", href);
+  if (template.includes('$link')) {
+    if (!item.link) throw new Error('No link provided from RSS reader.');
+    const href = typeof item.link === 'object' ? item.link.href : item.link;
+    result = result.replace('$link', href);
   }
 
-  if (template.includes("$description")) {
+  if (template.includes('$description')) {
     // Deliberate improvement over app/utils/rssHandler.ts, which leaves
     // `description` undefined here and lets String.replace stringify it to
     // the literal text "undefined" in the post - a real bug in production.
-    let description = item.description ?? item.content ?? "";
+    let description = item.description ?? item.content ?? '';
     if (descriptionClearHTML) description = removeHTMLTags(description);
-    result = result.replace("$description", description);
+    result = result.replace('$description', description);
   }
 
   if (result.length > 300 && truncate) {
-    result = result.slice(0, 277) + "...";
+    result = result.slice(0, 277) + '...';
   }
 
   return result;
@@ -144,13 +142,13 @@ export class FeedReader {
     private config: FeedReaderConfig,
     private store: BotStore,
     private sharedLimiters: SharedLimiters,
-    private runtime: FeedReaderRuntime
+    private runtime: FeedReaderRuntime,
   ) {
     this.reader = new FeedSub(String(feedUrl), {
       interval: fetchIntervalMinutes,
       emitOnStart: true,
       lastDate: this.store.readCursor() || null,
-      requestOpts: { timeout: sharedLimiters.httpTimeoutMs },
+      requestOpts: {timeout: sharedLimiters.httpTimeoutMs},
     });
   }
 
@@ -165,33 +163,33 @@ export class FeedReader {
     // safety net rather than handled per-bot here - a feed-fetch failure
     // (a broken TLS cert chain, DNS failure, timeout, etc.) must not be
     // allowed to fall through to that global handler as the primary defense.
-    this.reader.on("items", () => {
-      const { recoveredFailures } = this.runtime.operations.recordFeedSuccess();
+    this.reader.on('items', () => {
+      const {recoveredFailures} = this.runtime.operations.recordFeedSuccess();
       if (recoveredFailures > 0) {
         this.runtime.logger.summary(
-          "FEED",
+          'FEED',
           `Feed recovered after ${recoveredFailures} failed poll(s)`,
-          this.botId
+          this.botId,
         );
       }
     });
-    this.reader.on("error", (err: unknown) => {
+    this.reader.on('error', (err: unknown) => {
       const category = classifyFeedFailure(err);
-      const { becameFailing } = this.runtime.operations.recordFeedFailure(category);
+      const {becameFailing} = this.runtime.operations.recordFeedFailure(category);
       if (becameFailing) {
-        this.runtime.logger.summary("FEED", `Feed unavailable (${category})`, this.botId);
+        this.runtime.logger.summary('FEED', `Feed unavailable (${category})`, this.botId);
       }
-      this.runtime.logger.debug("FEED", formatDebugError(err), this.botId);
+      this.runtime.logger.debug('FEED', formatDebugError(err), this.botId);
     });
     this.reader.read();
     // handleItem is async; the EventEmitter has no way to await or catch a
     // listener's rejection, so an ordinary bad item (missing title/link)
     // would otherwise become an unhandled rejection and crash the whole
     // process - fatal for every other bot sharing this process.
-    this.reader.on("item", (item: FeedItem) => {
-      this.handleItem(item).catch((err) => {
-        this.runtime.logger.summary("FEED", "Item handling failed", this.botId);
-        this.runtime.logger.debug("FEED", formatDebugError(err), this.botId);
+    this.reader.on('item', (item: FeedItem) => {
+      this.handleItem(item).catch(err => {
+        this.runtime.logger.summary('FEED', 'Item handling failed', this.botId);
+        this.runtime.logger.debug('FEED', formatDebugError(err), this.botId);
       });
     });
     this.reader.start();
@@ -204,41 +202,46 @@ export class FeedReader {
   async resolveEmbedImage(imageUrl: string): Promise<Buffer | undefined> {
     const startedAt = Date.now();
     try {
-      return await this.sharedLimiters.withImageLimit(async () => {
-        const response = await axios.get(imageUrl, {
-          headers: { "User-Agent": this.config.ogUserAgent ?? "bsky.rss/1.0 (Open Graph Scraper)" },
-          responseType: "arraybuffer",
-          maxContentLength: this.sharedLimiters.maxImageDownloadBytes,
-          timeout: this.sharedLimiters.httpTimeoutMs,
-        });
-        return resizeImageToBuffer(response.data);
-      }, { logger: this.runtime.logger, botId: this.botId });
+      return await this.sharedLimiters.withImageLimit(
+        async () => {
+          const response = await axios.get(imageUrl, {
+            headers: {
+              'User-Agent': this.config.ogUserAgent ?? 'bsky.rss/1.0 (Open Graph Scraper)',
+            },
+            responseType: 'arraybuffer',
+            maxContentLength: this.sharedLimiters.maxImageDownloadBytes,
+            timeout: this.sharedLimiters.httpTimeoutMs,
+          });
+          return resizeImageToBuffer(response.data);
+        },
+        {logger: this.runtime.logger, botId: this.botId},
+      );
     } catch (error) {
       this.runtime.logger.debug(
-        "FETCH",
+        'FETCH',
         `Image download failed\n${formatDebugError(error)}`,
-        this.botId
+        this.botId,
       );
       return undefined;
     } finally {
       this.runtime.logger.debug(
-        "TIMING",
+        'TIMING',
         `Image download completed in ${Math.max(0, Date.now() - startedAt)}ms`,
-        this.botId
+        this.botId,
       );
     }
   }
 
   private async handleItem(item: FeedItem): Promise<void> {
-    const itemUrl = typeof item.link === "object" ? item.link.href : item.link;
+    const itemUrl = typeof item.link === 'object' ? item.link.href : item.link;
     const useDate: string | undefined = this.config.dateField
       ? item[this.config.dateField]
       : (item.pubdate ?? item.published);
     if (!useDate) {
       this.runtime.logger.verbose(
-        "FEED",
-        `Skipping item without a date: ${item.title ?? "(untitled)"} (${itemUrl ?? "no URL"})`,
-        this.botId
+        'FEED',
+        `Skipping item without a date: ${item.title ?? '(untitled)'} (${itemUrl ?? 'no URL'})`,
+        this.botId,
       );
       return;
     }
@@ -255,7 +258,7 @@ export class FeedReader {
     // "[object Object]" and collide, so the actual text has to be pulled out explicitly.
     const dedupeKey = computeDedupeKey(
       this.botId,
-      textOf(itemUrl) || textOf(item.guid) || textOf(item.id) || ""
+      textOf(itemUrl) || textOf(item.guid) || textOf(item.id) || '',
     );
 
     const lastCursor = this.store.readCursor();
@@ -263,19 +266,27 @@ export class FeedReader {
 
     if (this.config.publishEmbed) {
       const url = itemUrl;
-      if (!url) throw new Error("No link provided from RSS reader to fetch Open Graph data.");
+      if (!url) throw new Error('No link provided from RSS reader to fetch Open Graph data.');
 
       // Dedup check runs before any network fetch, matching rssHandler.ts's real
       // ordering today — avoids the expensive OG/image fetch for known duplicates.
       if (this.config.removeDuplicate) {
         if (this.store.seenValueExists(url)) {
-          this.runtime.logger.verbose("FEED", `Skipping duplicate item: ${item.title} (${url})`, this.botId);
+          this.runtime.logger.verbose(
+            'FEED',
+            `Skipping duplicate item: ${item.title} (${url})`,
+            this.botId,
+          );
           return;
         }
         this.store.writeSeenValue(url);
       } else {
         if (new Date(useDate) <= new Date(lastCursor)) {
-          this.runtime.logger.verbose("FEED", `Skipping stale item: ${item.title} (${url})`, this.botId);
+          this.runtime.logger.verbose(
+            'FEED',
+            `Skipping stale item: ${item.title} (${url})`,
+            this.botId,
+          );
           return;
         }
       }
@@ -284,9 +295,9 @@ export class FeedReader {
       const imageKey = this.config.imageField;
       if (imageKey && Object.keys(item).includes(imageKey)) {
         const imageField = item[imageKey];
-        const hasUrl = imageField && Object.keys(imageField).includes("url");
+        const hasUrl = imageField && Object.keys(imageField).includes('url');
         const isImageType = !(
-          Object.keys(imageField ?? {}).includes("type") && !imageField.type?.startsWith("image")
+          Object.keys(imageField ?? {}).includes('type') && !imageField.type?.startsWith('image')
         );
         if (hasUrl && isImageType) {
           imageUrl = imageField.url;
@@ -296,17 +307,21 @@ export class FeedReader {
       let description: string | undefined;
       if (this.config.forceDescriptionEmbed) {
         description = item.description ?? item.content;
-        if (description && this.config.descriptionClearHTML) description = removeHTMLTags(description);
+        if (description && this.config.descriptionClearHTML)
+          description = removeHTMLTags(description);
       }
 
       let imageAlt: string | undefined;
-      if (this.config.embedType === "image" && this.config.imageAlt) {
+      if (this.config.embedType === 'image' && this.config.imageAlt) {
         imageAlt = parseString(this.config.imageAlt, item, false, false, false);
       }
 
       const defaultUserAgent =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-      const openGraphFetch = await this.fetchOpenGraph(url, this.config.ogUserAgent || defaultUserAgent);
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      const openGraphFetch = await this.fetchOpenGraph(
+        url,
+        this.config.ogUserAgent || defaultUserAgent,
+      );
 
       if (openGraphFetch.ok) {
         const openGraphResult: any = openGraphFetch.result;
@@ -317,7 +332,8 @@ export class FeedReader {
         if (!description) {
           description = openGraphResult.ogDescription ?? item.description ?? item.content;
         }
-        if (description && this.config.descriptionClearHTML) description = removeHTMLTags(description);
+        if (description && this.config.descriptionClearHTML)
+          description = removeHTMLTags(description);
 
         let uri = openGraphResult.ogUrl ? fixMalformedUrl(openGraphResult.ogUrl) : url;
         if (openGraphResult.ogUrl) {
@@ -338,28 +354,46 @@ export class FeedReader {
         }
       } else {
         this.runtime.operations.recordOpenGraphFallback();
-        this.runtime.logger.verbose("FETCH", `Open Graph fallback for ${item.title} (${url})`, this.botId);
-        this.runtime.logger.debug("FETCH", formatDebugError(openGraphFetch.error), this.botId);
+        this.runtime.logger.verbose(
+          'FETCH',
+          `Open Graph fallback for ${item.title} (${url})`,
+          this.botId,
+        );
+        this.runtime.logger.debug('FETCH', formatDebugError(openGraphFetch.error), this.botId);
         description = item.description ?? item.content;
-        if (description && this.config.descriptionClearHTML) description = removeHTMLTags(description);
-        embed = { uri: url, title: item.title, description, imageUrl, imageAlt, type: this.config.embedType };
+        if (description && this.config.descriptionClearHTML)
+          description = removeHTMLTags(description);
+        embed = {
+          uri: url,
+          title: item.title,
+          description,
+          imageUrl,
+          imageAlt,
+          type: this.config.embedType,
+        };
       }
     }
 
     if (new Date(useDate) <= new Date(lastCursor)) {
-      this.runtime.logger.verbose("FEED", `Skipping stale item: ${item.title} (${itemUrl ?? "no URL"})`, this.botId);
+      this.runtime.logger.verbose(
+        'FEED',
+        `Skipping stale item: ${item.title} (${itemUrl ?? 'no URL'})`,
+        this.botId,
+      );
       return;
     }
 
     const title =
-      item.title && this.config.titleClearHTML ? decodeHTMLTwice(removeHTMLTags(item.title)) : item.title;
+      item.title && this.config.titleClearHTML
+        ? decodeHTMLTwice(removeHTMLTags(item.title))
+        : item.title;
 
     const content = parseString(
       this.config.string,
       item,
       this.config.truncate === true,
       this.config.titleClearHTML === true,
-      this.config.descriptionClearHTML === true
+      this.config.descriptionClearHTML === true,
     );
 
     this.itemHandler?.({
@@ -372,40 +406,40 @@ export class FeedReader {
     } as ParsedItem);
   }
 
-  private async fetchOpenGraph(
-    url: string,
-    userAgent: string
-  ): Promise<OpenGraphFetchOutcome> {
+  private async fetchOpenGraph(url: string, userAgent: string): Promise<OpenGraphFetchOutcome> {
     const startedAt = Date.now();
     try {
-      const result = await this.sharedLimiters.withOgLimit(async () => {
-        if (this.runtime.fetchOpenGraph) {
-          return this.runtime.fetchOpenGraph(url, userAgent, this.sharedLimiters.httpTimeoutMs);
-        }
-        const response: any = await og({
-          url,
-          timeout: this.sharedLimiters.httpTimeoutMs / 1000,
-          fetchOptions: {
-            headers: {
-              "user-agent": userAgent,
-              accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-              "accept-language": "en-US,en;q=0.9",
+      const result = await this.sharedLimiters.withOgLimit(
+        async () => {
+          if (this.runtime.fetchOpenGraph) {
+            return this.runtime.fetchOpenGraph(url, userAgent, this.sharedLimiters.httpTimeoutMs);
+          }
+          const response: any = await og({
+            url,
+            timeout: this.sharedLimiters.httpTimeoutMs / 1000,
+            fetchOptions: {
+              headers: {
+                'user-agent': userAgent,
+                accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'accept-language': 'en-US,en;q=0.9',
+              },
             },
-          },
-        });
-        return response.error ? { error: response.error } : response.result;
-      }, { logger: this.runtime.logger, botId: this.botId });
-      if (result && typeof result === "object" && "error" in result && (result as any).error) {
-        return { ok: false, error: (result as any).error };
+          });
+          return response.error ? {error: response.error} : response.result;
+        },
+        {logger: this.runtime.logger, botId: this.botId},
+      );
+      if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
+        return {ok: false, error: (result as any).error};
       }
-      return { ok: true, result };
+      return {ok: true, result};
     } catch (error) {
-      return { ok: false, error };
+      return {ok: false, error};
     } finally {
       this.runtime.logger.debug(
-        "TIMING",
+        'TIMING',
         `Open Graph fetch completed in ${Math.max(0, Date.now() - startedAt)}ms`,
-        this.botId
+        this.botId,
       );
     }
   }

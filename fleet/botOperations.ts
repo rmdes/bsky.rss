@@ -1,13 +1,13 @@
-export type FeedState = "starting" | "ok" | "failing";
+export type FeedState = 'starting' | 'ok' | 'failing';
 
 export type FeedFailureCategory =
   | `http-${number}`
-  | "timeout"
-  | "dns"
-  | "tls"
-  | "connection"
-  | "parse"
-  | "other";
+  | 'timeout'
+  | 'dns'
+  | 'tls'
+  | 'connection'
+  | 'parse'
+  | 'other';
 
 export interface BotCounters {
   feedPollSucceeded: number;
@@ -51,7 +51,7 @@ export function emptyBotCounters(): BotCounters {
 }
 
 export class BotOperations {
-  private feedState: FeedState = "starting";
+  private feedState: FeedState = 'starting';
   private lastFeedSuccessAt: string | null = null;
   private lastFeedFailureAt: string | null = null;
   private consecutiveFeedFailures = 0;
@@ -61,26 +61,29 @@ export class BotOperations {
 
   constructor(
     private readonly botId: string,
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(),
   ) {}
 
-  recordFeedSuccess(): { recoveredFailures: number } {
+  recordFeedSuccess(): {recoveredFailures: number} {
     const recoveredFailures = this.consecutiveFeedFailures;
     this.counters.feedPollSucceeded++;
-    this.feedState = "ok";
+    this.feedState = 'ok';
     this.lastFeedSuccessAt = this.now().toISOString();
     this.consecutiveFeedFailures = 0;
-    return { recoveredFailures };
+    return {recoveredFailures};
   }
 
-  recordFeedFailure(category: FeedFailureCategory): { becameFailing: boolean; consecutiveFailures: number } {
-    const becameFailing = this.feedState !== "failing";
+  recordFeedFailure(category: FeedFailureCategory): {
+    becameFailing: boolean;
+    consecutiveFailures: number;
+  } {
+    const becameFailing = this.feedState !== 'failing';
     this.counters.feedPollFailed++;
-    this.feedState = "failing";
+    this.feedState = 'failing';
     this.lastFeedFailureAt = this.now().toISOString();
     this.consecutiveFeedFailures++;
     this.lastFeedFailureCategory = category;
-    return { becameFailing, consecutiveFailures: this.consecutiveFeedFailures };
+    return {becameFailing, consecutiveFailures: this.consecutiveFeedFailures};
   }
 
   recordOpenGraphSuccess(): void {
@@ -127,34 +130,37 @@ export class BotOperations {
       consecutiveFeedFailures: this.consecutiveFeedFailures,
       lastFeedFailureCategory: this.lastFeedFailureCategory,
       lastPostSuccessAt: this.lastPostSuccessAt,
-      counters: { ...this.counters },
+      counters: {...this.counters},
     };
   }
 }
 
 export function classifyFeedFailure(error: unknown): FeedFailureCategory {
-  const status = numberProperty(error, "status") ?? numberProperty(error, "statusCode");
+  const status = numberProperty(error, 'status') ?? numberProperty(error, 'statusCode');
   if (status !== undefined && Number.isInteger(status) && status >= 100 && status <= 599) {
     return `http-${status}`;
   }
 
-  const code = stringProperty(error, "code").toUpperCase();
-  if (["ETIMEDOUT", "ESOCKETTIMEDOUT", "UND_ERR_CONNECT_TIMEOUT"].includes(code)) return "timeout";
-  if (["ENOTFOUND", "EAI_AGAIN"].includes(code)) return "dns";
-  if (code.startsWith("ERR_TLS") || code.includes("CERT")) return "tls";
-  if (["ECONNREFUSED", "ECONNRESET", "ECONNABORTED", "EPIPE", "UND_ERR_SOCKET"].includes(code)) return "connection";
+  const code = stringProperty(error, 'code').toUpperCase();
+  if (['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT'].includes(code)) return 'timeout';
+  if (['ENOTFOUND', 'EAI_AGAIN'].includes(code)) return 'dns';
+  if (code.startsWith('ERR_TLS') || code.includes('CERT')) return 'tls';
+  if (['ECONNREFUSED', 'ECONNRESET', 'ECONNABORTED', 'EPIPE', 'UND_ERR_SOCKET'].includes(code))
+    return 'connection';
 
-  const message = stringProperty(error, "message").toLowerCase();
-  if (/(timed? out|timeout)/.test(message)) return "timeout";
-  if (/(getaddrinfo|dns|name or service not known)/.test(message)) return "dns";
-  if (/(certificate|tls|ssl)/.test(message)) return "tls";
-  if (/(connection refused|socket hang up|connection reset|network unreachable)/.test(message)) return "connection";
-  if (/(xml|parser|parse error|unexpected (close |end )?tag|mismatched tag)/.test(message)) return "parse";
-  return "other";
+  const message = stringProperty(error, 'message').toLowerCase();
+  if (/(timed? out|timeout)/.test(message)) return 'timeout';
+  if (/(getaddrinfo|dns|name or service not known)/.test(message)) return 'dns';
+  if (/(certificate|tls|ssl)/.test(message)) return 'tls';
+  if (/(connection refused|socket hang up|connection reset|network unreachable)/.test(message))
+    return 'connection';
+  if (/(xml|parser|parse error|unexpected (close |end )?tag|mismatched tag)/.test(message))
+    return 'parse';
+  return 'other';
 }
 
 function property(error: unknown, key: string): unknown {
-  if (typeof error !== "object" || error === null) return undefined;
+  if (typeof error !== 'object' || error === null) return undefined;
   try {
     return Reflect.get(error, key);
   } catch {
@@ -164,10 +170,10 @@ function property(error: unknown, key: string): unknown {
 
 function numberProperty(error: unknown, key: string): number | undefined {
   const value = property(error, key);
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function stringProperty(error: unknown, key: string): string {
   const value = property(error, key);
-  return typeof value === "string" ? value : "";
+  return typeof value === 'string' ? value : '';
 }

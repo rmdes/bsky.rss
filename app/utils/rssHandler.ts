@@ -1,24 +1,27 @@
-import FeedSub from "feedsub";
-import jimp from "jimp";
-import axios from "axios";
-import queue from "./queueHandler";
-import db from "./dbHandler";
-import og from "open-graph-scraper";
-import { decode } from "html-entities";
+import FeedSub from 'feedsub';
+import jimp from 'jimp';
+import axios from 'axios';
+import queue from './queueHandler';
+import db from './dbHandler';
+import og from 'open-graph-scraper';
+import {decode} from 'html-entities';
 
+// feedsub's own FeedItem type doesn't match how items are used here (same as
+// fleet/feedReader.ts's identical choice for the same library).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let reader: any = null;
-let lastDate: string = "";
+let lastDate: string = '';
 
 let config: Config = {
-  string: "",
+  string: '',
   publishEmbed: false,
-  languages: ["en"],
+  languages: ['en'],
   truncate: true,
   runInterval: 60,
   publishDate: false,
-  dateField: "",
-  imageField: "",
-  ogUserAgent: "bsky.rss/1.0 (Open Graph Scraper)",
+  dateField: '',
+  imageField: '',
+  ogUserAgent: 'bsky.rss/1.0 (Open Graph Scraper)',
   descriptionClearHTML: true,
   forceDescriptionEmbed: false,
   removeDuplicate: false,
@@ -32,27 +35,22 @@ let config: Config = {
 async function start() {
   reader.read();
 
-  reader.on("item", async (item: Item) => {
-    let useDate = config.dateField
-      ? // @ts-ignore
-        item[config.dateField]
+  reader.on('item', async (item: Item) => {
+    const useDate = config.dateField
+      ? item[config.dateField]
       : item.pubdate
         ? item.pubdate
         : item.published;
-    if (!useDate)
-      return console.log("No date provided by RSS reader for post.");
+    if (!useDate) return console.log('No date provided by RSS reader for post.');
 
-    let parsed = parseString(config.string, item, config.truncate == true);
+    const parsed = parseString(config.string, item, config.truncate === true);
     let embed: Embed | undefined = undefined;
     let title: string | undefined = undefined;
 
     if (config.publishEmbed) {
-      if (!item.link)
-        throw new Error(
-          "No link provided from RSS reader to fetch Open Graph data."
-        );
-      let url = "";
-      if (typeof item.link === "object") url = item.link.href;
+      if (!item.link) throw new Error('No link provided from RSS reader to fetch Open Graph data.');
+      let url = '';
+      if (typeof item.link === 'object') url = item.link.href;
       else url = item.link;
 
       if (config.removeDuplicate) {
@@ -66,89 +64,89 @@ async function start() {
       let description: string | undefined = undefined;
       let imageAlt: string | undefined = undefined;
 
-      if (config.imageField != "" && config.imageField != undefined) {
-        let imageUrl: string = "";
-        let imageKey: string | undefined = config.imageField;
-        if (imageKey != "" && imageKey != undefined) {
+      if (config.imageField !== '' && config.imageField !== undefined) {
+        let imageUrl: string = '';
+        const imageKey: string | undefined = config.imageField;
+        if (imageKey !== '' && imageKey !== undefined) {
           if (Object.keys(item).includes(imageKey)) {
             if (
-              Object.keys(item[imageKey]).includes("url") &&
+              Object.keys(item[imageKey]).includes('url') &&
               !(
-                Object.keys(item[imageKey]).includes("type") &&
-                !item[imageKey]["type"].startsWith("image")
+                Object.keys(item[imageKey]).includes('type') &&
+                !item[imageKey]['type'].startsWith('image')
               )
             ) {
-              imageUrl = item[imageKey]["url"];
+              imageUrl = item[imageKey]['url'];
             }
           }
         }
 
-        if (imageUrl != "") {
+        if (imageUrl !== '') {
           image = await fetchImage(imageUrl);
 
-          if (image == undefined) {
+          if (image === undefined) {
             console.log(
               `[${new Date().toUTCString()}] - [bsky.rss FETCH] Error fetching image for ${
                 item.title
-              } (${imageUrl})`
+              } (${imageUrl})`,
             );
           }
         }
       }
 
       if (config.forceDescriptionEmbed) {
-        description = item.description
-          ? item.description
-          : item.content
-            ? item.content
-            : undefined;
+        description = item.description ? item.description : item.content ? item.content : undefined;
 
         if (description && config.descriptionClearHTML) {
           description = removeHTMLTags(description);
         }
       }
 
-      if (config.embedType == "image" && config.imageAlt) {
+      if (config.embedType === 'image' && config.imageAlt) {
         imageAlt = parseString(config.imageAlt, item, false).text;
       }
 
       const defaultUserAgent =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
       const userAgent = config.ogUserAgent || defaultUserAgent;
 
-      let openGraphData: any = await og({
+      // The reshape below (SuccessResult|ErrorResult -> {error:true}|OgObject) loses
+      // the clean top-level error discriminant - OgObject has its own unrelated
+      // `error?: string` field, so TS can't narrow the flattened union safely here.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const openGraphData: any = await og({
         url,
         timeout: 10000,
         fetchOptions: {
           headers: {
-            "user-agent": userAgent,
-            accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "accept-language": "en-US,en;q=0.9",
+            'user-agent': userAgent,
+            accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'accept-language': 'en-US,en;q=0.9',
           },
         },
       })
-        .then((res) => (res.error ? { error: true } : res.result))
+        .then(res => (res.error ? {error: true} : res.result))
         .catch(() => ({
           error: true,
         }));
 
       if (!openGraphData.error) {
-        if (image == undefined && openGraphData.ogImage) {
-          let imageUrl: string = openGraphData.ogImage[0].url;
+        if (image === undefined && openGraphData.ogImage) {
+          const imageUrl: string = openGraphData.ogImage[0].url;
 
-          if (imageUrl != "" && imageUrl != undefined) {
+          if (imageUrl !== '' && imageUrl !== undefined) {
             image = await fetchImage(imageUrl);
 
-            if (image == undefined) {
+            if (image === undefined) {
               console.log(
                 `[${new Date().toUTCString()}] - [bsky.rss FETCH] Error fetching image for ${
                   item.title
-                } (${imageUrl})`
+                } (${imageUrl})`,
               );
             }
           }
 
-          if (description == undefined) {
+          if (description === undefined) {
             description = openGraphData.ogDescription
               ? openGraphData.ogDescription
               : item.description
@@ -159,17 +157,15 @@ async function start() {
           }
         }
 
-        if (description != undefined && config.descriptionClearHTML) {
+        if (description !== undefined && config.descriptionClearHTML) {
           description = removeHTMLTags(description);
         }
 
-        let uri = openGraphData.ogUrl
-          ? fixMalformedUrl(openGraphData.ogUrl)
-          : url;
+        let uri = openGraphData.ogUrl ? fixMalformedUrl(openGraphData.ogUrl) : url;
 
         if (openGraphData.ogUrl) {
-          let regexURL = new RegExp(
-            `^(h|H)(t|T)(t|T)(p|P)(s|S)?:\\/\\/[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b([-a-zA-Z0-9()@:%_\\+.~#?&//=]*)`
+          const regexURL = new RegExp(
+            '^(h|H)(t|T)(t|T)(p|P)(s|S)?:\\/\\/[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b([-a-zA-Z0-9()@:%_\\+.~#?&//=]*)',
           );
 
           if (!regexURL.test(uri)) uri = url;
@@ -191,7 +187,7 @@ async function start() {
         console.log(
           `[${new Date().toUTCString()}] - [bsky.rss FETCH] Error fetching Open Graph data for ${
             item.title
-          } (${url})`
+          } (${url})`,
         );
 
         description = item.description || item.content;
@@ -228,15 +224,9 @@ async function start() {
   });
 }
 
-async function init({
-  fetch_interval,
-  fetch_url,
-}: {
-  fetch_interval: number;
-  fetch_url: URL;
-}) {
+async function init({fetch_interval, fetch_url}: {fetch_interval: number; fetch_url: URL}) {
   config = await db.initConfig();
-  if (!config.string) throw new Error("No string provided.");
+  if (!config.string) throw new Error('No string provided.');
 
   reader = new FeedSub(String(fetch_url), {
     interval: fetch_interval,
@@ -260,43 +250,39 @@ export default {
 };
 
 function parseString(string: string, item: Item, truncate: boolean) {
-  let result: ParseResult = {
-    text: "",
+  const result: ParseResult = {
+    text: '',
   };
 
   let parsedString = string;
-  if (string.includes("$title")) {
-    if (!item.title) throw new Error("No title provided from RSS reader.");
+  if (string.includes('$title')) {
+    if (!item.title) throw new Error('No title provided from RSS reader.');
 
     if (config.titleClearHTML) {
-      parsedString = parsedString.replace(
-        "$title",
-        decodeHTML(removeHTMLTags(item.title))
-      );
+      parsedString = parsedString.replace('$title', decodeHTML(removeHTMLTags(item.title)));
     } else {
-      parsedString = parsedString.replace("$title", item.title);
+      parsedString = parsedString.replace('$title', item.title);
     }
   }
 
-  if (string.includes("$link")) {
-    if (!item.link) throw new Error("No link provided from RSS reader.");
-    if (typeof item.link === "object") {
-      parsedString = parsedString.replace("$link", item.link.href);
+  if (string.includes('$link')) {
+    if (!item.link) throw new Error('No link provided from RSS reader.');
+    if (typeof item.link === 'object') {
+      parsedString = parsedString.replace('$link', item.link.href);
     } else {
-      parsedString = parsedString.replace("$link", item.link);
+      parsedString = parsedString.replace('$link', item.link);
     }
   }
 
   let description = item.description ? item.description : item.content;
 
-  if (string.includes("$description")) {
-    if (config.descriptionClearHTML && description)
-      description = removeHTMLTags(description);
-    parsedString = parsedString.replace("$description", description);
+  if (string.includes('$description')) {
+    if (config.descriptionClearHTML && description) description = removeHTMLTags(description);
+    parsedString = parsedString.replace('$description', description);
   }
 
   if (parsedString.length > 300 && truncate) {
-    parsedString = parsedString.slice(0, 277) + "...";
+    parsedString = parsedString.slice(0, 277) + '...';
   }
   result.text = parsedString;
   return result;
@@ -306,24 +292,26 @@ async function fetchImage(imageUrl: string) {
   let image: Buffer | undefined = undefined;
 
   try {
-    let fetchBuffer = await axios.get(imageUrl, {
+    const fetchBuffer = await axios.get(imageUrl, {
       headers: {
-        "User-Agent": config.ogUserAgent,
+        'User-Agent': config.ogUserAgent,
       },
-      responseType: "arraybuffer",
+      responseType: 'arraybuffer',
     });
     image = await resizeImageToBuffer(fetchBuffer.data);
-  } catch (e) {}
+  } catch {
+    // image fetch/resize failures are non-fatal; caller falls back to no image
+  }
 
   return image;
 }
 
 function removeHTMLTags(htmlString: string) {
   return htmlString
-    ?.replace(/<\/?[^>]+(>|$)/g, " ")
-    .replaceAll("&nbsp;", " ")
+    ?.replace(/<\/?[^>]+(>|$)/g, ' ')
+    .replaceAll('&nbsp;', ' ')
     .trim()
-    .replace(/  +/g, " ");
+    .replace(/  +/g, ' ');
 }
 
 function decodeHTML(htmlString: string) {
@@ -335,21 +323,13 @@ function decodeHTML(htmlString: string) {
 function fixMalformedUrl(urlString: string): string {
   // Fix malformed protocols like "https//" or "http//" (missing colon)
   // These get treated as relative URLs and cause concatenation bugs
-  return urlString
-    .replace(/^https\/\//i, "https://")
-    .replace(/^http\/\//i, "http://");
+  return urlString.replace(/^https\/\//i, 'https://').replace(/^http\/\//i, 'http://');
 }
 
 async function resizeImageToBuffer(bufferData: Buffer) {
-  try {
-    const image = await jimp.read(bufferData);
-    const resizedImage = await image
-      .resize(800, jimp.AUTO) // null equivalent to Jimp.AUTO, Jimp.AUTO maintains aspect ratio
-      .quality(80) // Setting JPEG quality
-      .getBufferAsync(jimp.MIME_JPEG); // Getting the buffer as JPEG
-
-    return resizedImage;
-  } catch (error) {
-    throw error;
-  }
+  const image = await jimp.read(bufferData);
+  return image
+    .resize(800, jimp.AUTO) // null equivalent to Jimp.AUTO, Jimp.AUTO maintains aspect ratio
+    .quality(80) // Setting JPEG quality
+    .getBufferAsync(jimp.MIME_JPEG); // Getting the buffer as JPEG
 }

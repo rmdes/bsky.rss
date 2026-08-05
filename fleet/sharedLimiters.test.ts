@@ -1,17 +1,17 @@
-import { test } from "node:test";
-import assert from "node:assert/strict";
-import { ConcurrencyLimiter, SharedLimiters } from "./sharedLimiters.ts";
-import { FleetLogger, type FleetLogRecord } from "./logging.ts";
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {ConcurrencyLimiter, SharedLimiters} from './sharedLimiters.ts';
+import {FleetLogger, type FleetLogRecord} from './logging.ts';
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-test("ConcurrencyLimiter throws when constructed with a non-positive max", () => {
+test('ConcurrencyLimiter throws when constructed with a non-positive max', () => {
   assert.throws(() => new ConcurrencyLimiter(0), /max must be >= 1/);
 });
 
-test("ConcurrencyLimiter never lets more than `max` callbacks run at once", async () => {
+test('ConcurrencyLimiter never lets more than `max` callbacks run at once', async () => {
   const limiter = new ConcurrencyLimiter(2);
   let active = 0;
   let peak = 0;
@@ -44,18 +44,18 @@ test("ConcurrencyLimiter returns each call's own result", async () => {
   assert.deepEqual(results, [1, 2, 3]);
 });
 
-test("ConcurrencyLimiter propagates a rejection without blocking later queued calls", async () => {
+test('ConcurrencyLimiter propagates a rejection without blocking later queued calls', async () => {
   const limiter = new ConcurrencyLimiter(1);
   const first = limiter.run(async () => {
-    throw new Error("boom");
+    throw new Error('boom');
   });
-  const second = limiter.run(async () => "still runs");
+  const second = limiter.run(async () => 'still runs');
 
   await assert.rejects(first, /boom/);
-  assert.equal(await second, "still runs");
+  assert.equal(await second, 'still runs');
 });
 
-test("SharedLimiters exposes the configured timeout and image size cap", () => {
+test('SharedLimiters exposes the configured timeout and image size cap', () => {
   const limiters = new SharedLimiters({
     maxConcurrentOpenGraphFetches: 6,
     maxConcurrentImageJobs: 2,
@@ -66,7 +66,7 @@ test("SharedLimiters exposes the configured timeout and image size cap", () => {
   assert.equal(limiters.maxImageDownloadBytes, 10_000_000);
 });
 
-test("SharedLimiters.withOgLimit enforces maxConcurrentOpenGraphFetches independently of withImageLimit", async () => {
+test('SharedLimiters.withOgLimit enforces maxConcurrentOpenGraphFetches independently of withImageLimit', async () => {
   const limiters = new SharedLimiters({
     maxConcurrentOpenGraphFetches: 1,
     maxConcurrentImageJobs: 1,
@@ -87,15 +87,15 @@ test("SharedLimiters.withOgLimit enforces maxConcurrentOpenGraphFetches independ
   assert.equal(ogPeak, 1);
 });
 
-test("shared limiter contention diagnostics honor per-bot debug overrides", async () => {
+test('shared limiter contention diagnostics honor per-bot debug overrides', async () => {
   const records: FleetLogRecord[] = [];
   const logger = new FleetLogger({
-    defaultLevel: "summary",
+    defaultLevel: 'summary',
     sink: (_line, record) => records.push(record),
   });
-  logger.replaceOverrides(new Map([
-    ["debug-bot", { level: "debug", expiresAt: "2099-01-01T00:00:00.000Z" }],
-  ]));
+  logger.replaceOverrides(
+    new Map([['debug-bot', {level: 'debug', expiresAt: '2099-01-01T00:00:00.000Z'}]]),
+  );
   const limiters = new SharedLimiters({
     maxConcurrentOpenGraphFetches: 1,
     maxConcurrentImageJobs: 1,
@@ -104,35 +104,40 @@ test("shared limiter contention diagnostics honor per-bot debug overrides", asyn
   });
   let releaseQuiet!: () => void;
   let quietEntered!: () => void;
-  const quietHasEntered = new Promise<void>((resolve) => {
+  const quietHasEntered = new Promise<void>(resolve => {
     quietEntered = resolve;
   });
-  const quietGate = new Promise<void>((resolve) => {
+  const quietGate = new Promise<void>(resolve => {
     releaseQuiet = resolve;
   });
 
-  const quiet = limiters.withImageLimit(async () => {
-    quietEntered();
-    await quietGate;
-  }, { logger, botId: "quiet-bot" });
+  const quiet = limiters.withImageLimit(
+    async () => {
+      quietEntered();
+      await quietGate;
+    },
+    {logger, botId: 'quiet-bot'},
+  );
   await quietHasEntered;
   const debug = limiters.withImageLimit(async () => undefined, {
     logger,
-    botId: "debug-bot",
+    botId: 'debug-bot',
   });
 
-  assert.deepEqual(records.map((record) => record.message), [
-    "Image waiting for shared limiter capacity",
-  ]);
+  assert.deepEqual(
+    records.map(record => record.message),
+    ['Image waiting for shared limiter capacity'],
+  );
   releaseQuiet();
   await Promise.all([quiet, debug]);
 
-  assert.deepEqual(records.map((record) => record.message), [
-    "Image waiting for shared limiter capacity",
-    "Image acquired shared limiter",
-    "Image released shared limiter",
-  ]);
-  assert.ok(records.every(
-    (record) => record.level === "debug" && record.botId === "debug-bot"
-  ));
+  assert.deepEqual(
+    records.map(record => record.message),
+    [
+      'Image waiting for shared limiter capacity',
+      'Image acquired shared limiter',
+      'Image released shared limiter',
+    ],
+  );
+  assert.ok(records.every(record => record.level === 'debug' && record.botId === 'debug-bot'));
 });

@@ -1,22 +1,18 @@
-import {
-  emptyBotCounters,
-  type BotCounters,
-  type BotOperationalSnapshot,
-} from "./botOperations.ts";
-import { formatBytesAsMegabytes } from "./memoryLog.ts";
+import {emptyBotCounters, type BotCounters, type BotOperationalSnapshot} from './botOperations.ts';
+import {formatBytesAsMegabytes} from './memoryLog.ts';
 
 const counterNames: readonly (keyof BotCounters)[] = [
-  "feedPollSucceeded",
-  "feedPollFailed",
-  "openGraphAttempted",
-  "openGraphSucceeded",
-  "openGraphFallback",
-  "queued",
-  "policySkipped",
-  "postSucceeded",
-  "postUncertain",
-  "postDeferred",
-  "postException",
+  'feedPollSucceeded',
+  'feedPollFailed',
+  'openGraphAttempted',
+  'openGraphSucceeded',
+  'openGraphFallback',
+  'queued',
+  'policySkipped',
+  'postSucceeded',
+  'postUncertain',
+  'postDeferred',
+  'postException',
 ];
 
 export function sumBotCounters(states: readonly BotOperationalSnapshot[]): BotCounters {
@@ -45,25 +41,25 @@ export function formatFleetIntervalSummary(input: {
     ratio(input.delta.postSucceeded, terminalPosts),
     ...(input.delta.postDeferred === 0
       ? []
-      : [count(input.delta.postDeferred, "deferred", "deferred")]),
+      : [count(input.delta.postDeferred, 'deferred', 'deferred')]),
     ...(input.delta.postException === 0
       ? []
-      : [count(input.delta.postException, "exception", "exceptions")]),
-  ].join(", ");
+      : [count(input.delta.postException, 'exception', 'exceptions')]),
+  ].join(', ');
 
   return [
     `5m: feeds ${ratio(input.delta.feedPollSucceeded, feedAttempts)}`,
-    `OG ${ratio(input.delta.openGraphSucceeded, input.delta.openGraphAttempted)}, ${count(input.delta.openGraphFallback, "fallback", "fallbacks")}`,
+    `OG ${ratio(input.delta.openGraphSucceeded, input.delta.openGraphAttempted)}, ${count(input.delta.openGraphFallback, 'fallback', 'fallbacks')}`,
     `posts ${postOutcomes}`,
     `${input.delta.policySkipped} policy-skipped`,
     `queue ${input.queueDepth}`,
-    count(input.feedsFailing, "feed failing", "feeds failing"),
+    count(input.feedsFailing, 'feed failing', 'feeds failing'),
     `RSS ${formatBytesAsMegabytes(input.rssBytes)}`,
-  ].join(" · ");
+  ].join(' · ');
 }
 
 function ratio(successful: number, attempted: number): string {
-  return attempted === 0 ? "n/a" : `${successful}/${attempted} ok`;
+  return attempted === 0 ? 'n/a' : `${successful}/${attempted} ok`;
 }
 
 function count(value: number, singular: string, plural: string): string {

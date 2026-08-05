@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import {createHash} from 'node:crypto';
 
 /**
  * Deterministic AT-Proto record key for a given bot + RSS item. Same bot,
@@ -6,5 +6,5 @@ import { createHash } from "node:crypto";
  * BskyClient.post()'s createRecord call idempotent (design spec §4.2).
  */
 export function computeDedupeKey(botId: string, itemUrl: string): string {
-  return createHash("sha256").update(`${botId}|${itemUrl}`).digest("hex");
+  return createHash('sha256').update(`${botId}|${itemUrl}`).digest('hex');
 }
