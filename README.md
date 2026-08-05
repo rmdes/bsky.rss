@@ -137,6 +137,33 @@ Here's an example of the `config.json` file:
 
 A `docker-compose.yml` file can be found in the root directory as `docker-compose.example.yml`, which you can use to set up the RSS poster using Docker.
 
+# Contributing & Testing
+
+This project has comprehensive test coverage with 129+ tests across both single-bot and fleet modes (90%+ coverage).
+
+**Run tests:**
+
+```bash
+# All tests
+yarn test
+
+# Single-bot mode only
+yarn test:app
+
+# Fleet mode only
+yarn test:fleet
+
+# Coverage report
+yarn test:coverage
+```
+
+**Contributing:**
+
+- 📖 **[Testing Guide](documentation/TESTING.md)** - Test patterns, mocking strategies, debugging
+- 🤝 **[Contributing Guide](CONTRIBUTING.md)** - Coding standards, PR process, development setup
+
+All pull requests require tests for new features and bug fixes. See the guides above for detailed information.
+
 # Fleet mode
 
 If you want to run many bots (different accounts, different feeds) at once, fleet mode runs them all as independent workers inside a single process instead of one container per bot - the same image, just a different entry point (`yarn fleet` / `fleet/runFleet.ts` instead of `yarn start` / `app/index.ts`) and a different `command:` in your compose file.
