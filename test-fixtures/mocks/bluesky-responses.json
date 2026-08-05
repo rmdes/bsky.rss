@@ -1,0 +1,42 @@
+{
+  "sessionCreate": {
+    "success": {
+      "accessJwt": "mock-access-token",
+      "refreshJwt": "mock-refresh-token",
+      "handle": "test.bsky.social",
+      "did": "did:plc:test123",
+      "email": "test@example.com"
+    },
+    "rateLimited": {
+      "error": "RateLimitExceeded",
+      "message": "Rate limit exceeded"
+    }
+  },
+
+  "createRecord": {
+    "success": {
+      "uri": "at://did:plc:test123/app.bsky.feed.post/abc123",
+      "cid": "bafytest123"
+    },
+    "rateLimited": {
+      "error": "RateLimitExceeded",
+      "message": "Rate limit exceeded",
+      "headers": {
+        "ratelimit-reset": "1691232000"
+      }
+    }
+  },
+
+  "uploadBlob": {
+    "success": {
+      "blob": {
+        "$type": "blob",
+        "ref": {
+          "$link": "bafytest456"
+        },
+        "mimeType": "image/jpeg",
+        "size": 12345
+      }
+    }
+  }
+}

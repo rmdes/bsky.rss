@@ -1,0 +1,49 @@
+{
+  // Editor settings
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit",
+    "source.organizeImports": "explicit"
+  },
+  "editor.defaultFormatter": "dbaeumer.vscode-eslint",
+  "editor.rulers": [100],
+  "editor.tabSize": 2,
+
+  // TypeScript settings
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  // File associations
+  "files.associations": {
+    "*.json": "jsonc"
+  },
+
+  // Files to exclude from explorer
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/node_modules": true,
+    "**/.yarn/cache": true,
+    "**/.yarn/install-state.gz": true
+  },
+
+  // Search exclusions
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.yarn": true,
+    "**/yarn.lock": true
+  },
+
+  // Auto-save
+  "files.autoSave": "onFocusChange",
+
+  // Trim trailing whitespace
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  // ESLint
+  "eslint.validate": [
+    "javascript",
+    "typescript"
+  ]
+}

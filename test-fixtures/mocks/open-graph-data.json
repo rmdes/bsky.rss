@@ -1,0 +1,38 @@
+{
+  "standard": {
+    "ogTitle": "Sample Article Title",
+    "ogDescription": "This is a sample article description",
+    "ogUrl": "https://example.com/article",
+    "ogImage": [
+      {
+        "url": "https://example.com/images/og-image.jpg",
+        "width": 1200,
+        "height": 630,
+        "type": "image/jpeg"
+      }
+    ],
+    "ogType": "article"
+  },
+
+  "malformedUrl": {
+    "ogTitle": "Article with Malformed URL",
+    "ogDescription": "Testing malformed URL handling",
+    "ogUrl": "https//example.com/malformed",
+    "ogImage": [
+      {
+        "url": "https://example.com/image.jpg"
+      }
+    ]
+  },
+
+  "noImage": {
+    "ogTitle": "Article Without Image",
+    "ogDescription": "No image in this one",
+    "ogUrl": "https://example.com/no-image"
+  },
+
+  "error": {
+    "error": true,
+    "errorMessage": "Failed to fetch Open Graph data"
+  }
+}

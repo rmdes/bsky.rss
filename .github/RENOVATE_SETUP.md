@@ -87,4 +87,4 @@ See [documentation/RENOVATE.md](../documentation/RENOVATE.md) for:
 
 ---
 
-**Status:** ⏳ Waiting for Renovate GitHub App installation
+**Status:** Renovate GitHub App installed
