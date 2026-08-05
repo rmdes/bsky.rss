@@ -75,4 +75,4 @@ jobs:
         run: yarn install --immutable
 
       - name: Run linter
-        run: yarn gts check
+        run: yarn lint

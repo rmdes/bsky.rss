@@ -18,14 +18,14 @@
     "fleet:status": "NODE_NO_WARNINGS=1 tsx ./fleet/status.ts",
     "fleet:log": "NODE_NO_WARNINGS=1 tsx ./fleet/logControl.ts",
     "docker": "bash release.sh",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --ignoreDeprecations 6.0",
     "test": "tsx --test **/*.test.ts",
     "test:app": "tsx --test app/**/*.test.ts",
     "test:fleet": "tsx --test fleet/*.test.ts",
     "test:watch": "tsx --test --watch **/*.test.ts",
     "test:coverage": "c8 tsx --test **/*.test.ts",
-    "lint": "gts check",
-    "lint:fix": "gts fix"
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@atproto/api": "0.19.19",
