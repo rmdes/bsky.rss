@@ -1,0 +1,29 @@
+name: Renovate Dry Run
+
+# Manual, on-demand diagnostic: runs Renovate against this repo's own
+# renovate.json and logs what it would do, without creating or updating
+# anything. Lets us validate the config independent of the hosted GitHub
+# App's own schedule/webhook delivery.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  renovate:
+    name: Dry run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Self-hosted Renovate (dry run)
+        uses: renovatebot/github-action@v46.2.1
+        with:
+          configurationFile: renovate.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_DRY_RUN: full
+          LOG_LEVEL: debug
