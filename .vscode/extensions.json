@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "editorconfig.editorconfig",
+    "ms-vscode.vscode-typescript-next",
+    "streetsidesoftware.code-spell-checker",
+    "github.vscode-pull-request-github",
+    "eamodio.gitlens",
+    "ms-vscode.test-adapter-converter"
+  ],
+  "unwantedRecommendations": []
+}
