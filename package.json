@@ -40,6 +40,7 @@
   },
   "devDependencies": {
     "@types/node": "24.12.4",
+    "eslint": "^9.37.0",
     "gts": "7.0.0",
     "typescript": "6.0.3",
     "underscore-cli": "^0.2.19"
