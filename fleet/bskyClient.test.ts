@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {XRPCError, ResponseType} from '@atproto/xrpc';
 import {BskyClient, classifyPostError, isAlreadyExistsError, toAtprotoRkey} from './bskyClient.ts';
+import type {BotStore} from './botStore.ts';
 import {FleetLogger, type FleetLogLevel, type FleetLogRecord} from './logging.ts';
 
 function makeClient(
@@ -22,7 +23,7 @@ function makeClient(
   const client = new BskyClient(
     'test-bot',
     'https://bsky.social',
-    store as any,
+    store as unknown as BotStore,
     logger,
     dryRun,
     alreadyExistsClassifier,
@@ -32,7 +33,7 @@ function makeClient(
 
 function makeXRPCError(status: number, headers?: Record<string, string>): XRPCError {
   const err = new XRPCError(status, 'TestError', 'test error');
-  (err as any).headers = headers;
+  err.headers = headers;
   return err;
 }
 
@@ -120,7 +121,7 @@ test('toAtprotoRkey matches the real TID format across many varied inputs, not j
 
 test('summary login records omit the account handle while verbose records may include it', async () => {
   const summary = makeClient('summary');
-  (summary.client as any).agent = {
+  (summary.client as unknown as {agent: unknown}).agent = {
     login: async () => ({success: true, data: {handle: 'private-handle.bsky.social'}}),
   };
   await summary.client.login('identifier', 'password');
@@ -129,7 +130,7 @@ test('summary login records omit the account handle while verbose records may in
   assert.doesNotMatch(summary.records[0]!.message, /private-handle|identifier|password/);
 
   const verbose = makeClient('verbose');
-  (verbose.client as any).agent = {
+  (verbose.client as unknown as {agent: unknown}).agent = {
     login: async () => ({success: true, data: {handle: 'private-handle.bsky.social'}}),
   };
   await verbose.client.login('identifier', 'password');
@@ -150,9 +151,14 @@ test('resumed-session summary omits the handle and retains the successful short-
     readSession: () => ({accessJwt: 'secret'}),
     writeSession: () => undefined,
   };
-  const client = new BskyClient('test-bot', 'https://bsky.social', store as any, logger);
+  const client = new BskyClient(
+    'test-bot',
+    'https://bsky.social',
+    store as unknown as BotStore,
+    logger,
+  );
   let passwordLoginCalled = false;
-  (client as any).agent = {
+  (client as unknown as {agent: unknown}).agent = {
     resumeSession: async () => ({success: true, data: {handle: 'resumed-private.bsky.social'}}),
     login: async () => {
       passwordLoginCalled = true;
@@ -181,8 +187,13 @@ test('caught session-resume errors and login durations are debug-only for the se
       readSession: () => ({accessJwt: secret}),
       writeSession: () => undefined,
     };
-    const client = new BskyClient(botId, 'https://bsky.social', store as any, logger);
-    (client as any).agent = {
+    const client = new BskyClient(
+      botId,
+      'https://bsky.social',
+      store as unknown as BotStore,
+      logger,
+    );
+    (client as unknown as {agent: unknown}).agent = {
       resumeSession: async () => {
         throw new Error(`resume rejected token=${secret}`);
       },
@@ -225,7 +236,7 @@ test('dry-run post content is verbose and absent at summary', async () => {
 
 test('a blob upload failure returns a distinct pre-record deferral with debug detail', async () => {
   const runtime = makeClient('debug');
-  (runtime.client as any).agent = {
+  (runtime.client as unknown as {agent: unknown}).agent = {
     uploadBlob: async () => {
       throw new Error('image transport failed');
     },
@@ -264,7 +275,7 @@ test('a blob upload failure returns a distinct pre-record deferral with debug de
 
 test('a classified create-record failure emits sanitized debug detail and duration', async () => {
   const runtime = makeClient('debug');
-  (runtime.client as any).agent = {
+  (runtime.client as unknown as {agent: unknown}).agent = {
     accountDid: 'did:plc:test',
     app: {
       bsky: {
@@ -303,7 +314,7 @@ test('a classified create-record failure emits sanitized debug detail and durati
 test('an existing-rkey post message is verbose and cannot leak the rkey at summary', async () => {
   for (const level of ['summary', 'verbose'] as const) {
     const runtime = makeClient(level, false, () => true);
-    (runtime.client as any).agent = {
+    (runtime.client as unknown as {agent: unknown}).agent = {
       accountDid: 'did:plc:test',
       app: {
         bsky: {
