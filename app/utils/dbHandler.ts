@@ -60,7 +60,7 @@ async function initConfig() {
 
 async function readConfig() {
   if (!appConfig) throw new Error("Config not initialized.");
-  return JSON.parse(appConfig);
+  return appConfig;
 }
 
 async function valueExists(value: string) {
