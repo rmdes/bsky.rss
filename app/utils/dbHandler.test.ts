@@ -1,8 +1,7 @@
-import {describe, it, before, after, beforeEach, afterEach} from 'node:test';
+import {describe, it, before, after, beforeEach} from 'node:test';
 import assert from 'node:assert';
 import fs from 'fs';
 import path from 'path';
-import {sleep} from './test-helpers';
 
 // Import the module to test
 import dbHandler from './dbHandler';
@@ -63,11 +62,7 @@ describe('dbHandler', () => {
 
     it('should read existing last.txt content', async () => {
       const testDate = '2026-08-05T10:00:00.000Z';
-      fs.writeFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'last.txt'),
-        testDate,
-        'utf8'
-      );
+      fs.writeFileSync(path.join(ORIGINAL_DATA_DIR, 'last.txt'), testDate, 'utf8');
 
       const result = await dbHandler.readLast();
 
@@ -91,10 +86,7 @@ describe('dbHandler', () => {
 
       assert.strictEqual(result, testDate);
 
-      const fileContent = fs.readFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'last.txt'),
-        'utf8'
-      );
+      const fileContent = fs.readFileSync(path.join(ORIGINAL_DATA_DIR, 'last.txt'), 'utf8');
       assert.strictEqual(fileContent, testDate.toISOString());
     });
 
@@ -105,10 +97,7 @@ describe('dbHandler', () => {
       await dbHandler.writeDate(oldDate);
       await dbHandler.writeDate(newDate);
 
-      const fileContent = fs.readFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'last.txt'),
-        'utf8'
-      );
+      const fileContent = fs.readFileSync(path.join(ORIGINAL_DATA_DIR, 'last.txt'), 'utf8');
       assert.strictEqual(fileContent, newDate.toISOString());
     });
   });
@@ -126,7 +115,7 @@ describe('dbHandler', () => {
       fs.writeFileSync(
         path.join(ORIGINAL_DATA_DIR, 'persist.json'),
         JSON.stringify(testData),
-        'utf8'
+        'utf8',
       );
 
       const result = await dbHandler.readPersistData();
@@ -135,11 +124,7 @@ describe('dbHandler', () => {
     });
 
     it('should handle empty object in persist.json', async () => {
-      fs.writeFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'persist.json'),
-        JSON.stringify({}),
-        'utf8'
-      );
+      fs.writeFileSync(path.join(ORIGINAL_DATA_DIR, 'persist.json'), JSON.stringify({}), 'utf8');
 
       const result = await dbHandler.readPersistData();
 
@@ -155,7 +140,7 @@ describe('dbHandler', () => {
       fs.writeFileSync(
         path.join(ORIGINAL_DATA_DIR, 'persist.json'),
         JSON.stringify(testData),
-        'utf8'
+        'utf8',
       );
 
       const result = await dbHandler.readPersistData();
@@ -172,10 +157,7 @@ describe('dbHandler', () => {
 
       assert.deepStrictEqual(result, testData);
 
-      const fileContent = fs.readFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'persist.json'),
-        'utf8'
-      );
+      const fileContent = fs.readFileSync(path.join(ORIGINAL_DATA_DIR, 'persist.json'), 'utf8');
       assert.deepStrictEqual(JSON.parse(fileContent), testData);
     });
 
@@ -186,10 +168,7 @@ describe('dbHandler', () => {
       await dbHandler.writePersistDate(oldData);
       await dbHandler.writePersistDate(newData);
 
-      const fileContent = fs.readFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'persist.json'),
-        'utf8'
-      );
+      const fileContent = fs.readFileSync(path.join(ORIGINAL_DATA_DIR, 'persist.json'), 'utf8');
       assert.deepStrictEqual(JSON.parse(fileContent), newData);
     });
   });
@@ -202,7 +181,7 @@ describe('dbHandler', () => {
         },
         {
           message: 'Config file not found.',
-        }
+        },
       );
     });
 
@@ -215,7 +194,7 @@ describe('dbHandler', () => {
       fs.writeFileSync(
         path.join(ORIGINAL_DATA_DIR, 'config.json'),
         JSON.stringify(testConfig),
-        'utf8'
+        'utf8',
       );
 
       const result = await dbHandler.initConfig();
@@ -235,7 +214,7 @@ describe('dbHandler', () => {
       fs.writeFileSync(
         path.join(ORIGINAL_DATA_DIR, 'config.json'),
         JSON.stringify(testConfig),
-        'utf8'
+        'utf8',
       );
 
       const result = await dbHandler.initConfig();
@@ -256,7 +235,7 @@ describe('dbHandler', () => {
         },
         {
           message: 'Config not initialized.',
-        }
+        },
       );
     });
 
@@ -268,7 +247,7 @@ describe('dbHandler', () => {
       fs.writeFileSync(
         path.join(ORIGINAL_DATA_DIR, 'config.json'),
         JSON.stringify(testConfig),
-        'utf8'
+        'utf8',
       );
 
       await dbHandler.initConfig();
@@ -290,7 +269,7 @@ describe('dbHandler', () => {
       fs.writeFileSync(
         path.join(ORIGINAL_DATA_DIR, 'db.txt'),
         '2026-08-05T10:00:00.000Z|existing-value\n',
-        'utf8'
+        'utf8',
       );
 
       const result = await dbHandler.valueExists('non-existent');
@@ -302,7 +281,7 @@ describe('dbHandler', () => {
       fs.writeFileSync(
         path.join(ORIGINAL_DATA_DIR, 'db.txt'),
         '2026-08-05T10:00:00.000Z|test-value\n',
-        'utf8'
+        'utf8',
       );
 
       const result = await dbHandler.valueExists('test-value');
@@ -318,11 +297,7 @@ describe('dbHandler', () => {
         '2026-08-05T11:00:00.000Z|value-3',
       ].join('\n');
 
-      fs.writeFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'db.txt'),
-        entries,
-        'utf8'
-      );
+      fs.writeFileSync(path.join(ORIGINAL_DATA_DIR, 'db.txt'), entries, 'utf8');
 
       const result = await dbHandler.valueExists('target-value');
 
@@ -333,7 +308,7 @@ describe('dbHandler', () => {
       fs.writeFileSync(
         path.join(ORIGINAL_DATA_DIR, 'db.txt'),
         '2026-08-05T10:00:00.000Z|full-value-here\n',
-        'utf8'
+        'utf8',
       );
 
       // Should find the substring
@@ -354,10 +329,7 @@ describe('dbHandler', () => {
 
       assert.strictEqual(result, testValue);
 
-      const fileContent = fs.readFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'db.txt'),
-        'utf8'
-      );
+      const fileContent = fs.readFileSync(path.join(ORIGINAL_DATA_DIR, 'db.txt'), 'utf8');
 
       // Check format: timestamp|value\n
       assert(fileContent.includes('|' + testValue + '\n'));
@@ -369,10 +341,7 @@ describe('dbHandler', () => {
       await dbHandler.writeValue('value-2');
       await dbHandler.writeValue('value-3');
 
-      const fileContent = fs.readFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'db.txt'),
-        'utf8'
-      );
+      const fileContent = fs.readFileSync(path.join(ORIGINAL_DATA_DIR, 'db.txt'), 'utf8');
 
       const lines = fileContent.trim().split('\n');
       assert.strictEqual(lines.length, 3);
@@ -387,10 +356,7 @@ describe('dbHandler', () => {
       await dbHandler.writeValue(testValue);
 
       assert(fs.existsSync(path.join(ORIGINAL_DATA_DIR, 'db.txt')));
-      const fileContent = fs.readFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'db.txt'),
-        'utf8'
-      );
+      const fileContent = fs.readFileSync(path.join(ORIGINAL_DATA_DIR, 'db.txt'), 'utf8');
       assert(fileContent.includes(testValue));
     });
   });
@@ -414,20 +380,13 @@ describe('dbHandler', () => {
         `${now.toISOString()}|current-value`,
       ].join('\n');
 
-      fs.writeFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'db.txt'),
-        entries,
-        'utf8'
-      );
+      fs.writeFileSync(path.join(ORIGINAL_DATA_DIR, 'db.txt'), entries, 'utf8');
 
       const result = await dbHandler.cleanupOldValues();
 
       assert.strictEqual(result, true);
 
-      const fileContent = fs.readFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'db.txt'),
-        'utf8'
-      );
+      const fileContent = fs.readFileSync(path.join(ORIGINAL_DATA_DIR, 'db.txt'), 'utf8');
 
       // Old value should be removed (>96 hours old)
       assert(!fileContent.includes('old-value'));
@@ -445,18 +404,11 @@ describe('dbHandler', () => {
         `${new Date(now.getTime() - 10 * 60 * 60 * 1000).toISOString()}|value-3`,
       ].join('\n');
 
-      fs.writeFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'db.txt'),
-        entries,
-        'utf8'
-      );
+      fs.writeFileSync(path.join(ORIGINAL_DATA_DIR, 'db.txt'), entries, 'utf8');
 
       await dbHandler.cleanupOldValues();
 
-      const fileContent = fs.readFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'db.txt'),
-        'utf8'
-      );
+      const fileContent = fs.readFileSync(path.join(ORIGINAL_DATA_DIR, 'db.txt'), 'utf8');
 
       // All values should remain
       assert(fileContent.includes('value-1'));
@@ -471,10 +423,7 @@ describe('dbHandler', () => {
 
       assert.strictEqual(result, true);
 
-      const fileContent = fs.readFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'db.txt'),
-        'utf8'
-      );
+      const fileContent = fs.readFileSync(path.join(ORIGINAL_DATA_DIR, 'db.txt'), 'utf8');
       assert.strictEqual(fileContent, '');
     });
 
@@ -487,18 +436,11 @@ describe('dbHandler', () => {
         `${now.toISOString()}|another-valid`,
       ].join('\n');
 
-      fs.writeFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'db.txt'),
-        entries,
-        'utf8'
-      );
+      fs.writeFileSync(path.join(ORIGINAL_DATA_DIR, 'db.txt'), entries, 'utf8');
 
       await dbHandler.cleanupOldValues();
 
-      const fileContent = fs.readFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'db.txt'),
-        'utf8'
-      );
+      const fileContent = fs.readFileSync(path.join(ORIGINAL_DATA_DIR, 'db.txt'), 'utf8');
 
       // Valid entries should remain
       assert(fileContent.includes('valid-value'));
@@ -510,11 +452,7 @@ describe('dbHandler', () => {
     it('should support full workflow: init config -> read config -> write/read persist', async () => {
       // 1. Initialize config
       const config = {string: '$title', publishEmbed: true};
-      fs.writeFileSync(
-        path.join(ORIGINAL_DATA_DIR, 'config.json'),
-        JSON.stringify(config),
-        'utf8'
-      );
+      fs.writeFileSync(path.join(ORIGINAL_DATA_DIR, 'config.json'), JSON.stringify(config), 'utf8');
 
       await dbHandler.initConfig();
       const readConfig = await dbHandler.readConfig();

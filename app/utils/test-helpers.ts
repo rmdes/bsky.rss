@@ -9,13 +9,10 @@ import {join} from 'path';
  * Load test fixtures
  */
 export function loadFixture(path: string): string {
-  return readFileSync(
-    join(__dirname, '../../test-fixtures', path),
-    'utf-8'
-  );
+  return readFileSync(join(__dirname, '../../test-fixtures', path), 'utf-8');
 }
 
-export function loadJSONFixture(path: string): any {
+export function loadJSONFixture(path: string): unknown {
   return JSON.parse(loadFixture(path));
 }
 
@@ -214,21 +211,12 @@ export function assertDateRecent(date: Date, withinMs: number = 5000): void {
   const diff = Math.abs(now - timestamp);
 
   if (diff > withinMs) {
-    throw new Error(
-      `Date ${date.toISOString()} is not recent (diff: ${diff}ms > ${withinMs}ms)`
-    );
+    throw new Error(`Date ${date.toISOString()} is not recent (diff: ${diff}ms > ${withinMs}ms)`);
   }
 }
 
-export function assertMatchesPattern(
-  value: string,
-  pattern: RegExp,
-  message?: string
-): void {
+export function assertMatchesPattern(value: string, pattern: RegExp, message?: string): void {
   if (!pattern.test(value)) {
-    throw new Error(
-      message ||
-        `Value "${value}" does not match pattern ${pattern.toString()}`
-    );
+    throw new Error(message || `Value "${value}" does not match pattern ${pattern.toString()}`);
   }
 }

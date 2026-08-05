@@ -42,11 +42,7 @@ describe('rssHandler', () => {
       fs.mkdirSync(TEST_DATA_DIR, {recursive: true});
     }
 
-    fs.writeFileSync(
-      path.join(TEST_DATA_DIR, 'config.json'),
-      JSON.stringify(testConfig),
-      'utf8'
-    );
+    fs.writeFileSync(path.join(TEST_DATA_DIR, 'config.json'), JSON.stringify(testConfig), 'utf8');
 
     // Clear module cache to reset state
     delete require.cache[require.resolve('./rssHandler')];
@@ -101,8 +97,7 @@ describe('rssHandler', () => {
 
       const template = '$link';
       // When link is an object, use link.href
-      const linkValue =
-        typeof mockItem.link === 'object' ? mockItem.link.href : mockItem.link;
+      const linkValue = typeof mockItem.link === 'object' ? mockItem.link.href : mockItem.link;
       const result = template.replace('$link', linkValue);
 
       assert.strictEqual(result, 'https://example.com/article');
@@ -130,15 +125,12 @@ describe('rssHandler', () => {
       };
 
       const template = '$title - $link - $description';
-      let result = template
+      const result = template
         .replace('$title', mockItem.title)
         .replace('$link', mockItem.link)
         .replace('$description', mockItem.description);
 
-      assert.strictEqual(
-        result,
-        'My Article - https://blog.com/post - Article about testing'
-      );
+      assert.strictEqual(result, 'My Article - https://blog.com/post - Article about testing');
     });
 
     it('should truncate long strings to 300 characters', () => {
@@ -199,8 +191,7 @@ describe('rssHandler', () => {
     });
 
     it('should handle strong/em tags', () => {
-      const htmlString =
-        'This is <strong>bold</strong> and <em>italic</em> text';
+      const htmlString = 'This is <strong>bold</strong> and <em>italic</em> text';
       const expected = 'This is bold and italic text';
 
       const result = htmlString
@@ -328,16 +319,14 @@ describe('rssHandler', () => {
     it('should not modify well-formed URLs', () => {
       const wellFormed = 'https://example.com/path';
 
-      const result = wellFormed
-        .replace(/^https\/\//i, 'https://')
-        .replace(/^http\/\//i, 'http://');
+      const result = wellFormed.replace(/^https\/\//i, 'https://').replace(/^http\/\//i, 'http://');
 
       assert.strictEqual(result, wellFormed);
     });
 
     it('should validate URLs with regex', () => {
       const urlRegex = new RegExp(
-        `^(h|H)(t|T)(t|T)(p|P)(s|S)?:\\/\\/[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b([-a-zA-Z0-9()@:%_\\+.~#?&//=]*)`
+        '^(h|H)(t|T)(t|T)(p|P)(s|S)?:\\/\\/[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b([-a-zA-Z0-9()@:%_\\+.~#?&//=]*)',
       );
 
       const validUrls = [
@@ -371,9 +360,7 @@ describe('rssHandler', () => {
       ];
 
       testCases.forEach(tc => {
-        const result = tc.input
-          .replace(/^https\/\//i, 'https://')
-          .replace(/^http\/\//i, 'http://');
+        const result = tc.input.replace(/^https\/\//i, 'https://').replace(/^http\/\//i, 'http://');
         assert.strictEqual(result, tc.expected);
       });
     });
@@ -438,19 +425,22 @@ describe('rssHandler', () => {
 
       const config1 = {dateField: ''};
       const config2 = {dateField: 'customDate'};
+      const fallback = item.pubdate ? item.pubdate : item.published;
 
-      // Without custom dateField, use pubdate or published
-      const date1 = item.pubdate ? item.pubdate : item.published;
+      // Without custom dateField, fall back to pubdate or published
+      const date1 = config1.dateField ? item[config1.dateField as keyof typeof item] : fallback;
 
       // With custom dateField, use that field
-      const date2 = config2.dateField ? item[config2.dateField] : date1;
+      const date2 = config2.dateField ? item[config2.dateField as keyof typeof item] : fallback;
 
       assert.strictEqual(date1, '2026-08-05T10:00:00Z');
       assert.strictEqual(date2, '2026-08-05T08:00:00Z');
     });
 
     it('should handle imageField configuration', () => {
-      const item = {
+      // Matches Item's own [key: string]: any index signature in app/types/index.d.ts -
+      // config.imageField is a runtime-configured field name, not known statically.
+      const item: {enclosure: {url: string; type: string}; [key: string]: unknown} = {
         enclosure: {
           url: 'https://example.com/image.jpg',
           type: 'image/jpeg',
@@ -459,11 +449,8 @@ describe('rssHandler', () => {
 
       const config = {imageField: 'enclosure'};
 
-      if (
-        config.imageField &&
-        Object.keys(item).includes(config.imageField)
-      ) {
-        const imageData = item[config.imageField];
+      if (config.imageField && Object.keys(item).includes(config.imageField)) {
+        const imageData = item[config.imageField] as {url: string; type: string};
         if (imageData && Object.keys(imageData).includes('url')) {
           assert.strictEqual(imageData.url, 'https://example.com/image.jpg');
         }
@@ -551,12 +538,10 @@ describe('rssHandler', () => {
     });
 
     it('should fallback to item title if no OG title', () => {
-      const openGraphData = {error: false};
+      const openGraphData: {error: boolean; ogTitle?: string} = {error: false};
       const item = {title: 'RSS Item Title'};
 
-      const title = openGraphData.ogTitle
-        ? openGraphData.ogTitle
-        : item.title;
+      const title = openGraphData.ogTitle ? openGraphData.ogTitle : item.title;
 
       assert.strictEqual(title, 'RSS Item Title');
     });
@@ -568,9 +553,7 @@ describe('rssHandler', () => {
       };
       const item = {title: 'RSS Item Title'};
 
-      const title = openGraphData.ogTitle
-        ? openGraphData.ogTitle
-        : item.title;
+      const title = openGraphData.ogTitle ? openGraphData.ogTitle : item.title;
 
       assert.strictEqual(title, 'Open Graph Title');
     });
@@ -587,7 +570,7 @@ describe('rssHandler', () => {
     });
 
     it('should use content if no description', () => {
-      const item = {
+      const item: {content: string; description?: string} = {
         content: 'Item content',
       };
 
@@ -636,8 +619,7 @@ describe('rssHandler', () => {
 
     it('should fallback to default user agent', () => {
       const config = {ogUserAgent: ''};
-      const defaultUserAgent =
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+      const defaultUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
       const userAgent = config.ogUserAgent || defaultUserAgent;
 

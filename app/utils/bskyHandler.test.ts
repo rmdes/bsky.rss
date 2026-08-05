@@ -43,7 +43,7 @@ describe('bskyHandler', () => {
         },
         {
           message: 'Bluesky agent already initialized.',
-        }
+        },
       );
     });
 
@@ -74,7 +74,7 @@ describe('bskyHandler', () => {
         },
         {
           message: 'Bluesky agent not initialized.',
-        }
+        },
       );
     });
 
@@ -94,7 +94,8 @@ describe('bskyHandler', () => {
       // and the function signature is correct
       try {
         await bskyHandler.login(credentials);
-      } catch (error: any) {
+      } catch (error) {
+        assert(error instanceof Error, 'Expected an Error instance');
         // Expected to fail without valid credentials
         // Just verify it's attempting authentication
         assert(
@@ -104,7 +105,7 @@ describe('bskyHandler', () => {
             error.message.includes('ENOTFOUND') ||
             error.message.includes('Forbidden') ||
             error.message.includes('Unauthorized'),
-          `Error should be related to authentication or network: ${error.message}`
+          `Error should be related to authentication or network: ${error.message}`,
         );
       }
     });
@@ -121,7 +122,7 @@ describe('bskyHandler', () => {
         },
         {
           message: 'Bluesky agent not initialized.',
-        }
+        },
       );
     });
 
@@ -139,7 +140,8 @@ describe('bskyHandler', () => {
       // but we can verify the function signature
       try {
         await bskyHandler.post(postData);
-      } catch (error: any) {
+      } catch (error) {
+        assert(error instanceof Error, 'Expected an Error instance');
         // Expected to fail without authentication
         assert(
           error.message.includes('not initialized') ||
@@ -147,7 +149,7 @@ describe('bskyHandler', () => {
             error.message.includes('session') ||
             error.message.includes('Invalid token') ||
             typeof error === 'object',
-          `Error should be related to authentication: ${error.message || error}`
+          `Error should be related to authentication: ${error.message}`,
         );
       }
     });
@@ -172,12 +174,12 @@ describe('bskyHandler', () => {
       // Verify function accepts these parameters without throwing TypeError
       try {
         await bskyHandler.post(postData);
-      } catch (error: any) {
+      } catch (error) {
+        assert(error instanceof Error, 'Expected an Error instance');
         // Should not be a TypeError about parameters
         assert(
-          error.constructor.name !== 'TypeError' ||
-            !error.message.includes('undefined'),
-          'Should not throw TypeError for valid parameters'
+          error.constructor.name !== 'TypeError' || !error.message.includes('undefined'),
+          'Should not throw TypeError for valid parameters',
         );
       }
     });
@@ -220,10 +222,7 @@ describe('bskyHandler', () => {
     it('should handle custom date', () => {
       const customDate = new Date('2026-08-05T10:00:00.000Z');
       assert(customDate instanceof Date);
-      assert.strictEqual(
-        customDate.toISOString(),
-        '2026-08-05T10:00:00.000Z'
-      );
+      assert.strictEqual(customDate.toISOString(), '2026-08-05T10:00:00.000Z');
     });
   });
 
@@ -234,14 +233,8 @@ describe('bskyHandler', () => {
         alreadyInitialized: 'Bluesky agent already initialized.',
       };
 
-      assert.strictEqual(
-        errors.notInitialized,
-        'Bluesky agent not initialized.'
-      );
-      assert.strictEqual(
-        errors.alreadyInitialized,
-        'Bluesky agent already initialized.'
-      );
+      assert.strictEqual(errors.notInitialized, 'Bluesky agent not initialized.');
+      assert.strictEqual(errors.alreadyInitialized, 'Bluesky agent already initialized.');
     });
 
     it('should validate initialization state before operations', async () => {
@@ -251,13 +244,10 @@ describe('bskyHandler', () => {
       // Should throw before init
       await assert.rejects(
         () => bskyHandler.login({identifier: 'test', password: 'test'}),
-        /not initialized/
+        /not initialized/,
       );
 
-      await assert.rejects(
-        () => bskyHandler.post({content: 'test'}),
-        /not initialized/
-      );
+      await assert.rejects(() => bskyHandler.post({content: 'test'}), /not initialized/);
 
       // Should work after init (may fail for other reasons)
       await bskyHandler.init('https://bsky.social');
@@ -275,10 +265,7 @@ describe('bskyHandler', () => {
       await bskyHandler.init('https://bsky.social');
 
       // Second init should fail
-      await assert.rejects(
-        () => bskyHandler.init('https://bsky.social'),
-        /already initialized/
-      );
+      await assert.rejects(() => bskyHandler.init('https://bsky.social'), /already initialized/);
     });
 
     it('should reset state when module is reloaded', async () => {

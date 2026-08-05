@@ -140,16 +140,13 @@ describe('healthHandler', () => {
       assert.strictEqual(
         timestamp1,
         timestamp2,
-        'Last activity timestamp should not change without updateActivity()'
+        'Last activity timestamp should not change without updateActivity()',
       );
 
       // But time since activity should increase
       const time1 = parseInt(data1.timeSinceActivity);
       const time2 = parseInt(data2.timeSinceActivity);
-      assert(
-        time2 > time1,
-        `Expected ${time2}s > ${time1}s (time since activity should increase)`
-      );
+      assert(time2 > time1, `Expected ${time2}s > ${time1}s (time since activity should increase)`);
     });
 
     it('should reset timeSinceActivity when called', async () => {
@@ -169,7 +166,7 @@ describe('healthHandler', () => {
       // After updateActivity, timeSinceActivity should be smaller (close to 0)
       assert(
         time2 < time1,
-        `updateActivity() should reset the activity timer: ${time2}s < ${time1}s`
+        `updateActivity() should reset the activity timer: ${time2}s < ${time1}s`,
       );
       assert(time2 <= 1, `Time since activity should be very recent: ${time2}s`);
     });
@@ -197,12 +194,12 @@ describe('healthHandler', () => {
       const response = await fetch(`http://localhost:${TEST_PORT}/health`);
       const data = await response.json();
 
-      assert(data.hasOwnProperty('status'));
-      assert(data.hasOwnProperty('ready'));
-      assert(data.hasOwnProperty('lastActivity'));
-      assert(data.hasOwnProperty('timeSinceActivity'));
-      assert(data.hasOwnProperty('uptime'));
-      assert(data.hasOwnProperty('version'));
+      assert(Object.hasOwn(data, 'status'));
+      assert(Object.hasOwn(data, 'ready'));
+      assert(Object.hasOwn(data, 'lastActivity'));
+      assert(Object.hasOwn(data, 'timeSinceActivity'));
+      assert(Object.hasOwn(data, 'uptime'));
+      assert(Object.hasOwn(data, 'version'));
     });
   });
 });

@@ -45,11 +45,7 @@ describe('queueHandler', () => {
       maxSpacing: 60,
     };
 
-    fs.writeFileSync(
-      path.join(TEST_DATA_DIR, 'config.json'),
-      JSON.stringify(testConfig),
-      'utf8'
-    );
+    fs.writeFileSync(path.join(TEST_DATA_DIR, 'config.json'), JSON.stringify(testConfig), 'utf8');
 
     // Clear module cache to reset queue state
     delete require.cache[require.resolve('./queueHandler')];
@@ -258,7 +254,7 @@ describe('queueHandler', () => {
       const calculatedDelay = config.spacingWindow / queueSize;
       const clampedDelay = Math.max(
         config.minSpacing,
-        Math.min(config.maxSpacing, calculatedDelay)
+        Math.min(config.maxSpacing, calculatedDelay),
       );
 
       assert.strictEqual(clampedDelay, 60);
@@ -278,7 +274,7 @@ describe('queueHandler', () => {
       const calculatedDelay = config.spacingWindow / queueSize;
       const clampedDelay = Math.max(
         config.minSpacing,
-        Math.min(config.maxSpacing, calculatedDelay)
+        Math.min(config.maxSpacing, calculatedDelay),
       );
 
       assert.strictEqual(clampedDelay, 1);
@@ -325,12 +321,12 @@ describe('queueHandler', () => {
       testCases.forEach(tc => {
         const delay = Math.max(
           config.minSpacing,
-          Math.min(config.maxSpacing, config.spacingWindow / tc.queueSize)
+          Math.min(config.maxSpacing, config.spacingWindow / tc.queueSize),
         );
         assert.strictEqual(
           delay,
           tc.expected,
-          `Queue size ${tc.queueSize} should have delay ${tc.expected}`
+          `Queue size ${tc.queueSize} should have delay ${tc.expected}`,
         );
       });
     });
@@ -426,6 +422,7 @@ describe('queueHandler', () => {
         title: 'Simple title',
         date: new Date().toString(),
         languages: ['en'],
+        embed: undefined,
       };
 
       assert.strictEqual(item.embed, undefined);
