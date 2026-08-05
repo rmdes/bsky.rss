@@ -12,6 +12,8 @@ import {
   parseString,
   textOf,
   FeedReader,
+  type FeedItem,
+  type ParsedItem,
 } from './feedReader.ts';
 import {computeDedupeKey} from './dedupeKey.ts';
 import {BotStore} from './botStore.ts';
@@ -19,6 +21,26 @@ import {SharedLimiters} from './sharedLimiters.ts';
 import {BotOperations} from './botOperations.ts';
 import {FleetLogger, type FleetLogRecord} from './logging.ts';
 import jimp from 'jimp';
+
+// FeedReader's own `reader` field is typed `any` (feedsub's FeedItem type doesn't
+// match how items are actually used - see feedReader.ts's own comment), so tests
+// reaching into it to drive events directly need one narrow, typed accessor rather
+// than `any` at every call site.
+interface UnderlyingFeedSub {
+  read: () => void;
+  start: () => void;
+  stop: () => void;
+  emit: (event: string, ...args: unknown[]) => void;
+}
+function underlyingFeedSub(reader: FeedReader): UnderlyingFeedSub {
+  return (reader as unknown as {reader: UnderlyingFeedSub}).reader;
+}
+
+// handleItem is private; these tests drive it directly to exercise item-processing
+// behavior without going through a real feed poll.
+function handleItem(reader: FeedReader, item: FeedItem): Promise<void> {
+  return (reader as unknown as {handleItem: (item: FeedItem) => Promise<void>}).handleItem(item);
+}
 
 const fixedNow = new Date('2026-08-03T12:00:00.000Z');
 
@@ -70,7 +92,7 @@ function createInstrumentedReader(
     }),
     runtime,
   );
-  const underlying = (reader as any).reader;
+  const underlying = underlyingFeedSub(reader);
   underlying.read = () => undefined;
   underlying.start = () => undefined;
   underlying.stop = () => undefined;
@@ -190,7 +212,7 @@ test('an items batch with entries records a successful feed poll', t => {
   const {reader, runtime} = createInstrumentedReader(t);
   reader.start();
 
-  (reader as any).reader.emit('items', [{title: 'one'}]);
+  underlyingFeedSub(reader).emit('items', [{title: 'one'}]);
 
   const snapshot = runtime.operations.snapshot();
   assert.equal(snapshot.feedState, 'ok');
@@ -204,7 +226,7 @@ test('an empty items batch still records a successful feed poll', t => {
   const {reader, runtime} = createInstrumentedReader(t);
   reader.start();
 
-  (reader as any).reader.emit('items', []);
+  underlyingFeedSub(reader).emit('items', []);
 
   const snapshot = runtime.operations.snapshot();
   assert.equal(snapshot.feedState, 'ok');
@@ -217,8 +239,8 @@ test('feed failures are summarized once and a later items batch records the exac
   const {reader, runtime} = createInstrumentedReader(t);
   reader.start();
 
-  (reader as any).reader.emit('error', new Error('unable to verify the first certificate'));
-  (reader as any).reader.emit('error', new Error('unable to verify the first certificate'));
+  underlyingFeedSub(reader).emit('error', new Error('unable to verify the first certificate'));
+  underlyingFeedSub(reader).emit('error', new Error('unable to verify the first certificate'));
 
   const duringFailure = runtime.operations.snapshot();
   assert.equal(duringFailure.feedState, 'failing');
@@ -230,7 +252,7 @@ test('feed failures are summarized once and a later items batch records the exac
     ['Feed unavailable (tls)'],
   );
 
-  (reader as any).reader.emit('items', []);
+  underlyingFeedSub(reader).emit('items', []);
 
   const recovered = runtime.operations.snapshot();
   assert.equal(recovered.feedState, 'ok');
@@ -256,7 +278,7 @@ test('a successful Open Graph fetch records success', async t => {
   const emitted: unknown[] = [];
   reader.onItem(item => emitted.push(item));
 
-  await (reader as any).handleItem({
+  await handleItem(reader, {
     title: 'RSS title',
     link: 'https://example.test/article',
     description: 'RSS description',
@@ -303,17 +325,17 @@ test('a rejected Open Graph fetch records fallback without leaking item details 
       throw new Error(rawError);
     },
   });
-  const emitted: any[] = [];
+  const emitted: ParsedItem[] = [];
   reader.onItem(item => emitted.push(item));
 
-  await (reader as any).handleItem({
+  await handleItem(reader, {
     title: itemTitle,
     link: itemUrl,
     description: 'RSS fallback description',
     pubdate: '2026-08-03T12:01:00.000Z',
   });
 
-  assert.deepEqual(emitted[0].embed, {
+  assert.deepEqual(emitted[0]!.embed, {
     uri: itemUrl,
     title: itemTitle,
     description: 'RSS fallback description',
@@ -355,17 +377,17 @@ test('an Open Graph rejection with undefined still records fallback and returns 
     config: {publishEmbed: true, embedType: 'card'},
     fetchOpenGraph: async () => Promise.reject(undefined),
   });
-  const emitted: any[] = [];
+  const emitted: ParsedItem[] = [];
   reader.onItem(item => emitted.push(item));
 
-  await (reader as any).handleItem({
+  await handleItem(reader, {
     title: 'RSS fallback title',
     link: itemUrl,
     description: 'RSS fallback description',
     pubdate: '2026-08-03T12:01:00.000Z',
   });
 
-  assert.deepEqual(emitted[0].embed, {
+  assert.deepEqual(emitted[0]!.embed, {
     uri: itemUrl,
     title: 'RSS fallback title',
     description: 'RSS fallback description',
@@ -409,7 +431,7 @@ test('start() attaches an error listener so a feed-fetch failure is logged per-b
   reader.start();
 
   assert.doesNotThrow(() => {
-    (reader as any).reader.emit('error', new Error('unable to verify the first certificate'));
+    underlyingFeedSub(reader).emit('error', new Error('unable to verify the first certificate'));
   });
 });
 
