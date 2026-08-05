@@ -1,11 +1,11 @@
 import {test} from 'node:test';
 import type {TestContext} from 'node:test';
 import assert from 'node:assert/strict';
-import {BotWorker} from './botWorker.ts';
+import {BotWorker, type BotWorkerOptions} from './botWorker.ts';
 import {Scheduler} from './scheduler.ts';
-import type {ParsedItem} from './feedReader.ts';
-import type {PostResult, ResolvedEmbed} from './bskyClient.ts';
-import type {QueueItemRow} from './botStore.ts';
+import type {FeedReader, ParsedItem} from './feedReader.ts';
+import type {BskyClient, PostResult, ResolvedEmbed} from './bskyClient.ts';
+import type {BotStore, QueueItemRow} from './botStore.ts';
 import {BotOperations} from './botOperations.ts';
 import {FleetLogger, type FleetLogLevel, type FleetLogRecord} from './logging.ts';
 
@@ -16,6 +16,7 @@ class FakeFeedReader {
     this.handler = handler;
   }
   start(): void {}
+  stop(): void {}
   emit(item: ParsedItem): void {
     this.handler?.(item);
   }
@@ -86,10 +87,16 @@ class FakeBotStore {
 function makeWorker(
   t: TestContext,
   overrides?: {
-    feedReader?: any;
-    bskyClient?: any;
-    store?: any;
-    scheduler?: any;
+    feedReader?: FakeFeedReader;
+    bskyClient?: FakeBskyClient | {post: (params: {content: string}) => Promise<PostResult>};
+    store?: FakeBotStore;
+    scheduler?:
+      | Scheduler
+      | {
+          isEligibleNow: (queueDepth: number) => boolean;
+          setRateLimitDeadline: (seconds: number) => void;
+          recordPost: () => void;
+        };
     freshnessConfig?: {maxCatchupItems: number; maxItemAgeMinutes: number};
     logger?: FleetLogger;
     logLevel?: FleetLogLevel;
@@ -114,10 +121,10 @@ function makeWorker(
     new Scheduler({minSpacing: 0, maxSpacing: 60, spacingWindow: 600, adaptiveSpacing: false});
   const worker = new BotWorker({
     botId,
-    feedReader: feedReader as any,
-    scheduler,
-    bskyClient: bskyClient as any,
-    store: store as any,
+    feedReader: feedReader as unknown as FeedReader,
+    scheduler: scheduler as unknown as Scheduler,
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
     runIntervalSeconds: 60,
     freshnessConfig: overrides?.freshnessConfig ?? {maxCatchupItems: 5, maxItemAgeMinutes: 120},
     perBotQueueMaxLength: 500,
@@ -125,7 +132,15 @@ function makeWorker(
     logger,
   });
   t.after(() => worker.stop());
-  return {worker, feedReader, bskyClient, store, operations, logger, records};
+  return {
+    worker,
+    feedReader,
+    bskyClient: bskyClient as FakeBskyClient,
+    store,
+    operations,
+    logger,
+    records,
+  };
 }
 
 test('an emitted item is durably queued via BotStore, then drained on the next tick', async t => {
@@ -135,7 +150,8 @@ test('an emitted item is durably queued via BotStore, then drained on the next t
 
   const now = new Date().toISOString();
 
-  const feedReader = (worker as any).options.feedReader as FakeFeedReader;
+  const feedReader = (worker as unknown as {options: BotWorkerOptions}).options
+    .feedReader as unknown as FakeFeedReader;
   feedReader.emit({
     title: 't',
     content: 'hello world',
@@ -160,7 +176,8 @@ test('an emitted item is durably queued via BotStore, then drained on the next t
 test("rkey passed to BskyClient.post matches the item's dedupeKey exactly", async t => {
   const {worker, bskyClient} = makeWorker(t);
   await worker.start();
-  const feedReader = (worker as any).options.feedReader as FakeFeedReader;
+  const feedReader = (worker as unknown as {options: BotWorkerOptions}).options
+    .feedReader as unknown as FakeFeedReader;
   feedReader.emit({
     title: 't',
     content: 'c',
@@ -215,7 +232,8 @@ test('an embed with no imageUrl posts with embed.image undefined, no resolve cal
 test('a rate-limited post leaves the row queued and records one deferred outcome', async t => {
   const {worker, bskyClient, store} = makeWorker(t);
   await worker.start();
-  const feedReader = (worker as any).options.feedReader as FakeFeedReader;
+  const feedReader = (worker as unknown as {options: BotWorkerOptions}).options
+    .feedReader as unknown as FakeFeedReader;
   feedReader.emit({
     title: 't',
     content: 'will be rate limited',
@@ -288,7 +306,8 @@ test('an upload-failure deferral stays queued, pauses once, and never claims rat
 test('an uncertain failure skips each attempted item and records each outcome exactly once', async t => {
   const {worker, bskyClient, store} = makeWorker(t);
   await worker.start();
-  const feedReader = (worker as any).options.feedReader as FakeFeedReader;
+  const feedReader = (worker as unknown as {options: BotWorkerOptions}).options
+    .feedReader as unknown as FakeFeedReader;
   const now = new Date();
   feedReader.emit({
     title: 'a',
@@ -378,7 +397,8 @@ test('an uncertain external outcome is counted before a failing local skipped mu
 test('freshness policy skips a stale item at selection time without calling BskyClient', async t => {
   const {worker, bskyClient} = makeWorker(t);
   await worker.start();
-  const feedReader = (worker as any).options.feedReader as FakeFeedReader;
+  const feedReader = (worker as unknown as {options: BotWorkerOptions}).options
+    .feedReader as unknown as FakeFeedReader;
   const ancient = new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(); // 24h ago
   feedReader.emit({
     title: 'old',
@@ -427,7 +447,8 @@ test('freshness re-check records one policy skip when an item goes stale mid-pas
 test('multiple queued items drain in item_date order', async t => {
   const {worker, bskyClient} = makeWorker(t);
   await worker.start();
-  const feedReader = (worker as any).options.feedReader as FakeFeedReader;
+  const feedReader = (worker as unknown as {options: BotWorkerOptions}).options
+    .feedReader as unknown as FakeFeedReader;
   const now = Date.now();
   feedReader.emit({
     title: 'b',
@@ -470,7 +491,8 @@ test('a thrown post exception stays queued, records once, and keeps raw detail d
     },
   });
   await worker.start();
-  const feedReader = (worker as any).options.feedReader as FakeFeedReader;
+  const feedReader = (worker as unknown as {options: BotWorkerOptions}).options
+    .feedReader as unknown as FakeFeedReader;
   feedReader.emit({
     title: 't',
     content: 'boom',
@@ -518,7 +540,7 @@ test('a thrown post exception stays queued, records once, and keeps raw detail d
 
 test('duplicate and capacity-drop enqueue paths do not increment the queued counter', async t => {
   const {worker, feedReader} = makeWorker(t, {store: new FakeBotStore()});
-  (worker as any).options.perBotQueueMaxLength = 2;
+  (worker as unknown as {options: BotWorkerOptions}).options.perBotQueueMaxLength = 2;
   await worker.start();
   const item = {
     title: 'first',
@@ -607,10 +629,10 @@ test('enqueue drops a new item once the queue is at perBotQueueMaxLength, keepin
   });
   const worker = new BotWorker({
     botId: 'test-bot',
-    feedReader: feedReader as any,
-    scheduler,
-    bskyClient: bskyClient as any,
-    store: store as any,
+    feedReader: feedReader as unknown as FeedReader,
+    scheduler: scheduler as unknown as Scheduler,
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
     runIntervalSeconds: 60,
     freshnessConfig: {maxCatchupItems: 5, maxItemAgeMinutes: 120},
     perBotQueueMaxLength: 2,
@@ -661,13 +683,13 @@ test('shutdown stops the FeedReader immediately, waits for an in-flight drain, t
 
   let storeClosed = false;
   const store = new FakeBotStore();
-  (store as any).close = () => {
+  store.close = () => {
     storeClosed = true;
   };
 
   let feedReaderStopped = false;
   const feedReader = new FakeFeedReader();
-  (feedReader as any).stop = () => {
+  feedReader.stop = () => {
     feedReaderStopped = true;
   };
 
@@ -679,10 +701,10 @@ test('shutdown stops the FeedReader immediately, waits for an in-flight drain, t
   });
   const worker = new BotWorker({
     botId: 'test-bot',
-    feedReader: feedReader as any,
-    scheduler,
-    bskyClient: bskyClient as any,
-    store: store as any,
+    feedReader: feedReader as unknown as FeedReader,
+    scheduler: scheduler as unknown as Scheduler,
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
     runIntervalSeconds: 60,
     freshnessConfig: {maxCatchupItems: 5, maxItemAgeMinutes: 120},
     perBotQueueMaxLength: 500,
@@ -719,7 +741,7 @@ test('shutdown does not wait past its timeout even if the in-flight drain never 
   const bskyClient = {post: () => new Promise<never>(() => {})}; // never resolves
   const store = new FakeBotStore();
   const feedReader = new FakeFeedReader();
-  (feedReader as any).stop = () => {};
+  feedReader.stop = () => {};
 
   const scheduler = new Scheduler({
     minSpacing: 0,
@@ -729,10 +751,10 @@ test('shutdown does not wait past its timeout even if the in-flight drain never 
   });
   const worker = new BotWorker({
     botId: 'test-bot',
-    feedReader: feedReader as any,
-    scheduler,
-    bskyClient: bskyClient as any,
-    store: store as any,
+    feedReader: feedReader as unknown as FeedReader,
+    scheduler: scheduler as unknown as Scheduler,
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
     runIntervalSeconds: 60,
     freshnessConfig: {maxCatchupItems: 5, maxItemAgeMinutes: 120},
     perBotQueueMaxLength: 500,
