@@ -4,6 +4,7 @@ const PORT = process.env.HEALTH_CHECK_PORT || 8080;
 
 let isReady = false;
 let lastActivityTime = Date.now();
+let server: http.Server | null = null;
 
 export function markReady() {
   isReady = true;
@@ -13,8 +14,17 @@ export function updateActivity() {
   lastActivityTime = Date.now();
 }
 
+export function reset() {
+  isReady = false;
+  lastActivityTime = Date.now();
+}
+
 export function start() {
-  const server = http.createServer((req, res) => {
+  if (server) {
+    return; // Already started
+  }
+
+  server = http.createServer((req, res) => {
     if (req.url === '/health' || req.url === '/') {
       const timeSinceActivity = Date.now() - lastActivityTime;
       const status = isReady && timeSinceActivity < 600000 ? 200 : 503;
@@ -43,4 +53,22 @@ export function start() {
   });
 }
 
-export default {start, markReady, updateActivity};
+export function stop(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!server) {
+      resolve();
+      return;
+    }
+
+    server.close(err => {
+      if (err) {
+        reject(err);
+      } else {
+        server = null;
+        resolve();
+      }
+    });
+  });
+}
+
+export default {start, stop, markReady, updateActivity, reset};
