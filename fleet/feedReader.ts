@@ -16,6 +16,8 @@ export interface FeedItem {
   content?: string;
   published?: string;
   pubdate?: string;
+  // Feeds may carry arbitrary extra fields whose shape can't be known statically.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
 
@@ -83,7 +85,7 @@ export function fixMalformedUrl(urlString: string): string {
 // actual text out of either shape; also treats an empty string as absent so a blank
 // tag (e.g. <link/>) falls through to the next candidate rather than "winning".
 export function textOf(v: unknown): string | undefined {
-  const text = v && typeof v === 'object' ? (v as any).text : v;
+  const text = v && typeof v === 'object' ? (v as {text?: string}).text : (v as string | undefined);
   return text || undefined;
 }
 
@@ -132,6 +134,8 @@ async function resizeImageToBuffer(bufferData: Buffer): Promise<Buffer> {
 }
 
 export class FeedReader {
+  // feedsub's own FeedItem type doesn't match how items are used here.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private reader: any;
   private itemHandler: ((parsed: ParsedItem) => void) | null = null;
 
@@ -324,7 +328,12 @@ export class FeedReader {
       );
 
       if (openGraphFetch.ok) {
-        const openGraphResult: any = openGraphFetch.result;
+        const openGraphResult = openGraphFetch.result as {
+          ogImage?: {url: string}[];
+          ogDescription?: string;
+          ogUrl?: string;
+          ogTitle?: string;
+        };
         this.runtime.operations.recordOpenGraphSuccess();
         if (!imageUrl && openGraphResult.ogImage?.[0]?.url) {
           imageUrl = openGraphResult.ogImage[0].url;
@@ -414,7 +423,7 @@ export class FeedReader {
           if (this.runtime.fetchOpenGraph) {
             return this.runtime.fetchOpenGraph(url, userAgent, this.sharedLimiters.httpTimeoutMs);
           }
-          const response: any = await og({
+          const response = await og({
             url,
             timeout: this.sharedLimiters.httpTimeoutMs / 1000,
             fetchOptions: {
@@ -429,8 +438,8 @@ export class FeedReader {
         },
         {logger: this.runtime.logger, botId: this.botId},
       );
-      if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
-        return {ok: false, error: (result as any).error};
+      if (result && typeof result === 'object' && 'error' in result && result.error) {
+        return {ok: false, error: result.error};
       }
       return {ok: true, result};
     } catch (error) {

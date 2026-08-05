@@ -54,6 +54,7 @@ async function main(): Promise<void> {
   );
   // Bypass BskyClient's own error handling here so we can see the RAW error shape,
   // not BskyClient's already-classified result - that's the whole point of this script.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const agent = (client as any).agent;
   try {
     const result = await agent.app.bsky.feed.post.create(
@@ -65,6 +66,7 @@ async function main(): Promise<void> {
       },
     );
     console.log('UNEXPECTED: second create succeeded (overwrote?). Result:', result);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.log('Raw error caught. Inspect every field below:');
     console.log('  error.constructor.name:', error?.constructor?.name);

@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {BskyAgent, RichText, AtpSessionEvent, AtpSessionData} from '@atproto/api';
+import {BskyAgent, RichText, AtpSessionEvent, AtpSessionData, AppBskyFeedPost} from '@atproto/api';
 import {XRPCError, ResponseType} from '@atproto/xrpc';
 import {BotStore} from './botStore.ts';
 import {FleetLogger, formatDebugError} from './logging.ts';
@@ -64,13 +64,17 @@ export function classifyPostError(error: unknown): {
   ratelimit: boolean;
   retryAfterSeconds: number;
 } {
-  if (error && typeof error === 'object' && (error as any).constructor?.name === XRPCError.name) {
+  if (
+    error &&
+    typeof error === 'object' &&
+    (error as {constructor?: {name?: string}}).constructor?.name === XRPCError.name
+  ) {
     const xrpcError = error as XRPCError;
     const isRateLimitStatus =
       xrpcError.status === ResponseType.RateLimitExceeded ||
       xrpcError.status === ResponseType.UpstreamTimeout;
     if (isRateLimitStatus) {
-      const headers = (xrpcError as any).headers as Record<string, string> | undefined;
+      const headers = xrpcError.headers as Record<string, string> | undefined;
       const raw = headers ? headers['retry-after'] : undefined;
       const parsed = raw ? Number(raw) : NaN;
       const retryAfterSeconds =
@@ -223,7 +227,7 @@ export class BskyClient {
     try {
       const result = await this.agent.app.bsky.feed.post.create(
         {repo: this.agent.accountDid, rkey: toAtprotoRkey(params.rkey)},
-        record as any,
+        record as unknown as AppBskyFeedPost.Record,
       );
       return {ok: true, uri: result.uri};
     } catch (error) {
