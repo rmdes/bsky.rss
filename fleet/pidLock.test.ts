@@ -1,11 +1,12 @@
 import {test} from 'node:test';
+import type {TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {acquireLock, releaseLock, isLockedByLiveProcess} from './pidLock.ts';
 
-function tempLockPath(t: any): string {
+function tempLockPath(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), 'pidlock-test-'));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   return join(dir, 'fleet.pid');

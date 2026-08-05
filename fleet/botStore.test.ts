@@ -3,7 +3,14 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import {BotStore} from './botStore.ts';
+
+// db is private; these tests query it directly to construct state that BotStore's
+// own public API can't produce (e.g. backdating a row).
+function rawDb(store: BotStore): DatabaseSync {
+  return (store as unknown as {db: DatabaseSync}).db;
+}
 
 function makeStore(): {store: BotStore; dir: string} {
   const dir = mkdtempSync(join(tmpdir(), 'botstore-test-'));
@@ -77,7 +84,7 @@ test('cleanupOldSeenValues removes only entries past the age cutoff', () => {
   store.writeSeenValue('old');
   // Backdate directly — writeSeenValue always stamps "now", so this is the only
   // way to construct an aged row without waiting in real time.
-  (store as any).db
+  rawDb(store)
     .prepare("UPDATE seen_items SET seen_at = ? WHERE value = 'old'")
     .run(new Date(Date.now() - 200 * 3600 * 1000).toISOString());
   store.writeSeenValue('recent');
@@ -201,10 +208,10 @@ test("setQueueItemStatus('published') stamps published_at; other statuses do not
   store.setQueueItemStatus(skippedId, 'skipped');
 
   // Query directly since listQueued() excludes non-'queued' rows.
-  const publishedRow = (store as any).db
+  const publishedRow = rawDb(store)
     .prepare('SELECT published_at FROM queue_items WHERE id = ?')
     .get(publishedId) as {published_at: string | null};
-  const skippedRow = (store as any).db
+  const skippedRow = rawDb(store)
     .prepare('SELECT published_at FROM queue_items WHERE id = ?')
     .get(skippedId) as {published_at: string | null};
   assert.ok(publishedRow.published_at !== null);

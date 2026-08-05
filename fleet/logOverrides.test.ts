@@ -302,7 +302,9 @@ test('watcher rethrows operational filesystem read failures instead of calling t
 
   assert.throws(
     () => watcher.poll(),
-    (error: any) => error?.code === 'EISDIR' || error?.code === 'EACCES',
+    (error: unknown) =>
+      (error as NodeJS.ErrnoException)?.code === 'EISDIR' ||
+      (error as NodeJS.ErrnoException)?.code === 'EACCES',
   );
   assert.equal(
     records.some(record => /malformed/i.test(record.message)),

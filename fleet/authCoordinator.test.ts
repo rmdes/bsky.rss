@@ -65,7 +65,7 @@ test("one bot's activation failure is isolated: the rest still activate", async 
 
   assert.equal(coordinator.activeWorkers().length, 2);
   assert.deepEqual(
-    coordinator.activeWorkers().map((w: any) => w.botId),
+    coordinator.activeWorkers().map(w => w.botId),
     ['bot-1', 'bot-3'],
   );
   assert.equal(coordinator.activationFailures().length, 1);

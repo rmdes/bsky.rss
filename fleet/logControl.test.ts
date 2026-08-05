@@ -219,8 +219,9 @@ test('list uses one coherent override read with status-backed authority', t => {
   );
   const originalReadFileSync = fs.readFileSync;
   let overrideReadObserved = false;
-  fs.readFileSync = ((file: any, ...args: any[]) => {
-    const source = originalReadFileSync(file, ...(args as [any]));
+  fs.readFileSync = ((...args: Parameters<typeof fs.readFileSync>) => {
+    const [file] = args;
+    const source = originalReadFileSync(...args);
     if (String(file) === path && !overrideReadObserved) {
       overrideReadObserved = true;
       writeOverrides(

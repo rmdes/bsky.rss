@@ -33,9 +33,9 @@ test('process safety installs once, keeps running, and routes safe summaries plu
 
   let exited = false;
   const originalExit = process.exit;
-  (process as any).exit = () => {
+  process.exit = (() => {
     exited = true;
-  };
+  }) as unknown as typeof process.exit;
   try {
     rejectionHandler(new Error('private rejection detail'), Promise.resolve());
     exceptionHandler(new TypeError('private exception detail'), 'uncaughtException');

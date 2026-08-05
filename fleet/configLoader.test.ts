@@ -125,7 +125,10 @@ test('loadFleet maps adaptiveSpacing/spacingWindow/minSpacing/maxSpacing into sc
     minSpacing: 1,
     maxSpacing: 60,
   });
-  assert.equal((bot.feedReaderConfig as any).adaptiveSpacing, undefined);
+  assert.equal(
+    (bot.feedReaderConfig as unknown as Record<string, unknown>).adaptiveSpacing,
+    undefined,
+  );
 });
 
 test('loadFleet skips a bot with enabled: false', t => {
