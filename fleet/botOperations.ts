@@ -134,7 +134,9 @@ export class BotOperations {
 
 export function classifyFeedFailure(error: unknown): FeedFailureCategory {
   const status = numberProperty(error, "status") ?? numberProperty(error, "statusCode");
-  if (status !== undefined) return `http-${status}`;
+  if (status !== undefined && Number.isInteger(status) && status >= 100 && status <= 599) {
+    return `http-${status}`;
+  }
 
   const code = stringProperty(error, "code").toUpperCase();
   if (["ETIMEDOUT", "ESOCKETTIMEDOUT", "UND_ERR_CONNECT_TIMEOUT"].includes(code)) return "timeout";

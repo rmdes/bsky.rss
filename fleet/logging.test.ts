@@ -163,3 +163,23 @@ test("formatDebugError redacts embedded credentials from both message and stack"
   assert.doesNotMatch(formatDebugError("Bearer primitive-secret after timeout"), /primitive-secret/);
   assert.match(formatDebugError("Bearer primitive-secret after timeout"), /after timeout/);
 });
+
+test("formatDebugError redacts secrets embedded in JSON-quoted keys", () => {
+  const error = new Error(
+    'Failed request body {"identifier":"bot.bsky.social","password":"hunter2-secret"} ' +
+    'session {"accessJwt":"eyJSECRETJWT","refreshJwt":"eyJSECRETREFRESH"}'
+  );
+  error.name = "RequestError";
+  error.stack = "RequestError: Failed request body";
+
+  const formatted = formatDebugError(error);
+
+  for (const secret of ["hunter2-secret", "eyJSECRETJWT", "eyJSECRETREFRESH"]) {
+    assert.doesNotMatch(formatted, new RegExp(secret));
+  }
+  assert.match(formatted, /"identifier":"bot\.bsky\.social"/);
+  assert.match(formatted, /\[REDACTED\]/);
+
+  // The bearer-token rule that lives beside this one must still work unchanged.
+  assert.doesNotMatch(formatDebugError("Authorization: Bearer still-a-secret"), /still-a-secret/);
+});

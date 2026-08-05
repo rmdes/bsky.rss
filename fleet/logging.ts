@@ -48,7 +48,7 @@ function redactDebugText(value: string): string {
     "(?:client[_-]?)?secret",
   ].join("|");
   const secretValue = new RegExp(
-    `(\\b(?:${secretKey})\\b\\s*[:=]\\s*)` +
+    `(\\b(?:${secretKey})\\b["']?\\s*[:=]\\s*)` +
       `(?:\\{[^}\\r\\n]*\\}|\\[[^\\]\\r\\n]*\\]|"[^"]*"|'[^']*'|[^\\s,;&}\\]]+)`,
     "gi"
   );

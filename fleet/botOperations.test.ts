@@ -129,6 +129,8 @@ test("classifies expected feed failure shapes without retaining error details", 
     [{ message: "socket hang up" }, "connection"],
     [{ message: "Unexpected close tag at line 3" }, "parse"],
     [{ unexpected: "shape" }, "other"],
+    [{ status: -1 }, "other"],
+    [{ status: 200.5 }, "other"],
   ];
 
   for (const [error, expected] of cases) {

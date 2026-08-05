@@ -41,6 +41,7 @@ export class FleetOperationsRuntime {
   private startedAt: Date | null = null;
   private previousCounters: BotCounters | null = null;
   private timerHandles: unknown[] = [];
+  private snapshotWriteWarningEmitted = false;
   private readonly overrideWatcher: LogOverrideWatcher;
 
   constructor(private readonly options: FleetOperationsRuntimeOptions) {
@@ -102,11 +103,15 @@ export class FleetOperationsRuntime {
         memoryUsage: this.options.memoryUsage(),
       });
       writePrivateJsonAtomic(this.options.paths.status, snapshot);
+      this.snapshotWriteWarningEmitted = false;
     } catch (error) {
-      this.options.logger.summary(
-        "STATUS",
-        "Status snapshot write failed; fleet execution continues"
-      );
+      if (!this.snapshotWriteWarningEmitted) {
+        this.options.logger.summary(
+          "STATUS",
+          "Status snapshot write failed; fleet execution continues"
+        );
+        this.snapshotWriteWarningEmitted = true;
+      }
       this.options.logger.debug("STATUS", formatDebugError(error));
     }
   }

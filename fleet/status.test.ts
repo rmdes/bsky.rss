@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { classifyFeedFailure } from "./botOperations.ts";
 import type { FleetStatusSnapshot } from "./statusSnapshot.ts";
 import { formatFleetStatus, readFleetStatus, statusPath } from "./status.ts";
 
@@ -118,6 +119,23 @@ test("readFleetStatus returns a current schema snapshot", (t) => {
   writeFileSync(path, JSON.stringify(expected));
 
   assert.deepEqual(readFleetStatus(path), expected);
+});
+
+test("a feed failure classified from a non-integer or negative HTTP status still round-trips through the snapshot validator", (t) => {
+  const path = join(tempDirectory(t), "status.json");
+
+  for (const status of [-1, 200.5]) {
+    const category = classifyFeedFailure({ status });
+    assert.equal(category, "other");
+
+    const fixture = statusFixture();
+    const snapshot = statusFixture({
+      botStates: [{ ...fixture.botStates[0]!, lastFeedFailureCategory: category }],
+    });
+    writeFileSync(path, JSON.stringify(snapshot));
+
+    assert.deepEqual(readFleetStatus(path), snapshot);
+  }
 });
 
 test("formats the approved aggregate current-status output without bot rows", () => {

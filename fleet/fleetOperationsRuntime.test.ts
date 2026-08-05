@@ -389,6 +389,58 @@ test("snapshot observer failures produce a safe warning and debug detail without
   runtime.stop();
 });
 
+test("a persistent snapshot write failure warns once, and a later failure re-warns after a successful write", (t) => {
+  const directory = tempDirectory(t);
+  const blockedParent = join(directory, "not-a-directory");
+  const statusFilePath = join(blockedParent, "status.json");
+  writeFileSync(blockedParent, "block parent directory creation");
+  const timers = new FakeTimers();
+  const records: FleetLogRecord[] = [];
+  const runtime = new FleetOperationsRuntime({
+    timers,
+    now: () => new Date("2026-08-03T12:00:00.000Z"),
+    memoryUsage: () => ({ rss: 1, heapUsed: 2 }),
+    paths: { status: statusFilePath, overrides: join(directory, "log-overrides.json") },
+    logger: new FleetLogger({
+      defaultLevel: "debug",
+      sink: (_line, record) => records.push(record),
+    }),
+    operations: new Map(),
+    coordinator: {
+      activeWorkers: () => [],
+      activationFailures: () => [],
+    },
+    configInvalidCount: 0,
+  });
+  const warnings = () =>
+    records.filter(
+      (record) => record.level === "summary" &&
+        record.message === "Status snapshot write failed; fleet execution continues"
+    ).length;
+
+  runtime.start();
+  assert.equal(warnings(), 1, "start()'s initial write fires the first warning");
+
+  timers.fire(60_000);
+  timers.fire(60_000);
+  assert.equal(warnings(), 1, "sustained failure across further intervals must not re-warn");
+
+  rmSync(blockedParent, { force: true });
+  timers.fire(60_000);
+  assert.equal(warnings(), 1, "a successful write must not itself warn");
+  assert.equal(readSnapshot(statusFilePath).phase, "starting");
+
+  rmSync(blockedParent, { recursive: true, force: true });
+  writeFileSync(blockedParent, "block parent directory creation again");
+  timers.fire(60_000);
+  assert.equal(warnings(), 2, "failure after a successful write must warn again (latch reset)");
+
+  timers.fire(60_000);
+  assert.equal(warnings(), 2, "the renewed failure must still only warn once while it persists");
+
+  runtime.stop();
+});
+
 test("override observer failures produce a safe warning and debug detail without escaping the timer", (t) => {
   const directory = tempDirectory(t);
   const overridesFilePath = join(directory, "log-overrides.json");
