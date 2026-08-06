@@ -27,7 +27,9 @@ export class FeedSourceError extends Error {
 }
 
 export interface FeedSourceCallbacks {
-  /** Fired once per successful poll, with the full item batch (may be empty). */
+  /** Fired once per successful poll, after every item in the batch has finished
+   * going through onItem (success or per-item failure) - not when the batch is
+   * fetched. Carries the full batch (may be empty). */
   onItems: (items: NormalizedItem[]) => void;
   /** Fired once per item, in feed order. A rejection here is caught by the poller
    * and reported via onError - it does not stop the batch or crash the process. */
