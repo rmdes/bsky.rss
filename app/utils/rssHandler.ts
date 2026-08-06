@@ -9,6 +9,13 @@ import type {FeedSource, NormalizedItem} from '../../shared/feedSource/index.ts'
 
 let reader: FeedSource | null = null;
 let lastDate: string = '';
+// Tracks the newest date seen *within the batch currently being processed*, committed
+// into lastDate only once the whole batch finishes (see onItems below). Advancing
+// lastDate per-item instead would drop every item but the first in a newest-first
+// feed: after queueing item 1 (the newest), lastDate would already be past item 2's
+// date, so item 2 would fail the staleness guard and be silently dropped forever -
+// not merely delayed, since lastDate never rewinds.
+let batchMax: string = '';
 
 let config: Config = {
   string: '',
@@ -34,7 +41,12 @@ async function start() {
   if (!reader) throw new Error('Reader not initialized.');
 
   reader.start({
-    onItems: () => undefined,
+    onItems: () => {
+      if (batchMax && (!lastDate || new Date(batchMax) > new Date(lastDate))) {
+        lastDate = batchMax;
+      }
+      batchMax = '';
+    },
     onItem: handleItem,
     onError: err => {
       console.log(
@@ -210,14 +222,11 @@ async function handleItem(item: NormalizedItem): Promise<void> {
     date: useDate,
   });
 
-  // Advance the in-memory watermark as soon as an item is *queued*. feedsub used to
-  // dedup across polls with its own internal item history; the shared/feedSource poller
-  // deliberately re-delivers every parsed item on every poll, so without this the
-  // staleness guards above compare against the frozen startup value forever and every
-  // item gets re-queued on every poll. This must not be re-read from db.readLast():
+  // Track the newest queued date in this batch; committed into lastDate once the whole
+  // batch finishes (onItems, above) - not here, and not re-read from db.readLast():
   // last.txt only advances on a successful *publish*, so a slow queue drain would let
   // the poller re-queue items that are already waiting in the queue.
-  if (!lastDate || new Date(useDate) > new Date(lastDate)) lastDate = useDate;
+  if (!batchMax || new Date(useDate) > new Date(batchMax)) batchMax = useDate;
 }
 
 async function init({fetch_interval, fetch_url}: {fetch_interval: number; fetch_url: URL}) {

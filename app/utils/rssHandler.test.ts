@@ -693,6 +693,89 @@ describe('rssHandler', () => {
         `item was queued ${queued.length} times across ${pollCount} polls`,
       );
     });
+
+    it('queues every item in a newest-first batch exactly once, not just the newest', async () => {
+      // Break caught: advancing lastDate per-item (instead of once per batch, after all
+      // items are processed) meant that on a newest-first feed, queueing item 1 (the
+      // newest) already moved lastDate past item 2's date - so item 2 failed the
+      // staleness guard and was silently dropped forever, not merely delayed.
+      const feedBody =
+        '<?xml version="1.0"?><rss version="2.0"><channel>' +
+        '<title>T</title><description>D</description><link>https://example.com</link>' +
+        '<item><title>Newest</title><link>https://example.com/newest</link>' +
+        '<guid>https://example.com/newest</guid>' +
+        '<pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate></item>' +
+        '<item><title>Middle</title><link>https://example.com/middle</link>' +
+        '<guid>https://example.com/middle</guid>' +
+        '<pubDate>Wed, 05 Aug 2026 08:00:00 GMT</pubDate></item>' +
+        '<item><title>Oldest</title><link>https://example.com/oldest</link>' +
+        '<guid>https://example.com/oldest</guid>' +
+        '<pubDate>Wed, 05 Aug 2026 07:00:00 GMT</pubDate></item>' +
+        '</channel></rss>';
+
+      let pollCount = 0;
+      const server = createServer((_req, res) => {
+        pollCount++;
+        res.writeHead(200, {'Content-Type': 'application/rss+xml'});
+        res.end(feedBody);
+      });
+      await new Promise<void>(resolve => server.listen(0, resolve));
+      const port = (server.address() as {port: number}).port;
+
+      fs.writeFileSync(
+        path.join(TEST_DATA_DIR, 'config.json'),
+        JSON.stringify({
+          string: '$title',
+          publishEmbed: false,
+          languages: ['en'],
+          truncate: true,
+          runInterval: 60,
+          dateField: '',
+          imageField: '',
+          ogUserAgent: 'bsky.rss/test',
+          removeDuplicate: false,
+        }),
+        'utf8',
+      );
+
+      const lastPath = path.join(TEST_DATA_DIR, 'last.txt');
+      const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
+      fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
+
+      const queueHandler = require('./queueHandler').default;
+      const realWriteQueue = queueHandler.writeQueue;
+      const queued: {title: string}[] = [];
+      queueHandler.writeQueue = async (item: {title: string}) => {
+        queued.push(item);
+      };
+
+      delete require.cache[require.resolve('./rssHandler')];
+      const rssHandler = require('./rssHandler').default;
+
+      try {
+        // 0.002 minutes = 120ms, so several polls fire inside the wait below - proving
+        // both "no item lost within one batch" and "no item re-queued across polls".
+        const reader = await rssHandler.init({
+          fetch_interval: 0.002,
+          fetch_url: new URL(`http://127.0.0.1:${port}/feed.xml`),
+        });
+        await rssHandler.start();
+        await new Promise(resolve => setTimeout(resolve, 500));
+        reader.stop();
+      } finally {
+        queueHandler.writeQueue = realWriteQueue;
+        if (savedLast === null) fs.rmSync(lastPath, {force: true});
+        else fs.writeFileSync(lastPath, savedLast, 'utf8');
+        server.close();
+      }
+
+      assert(pollCount >= 2, `expected at least 2 polls, got ${pollCount}`);
+      assert.deepStrictEqual(
+        queued.map(item => item.title).sort(),
+        ['Middle', 'Newest', 'Oldest'],
+        `expected all 3 items queued exactly once each, got: ${JSON.stringify(queued.map(item => item.title))}`,
+      );
+    });
   });
 
   describe('User agent configuration', () => {
