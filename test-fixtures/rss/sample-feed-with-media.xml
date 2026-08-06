@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>Sample Feed With Media</title>
+    <description>A sample feed using the Media RSS namespace, matching FreshRSS's generated output</description>
+    <link>https://example.com</link>
+    <item>
+      <title>Article With Media Content</title>
+      <link>https://example.com/media-article-1</link>
+      <description>An article whose image comes via media:content.</description>
+      <pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate>
+      <guid isPermaLink="true">https://example.com/media-article-1</guid>
+      <media:content url="https://example.com/images/media-article-1.jpg" type="image/jpeg" medium="image"/>
+    </item>
+  </channel>
+</rss>
