@@ -1,12 +1,12 @@
 # docker-compose.fleet.example.yml
-# Copy this to /home/skyfleet-next/docker-compose.yml during cutover (Task 9).
-# Reuses the same image the existing Dockerfile builds - only the command differs
-# from the legacy per-bot docker-compose.yml.
+# Copy this to your fleet deployment directory as docker-compose.yml.
+# Pulls the published multi-arch image from GHCR - pin to a specific
+# version (e.g. ghcr.io/rmdes/bsky.rss:2.3.0) instead of :latest for
+# reproducible deploys and easy rollback.
 services:
   bsky-rss-fleet:
     restart: unless-stopped
-    build: .
-    image: bsky.rss:fleet
+    image: ghcr.io/rmdes/bsky.rss:latest
     container_name: bsky-rss-fleet
     command: ["node", "--import", "tsx", "fleet/runFleet.ts"]
     stop_grace_period: 45s

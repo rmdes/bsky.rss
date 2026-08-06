@@ -251,11 +251,16 @@ To move a legacy deployment to fleet mode:
    FLEET_TARGET_SECRETS_PATH=/home/skyfleet-next/secrets/bsky-fleet.json \
    NODE_NO_WARNINGS=1 npx tsx fleet/importLegacyFleet.ts
    ```
-3. **Build the image** (shared with the legacy single-bot mode - only the
-   compose `command:` differs):
+3. **Get the image** (shared with the legacy single-bot mode - only the
+   compose `command:` differs). CI publishes multi-arch images to GHCR on
+   every tagged release, so pulling is the default - no local build or
+   source checkout needed on the deploy host:
    ```bash
-   docker build -t bsky.rss:fleet .
+   docker pull ghcr.io/rmdes/bsky.rss:latest
    ```
+   Pin to a specific version instead of `:latest` for reproducible deploys
+   and easy rollback (`ghcr.io/rmdes/bsky.rss:2.3.0`). To build locally
+   instead (e.g. testing an unreleased change), see documentation/DEPLOYMENT.md.
 4. **Start the fleet daemon.** Copy `docker-compose.fleet.example.yml` to
    `/home/skyfleet-next/docker-compose.yml` (it already sets
    `FLEET_CONFIG_ROOT`, `FLEET_SECRETS_PATH`, `FLEET_DATA_ROOT`, and

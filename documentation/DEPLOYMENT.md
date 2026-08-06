@@ -400,13 +400,13 @@ docker-compose up -d
 Pin to a specific version tag instead of `latest`:
 
 ```yml
-image: ghcr.io/rmdes/bsky.rss:v2.2.0
+image: ghcr.io/rmdes/bsky.rss:2.2.0
 ```
 
-Available tags:
+Available tags (published by `.github/workflows/release-image.yml` when a
+`vX.Y.Z` tag is pushed - the leading `v` is stripped for the image tag):
 - `latest` - Latest stable release
-- `v2.2.0` - Specific version
-- `main-<commit>` - Bleeding edge from main branch
+- `2.2.0` - Specific version
 
 ##### Docker Run (Without Compose)
 
