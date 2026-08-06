@@ -57,7 +57,9 @@ export function createPoller(
         items = normalizeFeed(parseRawFeed(body), config);
       } catch (error) {
         cb.onError(
-          error instanceof FeedSourceError ? error : new FeedSourceError('Feed fetch failed', error),
+          error instanceof FeedSourceError
+            ? error
+            : new FeedSourceError('Feed fetch failed', error),
         );
         return;
       }

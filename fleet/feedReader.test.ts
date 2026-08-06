@@ -192,7 +192,10 @@ test('handleItem derives the dedupe key from the item link, not its guid-derived
     emitted[0]?.dedupeKey,
     computeDedupeKey('test-bot', 'https://example.test/the-article'),
   );
-  assert.notEqual(emitted[0]?.dedupeKey, computeDedupeKey('test-bot', 'https://example.test/?p=123'));
+  assert.notEqual(
+    emitted[0]?.dedupeKey,
+    computeDedupeKey('test-bot', 'https://example.test/?p=123'),
+  );
 });
 
 test('handleItem falls back to the item id for the dedupe key when there is no link', async t => {
