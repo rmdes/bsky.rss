@@ -407,7 +407,7 @@ Some RSS feeds use custom XML namespaces that weren't being parsed.
 This caused items to be skipped or missing metadata.
 
 ## Changes
-- Updated feedsub configuration to handle custom namespaces
+- Updated feed normalization to handle custom namespaces
 - Added namespace mapping for common extensions (dc:, media:)
 - Improved error logging for unparseable feeds
 

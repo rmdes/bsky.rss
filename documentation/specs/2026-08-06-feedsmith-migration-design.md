@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-06
 
-**Status:** Approved for implementation
+**Status:** Implemented and deployed to production (v2.4.0, 2026-08-06)
 
 ## Purpose
 
@@ -191,4 +191,4 @@ extracted changes.
 | Config field | Current values in production | Behavior after migration |
 |---|---|---|
 | `imageField` | `"media:content"` (49 bots), `"enclosure"` (2 bots), `""` (8 bots) | Unchanged - same string values, resolved via `imageResolver.ts` instead of a raw feedme property walk. Zero bot config files need editing. |
-| `dateField` | `""` (all 59 bots) | Stays supported as-is. Not removed - it's cheap to keep and removing a still-functional, if currently unused, option buys nothing. |
+| `dateField` | `""` (all 59 bots) | Stays supported as-is *for `NormalizedItem`'s own field names*. Implementation note: `feedme` kept every raw feed tag as a flat property, so a pre-migration `dateField` could reference any arbitrary source tag; `NormalizedItem` only exposes its fixed field set, so a config pointing at an old raw tag name now silently resolves to "no date" instead of erroring. Inert today since all 59 bots leave it empty - see `app/utils/rssHandler.ts` and `fleet/feedReader.ts` for the in-code disclosure. |

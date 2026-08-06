@@ -33,6 +33,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.0] - 2026-08-06
+
+**Feed Parser Migration** - replaced the abandoned `feedsub`/`feedme` RSS parser with the actively-maintained `feedsmith` library
+
+### Added
+- `shared/feedSource/` module: shared feed polling, parsing, and normalization used by both single-bot mode (`app/utils/rssHandler.ts`) and fleet mode (`fleet/feedReader.ts`)
+- Native RSS, Atom, JSON Feed, and RDF support (previously RSS/RDF-only via `feedme`)
+- Feed body size cap (20MB) and re-entrancy guard against overlapping polls
+
+### Changed
+- `imageField` config values (`"enclosure"`, `"media:content"`) now resolved via a dedicated image resolver instead of a raw `feedme` property walk; existing bot configs required no changes
+- Poll-level failures (feed fetch/parse) and item-level failures (one bad item) are now reported with distinct error scopes, so a single malformed item no longer affects fleet-wide feed-health state
+
+### Removed
+- `feedsub` and `feedme` dependencies
+
+## [2.3.0] - 2026-08-05
+
+### Added
+- Health check HTTP endpoint (`/health`, port 8080) wired into fleet mode
+- Comprehensive test suite for `app/` modules
+- Renovate configuration for automated dependency management
+
+### Changed
+- Resolved all `no-explicit-any` findings across production and test code
+- Fixed CI so typecheck/lint failures are no longer silently misreported
+- Declared `eslint` as a direct devDependency
+
 ## [2.2.0] - 2026-07-30
 
 **Fleet Mode Release** - Major feature release enabling multi-bot deployments

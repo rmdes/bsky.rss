@@ -145,6 +145,28 @@ test('a slow onItem handler does not let a second poll overlap the first', async
   assert.equal(fetchCount, 1, `the feed was fetched ${fetchCount} times during one slow poll`);
 });
 
+test('a feed body over the size cap is rejected via onError, not a hang or crash', async t => {
+  const oversized = Buffer.alloc(20_000_001, 'a');
+  const {server, port} = await startFeedServer(oversized.toString());
+  t.after(() => server.close());
+
+  const source = createFeedSource(new URL(`http://127.0.0.1:${port}/feed.xml`), 60);
+  t.after(() => source.stop());
+
+  await new Promise<void>(resolve => {
+    source.start({
+      onItems: () => assert.fail('should not reach onItems when the body exceeds the cap'),
+      onItem: async () => assert.fail('should not reach onItem when the body exceeds the cap'),
+      onError: err => {
+        // Same poll-level scope as any other fetch failure - callers must not treat
+        // this as a parse/item problem.
+        assert.equal(err.scope, 'poll');
+        resolve();
+      },
+    });
+  });
+});
+
 test('createFeedSource.stop() prevents further polls', async t => {
   const {server, port} = await startFeedServer(fixture('rss/sample-feed.xml'));
   t.after(() => server.close());
