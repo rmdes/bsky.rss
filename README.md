@@ -5,6 +5,12 @@ A configurable RSS poster for Bluesky
 > [!IMPORTANT]  
 > Version 2 introduces many new features as well as changes to the configuration of the app. Consult the [migration guide](documentation/v1-to-v2.md) for more information.
 
+**⚡ New User?** → **[Quick Start Guide](documentation/QUICKSTART.md)** - Get posting in 10 minutes
+
+**🆘 Having Issues?** → **[Troubleshooting Guide](documentation/TROUBLESHOOTING.md)** - Common problems & solutions
+
+---
+
 This app runs in two modes:
 
 - **Single-bot mode** (this README) - one Bluesky account per container/process. Start here if you're running one bot.
