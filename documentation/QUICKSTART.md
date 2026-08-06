@@ -171,7 +171,7 @@ Posts will include title, description, and link.
 ```json
 {
   "embedType": "image",
-  "imageField": "enclosure.url",
+  "imageField": "enclosure",
   "imageAlt": "$title"
 }
 ```

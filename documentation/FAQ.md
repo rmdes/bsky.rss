@@ -245,7 +245,7 @@ This is the article description...
 ```json
 {
   "embedType": "image",
-  "imageField": "enclosure.url",
+  "imageField": "enclosure",
   "imageAlt": "$title"
 }
 ```
@@ -569,7 +569,7 @@ Fleet mode runs **multiple bots in a single process** instead of one container p
 ```json
 {
   "embedType": "image",
-  "imageField": "enclosure.url",
+  "imageField": "enclosure",
   "imageAlt": "$title"
 }
 ```

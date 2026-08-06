@@ -281,7 +281,7 @@ curl -I https://your-feed-url.xml
 ```json
 {
   "embedType": "image",
-  "imageField": "enclosure.url",
+  "imageField": "enclosure",
   "imageAlt": "$title"
 }
 ```
@@ -316,9 +316,12 @@ curl -s https://your-feed-url.xml | grep -i "image\|media\|enclosure"
 ```
 
 **Common image fields:**
-- `media:content` → `imageField: "media:content.url"`
-- `enclosure` → `imageField: "enclosure.url"`
-- `image` → `imageField: "image"`
+- `media:content` → `imageField: "media:content"`
+- `enclosure` → `imageField: "enclosure"`
+
+Only `"media:content"` and `"enclosure"` are recognized. `<enclosure>` entries whose
+`type` is not `image/*` (podcast audio, video) are skipped. For JSON Feed, any non-empty
+value opts in to the item's native `image` field.
 
 #### Scenario 4: Image Format Not Supported
 
@@ -668,7 +671,8 @@ HEALTH_CHECK_PORT=8080  # Default
 
 **Symptom:** Slow feed parsing, high memory.
 
-**Fix:** Not a current issue (feedsub streams), but if problems occur:
+**Fix:** Feed bodies are fetched whole (capped at 20MB) and parsed in memory by
+`feedsmith`. Not a current issue at real feed sizes, but if problems occur:
 1. Use a feed that only shows recent items
 2. Reduce `maxCatchupItems` in fleet mode
 

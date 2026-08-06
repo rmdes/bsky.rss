@@ -201,7 +201,7 @@ This guide shows you how to deploy apps to production...
 {
   "publishEmbed": true,
   "embedType": "image",
-  "imageField": "enclosure.url",
+  "imageField": "enclosure",
   "imageAlt": "$title"
 }
 ```
@@ -240,24 +240,23 @@ This guide shows you how to deploy apps to production...
 **Default:** `""` (empty)  
 **Requires:** `embedType: "image"`
 
-**What it does:** Dot-notation path to image URL in RSS feed item.
-
-**Common RSS image fields:**
+**What it does:** Names which feed element the item's image URL comes from. Only two
+values are recognized: `"media:content"` and `"enclosure"`.
 
 **Media RSS:**
 ```json
-{"imageField": "media:content.url"}
+{"imageField": "media:content"}
 ```
-Feed structure:
+Feed structure (also matched inside a `<media:group>`):
 ```xml
 <item>
-  <media:content url="https://example.com/image.jpg" />
+  <media:content url="https://example.com/image.jpg" type="image/jpeg" />
 </item>
 ```
 
 **Enclosure (podcasts, media):**
 ```json
-{"imageField": "enclosure.url"}
+{"imageField": "enclosure"}
 ```
 Feed structure:
 ```xml
@@ -266,18 +265,19 @@ Feed structure:
 </item>
 ```
 
-**WordPress featured image:**
-```json
-{"imageField": "image"}
-```
+**JSON Feed:** JSON Feed has no `media:content`/`enclosure` distinction. Setting
+`imageField` to any non-empty value opts in to the item's native `image` field; leaving
+it empty means no field-driven image.
 
-**Finding the right field:**
-1. View feed XML in browser
-2. Find the image URL
-3. Note the XML path
-4. Convert to dot notation: `<media:content url="">` → `media:content.url`
+**Finding the right value:**
+1. View the feed in a browser
+2. Find the element carrying the image URL
+3. Set `imageField` to `"media:content"` or `"enclosure"` accordingly
 
 **Fallback behavior:**
+- If `imageField` is empty or unrecognized → no field-driven image; Open Graph is used
+- If the element's `type` is not `image/*` (e.g. a podcast `audio/mpeg` enclosure) →
+  skipped, and the next matching element is tried
 - If field not found → no image uploaded
 - If URL is invalid → logs error, no image
 - If image too large → auto-resized (max 1MB)
@@ -869,7 +869,7 @@ NODE_ENV=production             # Environment mode
   "string": "$title\n\n$description\n\n🔗 $link",
   "publishEmbed": true,
   "embedType": "image",
-  "imageField": "enclosure.url",
+  "imageField": "enclosure",
   "imageAlt": "$title",
   "languages": ["en"],
   "truncate": true,
@@ -895,7 +895,7 @@ NODE_ENV=production             # Environment mode
   "string": "🎙️ New episode: $title\n\nListen: $link",
   "publishEmbed": true,
   "embedType": "image",
-  "imageField": "image",
+  "imageField": "media:content",
   "imageAlt": "Podcast cover art",
   "languages": ["en"],
   "runInterval": 3600,

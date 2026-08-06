@@ -133,7 +133,7 @@ The repository manages these dependencies:
 ### Runtime Dependencies
 - `@atproto/api` - Bluesky/ATProto SDK
 - `@atproto/xrpc` - ATProto RPC client
-- `feedsub` - RSS feed subscription
+- `feedsmith` - Feed parsing (RSS, Atom, JSON Feed, RDF)
 - `open-graph-scraper` - Open Graph metadata extraction
 - `jimp` - Image processing
 - `axios` - HTTP client

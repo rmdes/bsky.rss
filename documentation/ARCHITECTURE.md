@@ -33,7 +33,7 @@ bsky.rss is a Node.js/TypeScript application that bridges RSS feeds to Bluesky's
 - **Package Manager:** Yarn 4+
 - **Key Dependencies:**
   - `@atproto/api` - Bluesky/ATProto client
-  - `feedsub` - RSS feed monitoring
+  - `feedsmith` - Feed parsing (RSS, Atom, JSON Feed, RDF)
   - `open-graph-scraper` - Link preview metadata
   - `jimp` - Image processing
   - `axios` - HTTP requests
@@ -122,7 +122,7 @@ bsky.rss is a Node.js/TypeScript application that bridges RSS feeds to Bluesky's
 - Error handling and retries
 
 **app/utils/rssHandler.ts** (Feed Processing)
-- RSS feed subscription via `feedsub`
+- Feed polling and parsing via `shared/feedSource`
 - Item parsing and normalization
 - HTML entity decoding
 - Content extraction (title, link, description)
@@ -412,14 +412,16 @@ async function launch(): Promise<void>
 // Fleet (feedReader.ts)
 class FeedReader {
   async start(): Promise<void>
-  private async processItem(item: FeedItem): Promise<void>
+  private async handleItem(item: NormalizedItem): Promise<void>
 }
 ```
 
 **Feed Monitoring:**
-- Uses `feedsub` library for RSS subscription
-- Emits `item` event for each new item
-- Handles feed errors (network, parse errors)
+- Uses the `shared/feedSource` module (`axios` fetch + `feedsmith` parsing)
+- Supports RSS, Atom, JSON Feed, and RDF, normalized to one `NormalizedItem` shape
+- Invokes `onItem` for every item in every poll; cross-poll deduplication is the
+  caller's job (`rssHandler` / `FeedReader`)
+- Handles feed errors (network, parse errors) via `onError`
 - Respects `runInterval` / `fetchIntervalMinutes`
 
 **Open Graph Fetching:**

@@ -139,7 +139,7 @@ Real-world configuration examples for common use cases. Copy, customize, and dep
   "string": "$title\n\n$description",
   "publishEmbed": true,
   "embedType": "image",
-  "imageField": "enclosure.url",
+  "imageField": "enclosure",
   "imageAlt": "$title",
   "languages": ["en"],
   "truncate": true,
@@ -152,7 +152,7 @@ Real-world configuration examples for common use cases. Copy, customize, and dep
 
 **Why:**
 - `embedType: "image"` - Uploads featured image
-- `imageField: "enclosure.url"` - WordPress/common blog format
+- `imageField: "enclosure"` - WordPress/common blog format
 - `runInterval: 600` - Check every 10 min (blogs post infrequently)
 - No link shown in text (image embed includes link)
 
@@ -163,8 +163,8 @@ Real-world configuration examples for common use cases. Copy, customize, and dep
 
 **Alternative image fields:**
 ```json
-{"imageField": "media:content.url"}  // Media RSS
-{"imageField": "image"}              // Some WordPress themes
+{"imageField": "media:content"}  // Media RSS
+{"imageField": "enclosure"}      // RSS enclosure
 ```
 
 ---
@@ -181,7 +181,7 @@ Real-world configuration examples for common use cases. Copy, customize, and dep
   "string": "📷 $title",
   "publishEmbed": true,
   "embedType": "image",
-  "imageField": "media:content.url",
+  "imageField": "media:content",
   "imageAlt": "$title",
   "languages": ["en"],
   "truncate": true,
@@ -238,7 +238,7 @@ Real-world configuration examples for common use cases. Copy, customize, and dep
   "string": "🎙️ New episode: $title\n\nListen now: $link",
   "publishEmbed": true,
   "embedType": "image",
-  "imageField": "image",
+  "imageField": "media:content",
   "imageAlt": "Podcast cover art",
   "languages": ["en"],
   "truncate": true,
@@ -250,7 +250,8 @@ Real-world configuration examples for common use cases. Copy, customize, and dep
 
 **Why:**
 - 🎙️ emoji for branding
-- `imageField: "image"` - Podcast cover art (standard field)
+- `imageField: "media:content"` - Episode art, when the feed carries `<media:content>`
+  (podcast `<enclosure>` elements hold the audio file, not an image, so they are skipped)
 - `runInterval: 3600` - Hourly check (episodes are infrequent)
 - `removeDuplicate: true` - Podcast feeds sometimes republish
 
@@ -283,7 +284,7 @@ Uses link card instead of image, includes description.
   "string": "🎵 New release: $title\n\n$description\n\nStream: $link",
   "publishEmbed": true,
   "embedType": "image",
-  "imageField": "enclosure.url",
+  "imageField": "enclosure",
   "imageAlt": "Album art for $title",
   "languages": ["en"],
   "truncate": true,
@@ -624,7 +625,7 @@ Each posts to different account or uses filtered feed URL.
   "string": "📚 $title\n\n$description\n\nRead my review: $link",
   "publishEmbed": true,
   "embedType": "image",
-  "imageField": "enclosure.url",
+  "imageField": "enclosure",
   "imageAlt": "Book cover for $title",
   "languages": ["en"],
   "truncate": true,
