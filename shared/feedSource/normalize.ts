@@ -29,7 +29,10 @@ function normalizeAtomEntry(entry: DeepPartial<Atom.Entry<string>>): NormalizedI
   };
 }
 
-function normalizeJsonItem(item: DeepPartial<Json.Item<string>>): NormalizedItem {
+function normalizeJsonItem(
+  item: DeepPartial<Json.Item<string>>,
+  imageField: string | undefined,
+): NormalizedItem {
   return {
     id: item.id || item.url || '',
     title: item.title,
@@ -37,7 +40,11 @@ function normalizeJsonItem(item: DeepPartial<Json.Item<string>>): NormalizedItem
     date: item.date_published ?? item.date_modified,
     description: item.summary,
     content: item.content_html ?? item.content_text,
-    imageUrl: item.image,
+    // JSON Feed has no enclosure/media:content distinction to match imageField
+    // against, so any non-empty imageField opts in to its native image field. An
+    // unset imageField means "no field-driven image, use Open Graph only" - the same
+    // thing it means for RSS/RDF/Atom.
+    imageUrl: imageField ? item.image : undefined,
   };
 }
 
@@ -64,10 +71,15 @@ export function normalizeFeed(
     }));
   }
   if (parsed.format === 'atom') {
-    return (parsed.feed.entries ?? []).map(entry => normalizeAtomEntry(entry));
+    // Atom entries carry the same Media RSS namespace shape as RSS/RDF items, so
+    // imageField resolution applies here too.
+    return (parsed.feed.entries ?? []).map(entry => ({
+      ...normalizeAtomEntry(entry),
+      imageUrl: resolveImageUrl(entry, config.imageField),
+    }));
   }
   if (parsed.format === 'json') {
-    return (parsed.feed.items ?? []).map(item => normalizeJsonItem(item));
+    return (parsed.feed.items ?? []).map(item => normalizeJsonItem(item, config.imageField));
   }
   return (parsed.feed.items ?? []).map(item => ({
     ...normalizeRdfItem(item),

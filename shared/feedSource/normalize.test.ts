@@ -74,7 +74,7 @@ test('normalizeFeed falls back to updated when an Atom entry has no published da
 
 test('normalizeFeed maps JSON Feed items to NormalizedItem, using the native image field', () => {
   const parsed = parseRawFeed(fixture('jsonfeed/sample-feed.json'));
-  const items = normalizeFeed(parsed, {});
+  const items = normalizeFeed(parsed, {imageField: 'enclosure'});
 
   assert.equal(items.length, 2);
   assert.deepEqual(items[0], {
@@ -86,6 +86,26 @@ test('normalizeFeed maps JSON Feed items to NormalizedItem, using the native ima
     content: 'The full text content of the first article.',
     imageUrl: 'https://example.com/jsonfeed/images/article-1.jpg',
   });
+});
+
+test('normalizeFeed ignores the JSON Feed native image when imageField is unset', () => {
+  // Break caught: JSON Feed's native image was used unconditionally, so a bot with
+  // imageField: "" (deliberately Open-Graph-only) still got a field-driven image -
+  // inconsistent with RSS/Atom/RDF, which resolve nothing when imageField is unset.
+  const parsed = parseRawFeed(fixture('jsonfeed/sample-feed.json'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.equal(items[0]?.imageUrl, undefined);
+});
+
+test('normalizeFeed resolves an Atom media:content image when imageField is "media:content"', () => {
+  // Break caught: only the RSS and RDF branches called resolveImageUrl, so an Atom
+  // feed carrying media:content silently lost its image.
+  const parsed = parseRawFeed(fixture('atom/sample-feed.xml'));
+  const items = normalizeFeed(parsed, {imageField: 'media:content'});
+
+  assert.equal(items[0]?.imageUrl, 'https://example.com/atom/images/entry-1.jpg');
+  assert.equal(items[1]?.imageUrl, undefined);
 });
 
 test('normalizeFeed prefers content_html over content_text when JSON Feed has both', () => {

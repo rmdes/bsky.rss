@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
   <title>Sample Atom Feed</title>
   <id>https://example.com/atom</id>
   <updated>2026-08-05T10:00:00Z</updated>
@@ -12,6 +12,7 @@
     <updated>2026-08-05T09:00:00Z</updated>
     <summary>A short summary of the first Atom entry.</summary>
     <content>The full content of the first Atom entry.</content>
+    <media:content url="https://example.com/atom/images/entry-1.jpg" type="image/jpeg" medium="image"/>
   </entry>
   <entry>
     <title>Second Atom Entry, No Published Date</title>
