@@ -36,3 +36,45 @@ test('resolveImageUrl returns undefined when the named location is present but e
   assert.equal(resolveImageUrl({enclosures: []}, 'enclosure'), undefined);
   assert.equal(resolveImageUrl({media: {}}, 'media:content'), undefined);
 });
+
+test('resolveImageUrl ignores a non-image enclosure', () => {
+  // Break caught: a podcast <enclosure type="audio/mpeg"> handed to the image
+  // downloader as a post image. Pre-migration only accepted image/* or no type.
+  const item = {enclosures: [{url: 'https://example.com/ep.mp3', type: 'audio/mpeg'}]};
+  assert.equal(resolveImageUrl(item, 'enclosure'), undefined);
+});
+
+test('resolveImageUrl skips a non-image enclosure and takes a later image one', () => {
+  const item = {
+    enclosures: [
+      {url: 'https://example.com/ep.mp3', type: 'audio/mpeg'},
+      {url: 'https://example.com/cover.jpg', type: 'image/jpeg'},
+    ],
+  };
+  assert.equal(resolveImageUrl(item, 'enclosure'), 'https://example.com/cover.jpg');
+});
+
+test('resolveImageUrl ignores a non-image media:content', () => {
+  const item = {media: {contents: [{url: 'https://example.com/clip.mp4', type: 'video/mp4'}]}};
+  assert.equal(resolveImageUrl(item, 'media:content'), undefined);
+});
+
+test('resolveImageUrl skips a non-image media:content and takes a later image one', () => {
+  const item = {
+    media: {
+      contents: [
+        {url: 'https://example.com/clip.mp4', type: 'video/mp4'},
+        {url: 'https://example.com/still.png', type: 'image/png'},
+      ],
+    },
+  };
+  assert.equal(resolveImageUrl(item, 'media:content'), 'https://example.com/still.png');
+});
+
+test('resolveImageUrl accepts an entry with no type at all', () => {
+  // media:content routinely omits type; dropping those would be a regression too.
+  assert.equal(
+    resolveImageUrl({media: {contents: [{url: 'https://example.com/b.jpg'}]}}, 'media:content'),
+    'https://example.com/b.jpg',
+  );
+});

@@ -1,9 +1,23 @@
+interface ImageCandidate {
+  url?: string;
+  type?: string;
+}
+
 export interface ImageResolvableItem {
-  enclosures?: Array<{url?: string}>;
+  enclosures?: ImageCandidate[];
   media?: {
-    contents?: Array<{url?: string}>;
-    groups?: Array<{contents?: Array<{url?: string}>}>;
+    contents?: ImageCandidate[];
+    groups?: Array<{contents?: ImageCandidate[]}>;
   };
+}
+
+// A feed's enclosure/media:content can carry non-image payloads (podcast
+// <enclosure type="audio/mpeg">, <media:content type="video/mp4">). The pre-migration
+// code only accepted a resolved URL when the field had no type or an image/* type;
+// without this a podcast enclosure would be handed to the image downloader as a
+// post image.
+function isImage(candidate: ImageCandidate): boolean {
+  return Boolean(candidate.url) && (!candidate.type || candidate.type.startsWith('image'));
 }
 
 // imageField is not a closed enum - some bots' feeds pass through FreshRSS's "User
@@ -18,9 +32,12 @@ export function resolveImageUrl(
   imageField: string | undefined,
 ): string | undefined {
   if (!imageField) return undefined;
-  if (imageField === 'enclosure') return item.enclosures?.[0]?.url;
+  if (imageField === 'enclosure') return item.enclosures?.find(isImage)?.url;
   if (imageField === 'media:content') {
-    return item.media?.contents?.[0]?.url ?? item.media?.groups?.[0]?.contents?.[0]?.url;
+    return (
+      item.media?.contents?.find(isImage)?.url ??
+      item.media?.groups?.flatMap(group => group.contents ?? []).find(isImage)?.url
+    );
   }
   return undefined;
 }
