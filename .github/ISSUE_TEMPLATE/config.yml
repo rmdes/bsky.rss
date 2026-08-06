@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📚 Documentation
+    url: https://github.com/rmdes/bsky.rss/tree/main/documentation
+    about: Read the guides before opening an issue
+  - name: 💬 Discussions
+    url: https://github.com/rmdes/bsky.rss/discussions
+    about: Ask questions and discuss features
