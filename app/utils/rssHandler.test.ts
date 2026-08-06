@@ -88,17 +88,18 @@ describe('rssHandler', () => {
       assert.strictEqual(result, expected);
     });
 
-    it('should handle link as object with href property', () => {
+    it('should use link directly as a plain string (NormalizedItem.link is never an object)', () => {
+      // feedsub's Item.link could be a plain string or {href: string}, requiring a
+      // typeof check to unwrap it. NormalizedItem.link (shared/feedSource) is always
+      // string | undefined, so rssHandler.ts no longer has an object-link branch.
       const mockItem = {
         title: 'Test Article',
-        link: {href: 'https://example.com/article'},
+        link: 'https://example.com/article',
         description: 'Test description',
       };
 
       const template = '$link';
-      // When link is an object, use link.href
-      const linkValue = typeof mockItem.link === 'object' ? mockItem.link.href : mockItem.link;
-      const result = template.replace('$link', linkValue);
+      const result = template.replace('$link', mockItem.link);
 
       assert.strictEqual(result, 'https://example.com/article');
     });

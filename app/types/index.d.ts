@@ -52,5 +52,5 @@ interface QueueItems {
   embed: Embed | undefined;
   languages: string[] | undefined;
   title: string;
-  date: Date;
+  date: string;
 }
