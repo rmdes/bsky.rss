@@ -1,7 +1,6 @@
-import type {Rss} from 'feedsmith/types';
+import type {Atom, Json, Rdf, Rss} from 'feedsmith/types';
 import type {DeepPartial} from 'feedsmith/types';
 import type {FeedSourceConfig, NormalizedItem, ParsedFeedResult} from './types.ts';
-import {FeedSourceError} from './types.ts';
 import {resolveImageUrl} from './imageResolver.ts';
 
 function normalizeRssItem(item: DeepPartial<Rss.Item<string>>): NormalizedItem {
@@ -12,7 +11,45 @@ function normalizeRssItem(item: DeepPartial<Rss.Item<string>>): NormalizedItem {
     date: item.pubDate,
     description: item.description,
     content: item.content?.encoded,
-    imageUrl: resolveImageUrl(item, undefined),
+    imageUrl: undefined,
+  };
+}
+
+function normalizeAtomEntry(entry: DeepPartial<Atom.Entry<string>>): NormalizedItem {
+  const link =
+    entry.links?.find(l => !l.rel || l.rel === 'alternate')?.href ?? entry.links?.[0]?.href;
+  return {
+    id: entry.id || link || '',
+    title: entry.title,
+    link,
+    date: entry.published ?? entry.updated,
+    description: entry.summary,
+    content: entry.content,
+    imageUrl: undefined,
+  };
+}
+
+function normalizeJsonItem(item: DeepPartial<Json.Item<string>>): NormalizedItem {
+  return {
+    id: item.id || item.url || '',
+    title: item.title,
+    link: item.url,
+    date: item.date_published ?? item.date_modified,
+    description: item.summary,
+    content: item.content_html ?? item.content_text,
+    imageUrl: item.image,
+  };
+}
+
+function normalizeRdfItem(item: DeepPartial<Rdf.Item<string>>): NormalizedItem {
+  return {
+    id: item.link || '',
+    title: item.title,
+    link: item.link,
+    date: item.dc?.dates?.[0],
+    description: item.description,
+    content: item.content?.encoded,
+    imageUrl: undefined,
   };
 }
 
@@ -26,5 +63,14 @@ export function normalizeFeed(
       imageUrl: resolveImageUrl(item, config.imageField),
     }));
   }
-  throw new FeedSourceError(`Unsupported feed format: ${parsed.format}`);
+  if (parsed.format === 'atom') {
+    return (parsed.feed.entries ?? []).map(entry => normalizeAtomEntry(entry));
+  }
+  if (parsed.format === 'json') {
+    return (parsed.feed.items ?? []).map(item => normalizeJsonItem(item));
+  }
+  return (parsed.feed.items ?? []).map(item => ({
+    ...normalizeRdfItem(item),
+    imageUrl: resolveImageUrl(item, config.imageField),
+  }));
 }

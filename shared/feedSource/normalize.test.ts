@@ -48,3 +48,65 @@ test('normalizeFeed falls back to guid.value for id when link differs from guid'
   // the id field is genuinely sourced from guid.value, not merely copied from link.
   assert.equal(items[0]?.id, 'https://example.com/article-1');
 });
+
+test('normalizeFeed maps Atom entries to NormalizedItem, preferring published over updated', () => {
+  const parsed = parseRawFeed(fixture('atom/sample-feed.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.equal(items.length, 2);
+  assert.deepEqual(items[0], {
+    id: 'https://example.com/atom/entry-1',
+    title: 'First Atom Entry',
+    link: 'https://example.com/atom/entry-1',
+    date: '2026-08-05T09:00:00Z',
+    description: 'A short summary of the first Atom entry.',
+    content: 'The full content of the first Atom entry.',
+    imageUrl: undefined,
+  });
+});
+
+test('normalizeFeed falls back to updated when an Atom entry has no published date', () => {
+  const parsed = parseRawFeed(fixture('atom/sample-feed.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.equal(items[1]?.date, '2026-08-05T08:00:00Z');
+});
+
+test('normalizeFeed maps JSON Feed items to NormalizedItem, using the native image field', () => {
+  const parsed = parseRawFeed(fixture('jsonfeed/sample-feed.json'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.equal(items.length, 2);
+  assert.deepEqual(items[0], {
+    id: 'https://example.com/jsonfeed/article-1',
+    title: 'First JSON Feed Article',
+    link: 'https://example.com/jsonfeed/article-1',
+    date: '2026-08-05T09:00:00Z',
+    description: 'A short summary of the first article.',
+    content: 'The full text content of the first article.',
+    imageUrl: 'https://example.com/jsonfeed/images/article-1.jpg',
+  });
+});
+
+test('normalizeFeed prefers content_html over content_text when JSON Feed has both', () => {
+  const parsed = parseRawFeed(fixture('jsonfeed/sample-feed.json'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.equal(items[1]?.content, '<p>The full HTML content of the second article.</p>');
+});
+
+test('normalizeFeed maps RDF items to NormalizedItem, deriving id from link', () => {
+  const parsed = parseRawFeed(fixture('rdf/sample-feed.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.equal(items.length, 1);
+  assert.deepEqual(items[0], {
+    id: 'https://example.com/rdf/article-1',
+    title: 'First RDF Article',
+    link: 'https://example.com/rdf/article-1',
+    date: '2026-08-05T09:00:00Z',
+    description: 'A test article in RDF/RSS 1.0 format.',
+    content: undefined,
+    imageUrl: undefined,
+  });
+});

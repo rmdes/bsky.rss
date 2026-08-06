@@ -1,0 +1,24 @@
+{
+  "version": "https://jsonfeed.org/version/1.1",
+  "title": "Sample JSON Feed",
+  "home_page_url": "https://example.com",
+  "feed_url": "https://example.com/feed.json",
+  "items": [
+    {
+      "id": "https://example.com/jsonfeed/article-1",
+      "url": "https://example.com/jsonfeed/article-1",
+      "title": "First JSON Feed Article",
+      "content_text": "The full text content of the first article.",
+      "summary": "A short summary of the first article.",
+      "date_published": "2026-08-05T09:00:00Z",
+      "image": "https://example.com/jsonfeed/images/article-1.jpg"
+    },
+    {
+      "id": "https://example.com/jsonfeed/article-2",
+      "url": "https://example.com/jsonfeed/article-2",
+      "title": "Second JSON Feed Article",
+      "content_html": "<p>The full HTML content of the second article.</p>",
+      "date_published": "2026-08-05T08:00:00Z"
+    }
+  ]
+}
