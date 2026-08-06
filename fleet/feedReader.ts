@@ -227,7 +227,12 @@ export class FeedReader {
       return;
     }
 
-    const dedupeKey = computeDedupeKey(this.botId, item.id);
+    // Link first, then NormalizedItem.id (which is guid-first) - this is the
+    // pre-migration precedence. dedupe_key is a persisted UNIQUE column in queue_items
+    // and the AT-Proto record key, so flipping to guid-first would recompute a new key
+    // for every already-queued item on any feed where guid !== link (e.g. WordPress's
+    // <guid isPermaLink="false">), letting it enqueue and post a second time at cutover.
+    const dedupeKey = computeDedupeKey(this.botId, item.link || item.id);
 
     const lastCursor = this.store.readCursor();
     let embed: ParsedEmbed | undefined;

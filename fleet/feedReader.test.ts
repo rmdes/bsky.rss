@@ -167,6 +167,51 @@ test('computeDedupeKey matches what a FeedReader-computed dedupeKey should look 
   assert.equal(key.length, 64);
 });
 
+test('handleItem derives the dedupe key from the item link, not its guid-derived id', async t => {
+  // Break caught: NormalizedItem.id is guid-first (guid ?? link), but the pre-migration
+  // dedupe key was link-first. On any feed where guid !== link (WordPress's
+  // <guid isPermaLink="false">, UUID guids), switching precedence recomputes a new key
+  // for every already-queued item at cutover - dedupe_key is a persisted UNIQUE column
+  // and the AT-Proto record key, so the item stops colliding with its own queued row
+  // and gets posted twice.
+  const {reader} = createInstrumentedReader(t);
+  const emitted: ParsedItem[] = [];
+  reader.onItem(item => emitted.push(item));
+
+  await handleItem(
+    reader,
+    normalizedItem({
+      id: 'https://example.test/?p=123',
+      link: 'https://example.test/the-article',
+      date: '2026-08-03T12:01:00.000Z',
+    }),
+  );
+
+  assert.equal(emitted.length, 1);
+  assert.equal(
+    emitted[0]?.dedupeKey,
+    computeDedupeKey('test-bot', 'https://example.test/the-article'),
+  );
+  assert.notEqual(emitted[0]?.dedupeKey, computeDedupeKey('test-bot', 'https://example.test/?p=123'));
+});
+
+test('handleItem falls back to the item id for the dedupe key when there is no link', async t => {
+  const {reader} = createInstrumentedReader(t);
+  const emitted: ParsedItem[] = [];
+  reader.onItem(item => emitted.push(item));
+
+  await handleItem(
+    reader,
+    normalizedItem({
+      id: 'urn:uuid:abc-123',
+      link: undefined,
+      date: '2026-08-03T12:01:00.000Z',
+    }),
+  );
+
+  assert.equal(emitted[0]?.dedupeKey, computeDedupeKey('test-bot', 'urn:uuid:abc-123'));
+});
+
 function startFeedResponseServer(
   status: number,
   body: string,
