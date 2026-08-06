@@ -18,6 +18,7 @@
       "url": "https://example.com/jsonfeed/article-2",
       "title": "Second JSON Feed Article",
       "content_html": "<p>The full HTML content of the second article.</p>",
+      "content_text": "The plain text content of the second article.",
       "date_published": "2026-08-05T08:00:00Z"
     }
   ]
