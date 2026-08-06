@@ -10,11 +10,10 @@ import {
   decodeHTMLTwice,
   fixMalformedUrl,
   parseString,
-  textOf,
   FeedReader,
-  type FeedItem,
   type ParsedItem,
 } from './feedReader.ts';
+import type {NormalizedItem} from '../shared/feedSource/index.ts';
 import {computeDedupeKey} from './dedupeKey.ts';
 import {BotStore} from './botStore.ts';
 import {SharedLimiters} from './sharedLimiters.ts';
@@ -22,24 +21,25 @@ import {BotOperations} from './botOperations.ts';
 import {FleetLogger, type FleetLogRecord} from './logging.ts';
 import jimp from 'jimp';
 
-// FeedReader's own `reader` field is typed `any` (feedsub's FeedItem type doesn't
-// match how items are actually used - see feedReader.ts's own comment), so tests
-// reaching into it to drive events directly need one narrow, typed accessor rather
-// than `any` at every call site.
-interface UnderlyingFeedSub {
-  read: () => void;
-  start: () => void;
-  stop: () => void;
-  emit: (event: string, ...args: unknown[]) => void;
-}
-function underlyingFeedSub(reader: FeedReader): UnderlyingFeedSub {
-  return (reader as unknown as {reader: UnderlyingFeedSub}).reader;
-}
-
 // handleItem is private; these tests drive it directly to exercise item-processing
 // behavior without going through a real feed poll.
-function handleItem(reader: FeedReader, item: FeedItem): Promise<void> {
-  return (reader as unknown as {handleItem: (item: FeedItem) => Promise<void>}).handleItem(item);
+function handleItem(reader: FeedReader, item: NormalizedItem): Promise<void> {
+  return (reader as unknown as {handleItem: (item: NormalizedItem) => Promise<void>}).handleItem(
+    item,
+  );
+}
+
+function normalizedItem(overrides: Partial<NormalizedItem> = {}): NormalizedItem {
+  return {
+    id: 'https://example.com/default-item',
+    title: 'Default Title',
+    link: 'https://example.com/default-item',
+    date: '2026-08-05T09:00:00.000Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    ...overrides,
+  };
 }
 
 const fixedNow = new Date('2026-08-03T12:00:00.000Z');
@@ -92,10 +92,6 @@ function createInstrumentedReader(
     }),
     runtime,
   );
-  const underlying = underlyingFeedSub(reader);
-  underlying.read = () => undefined;
-  underlying.start = () => undefined;
-  underlying.stop = () => undefined;
   return {reader, runtime};
 }
 
@@ -129,18 +125,18 @@ test('fixMalformedUrl leaves a well-formed URL unchanged', () => {
 });
 
 test('parseString substitutes $title, $link, $description', () => {
-  const item = {
+  const item = normalizedItem({
     title: 'My Title',
-    link: {href: 'https://example.com/post'},
+    link: 'https://example.com/post',
     description: 'My description',
-  };
+  });
   const result = parseString('$title - $link ($description)', item, false, false, false);
   assert.equal(result, 'My Title - https://example.com/post (My description)');
 });
 
 test('parseString truncates past 300 chars to 280 chars when truncate is true', () => {
   const longTitle = 'x'.repeat(400);
-  const item = {title: longTitle, link: {href: 'https://example.com'}, description: ''};
+  const item = normalizedItem({title: longTitle, link: 'https://example.com', description: ''});
   const result = parseString('$title', item, true, false, false);
   assert.equal(result.length, 280);
   assert.ok(result.endsWith('...'));
@@ -148,17 +144,17 @@ test('parseString truncates past 300 chars to 280 chars when truncate is true', 
 
 test('parseString does not truncate when truncate is false', () => {
   const longTitle = 'x'.repeat(400);
-  const item = {title: longTitle, link: {href: 'https://example.com'}, description: ''};
+  const item = normalizedItem({title: longTitle, link: 'https://example.com', description: ''});
   const result = parseString('$title', item, false, false, false);
   assert.equal(result.length, 400);
 });
 
 test('parseString cleans HTML from the title when titleClearHTML is true', () => {
-  const item = {
+  const item = normalizedItem({
     title: '<b>Bold</b> Title',
-    link: {href: 'https://example.com'},
+    link: 'https://example.com',
     description: '',
-  };
+  });
   const result = parseString('$title', item, false, true, false);
   assert.equal(result, 'Bold Title');
 });
@@ -171,96 +167,280 @@ test('computeDedupeKey matches what a FeedReader-computed dedupeKey should look 
   assert.equal(key.length, 64);
 });
 
-test('textOf returns a plain string unchanged', () => {
-  assert.equal(textOf('urn:uuid:AAA'), 'urn:uuid:AAA');
-});
+function startFeedResponseServer(
+  status: number,
+  body: string,
+): Promise<{server: Server; port: number}> {
+  return new Promise(resolve => {
+    const server = createServer((_req, res) => {
+      res.writeHead(status, {'Content-Type': 'application/rss+xml'});
+      res.end(body);
+    });
+    server.listen(0, () => {
+      const port = (server.address() as {port: number}).port;
+      resolve({server, port});
+    });
+  });
+}
 
-test('textOf pulls .text out of the object shape feedme returns for an attributed tag', () => {
-  // feedme (feedsub's underlying parser) returns e.g. <guid isPermaLink="false">urn:uuid:AAA</guid>
-  // as { ispermalink: "false", text: "urn:uuid:AAA" }, not a plain string.
-  assert.equal(textOf({ispermalink: 'false', text: 'urn:uuid:AAA'}), 'urn:uuid:AAA');
-});
+const sampleFeedWithOneItem =
+  '<?xml version="1.0"?><rss version="2.0"><channel><title>T</title><description>D</description><link>https://example.com</link><item><title>one</title><link>https://example.com/one</link><guid>https://example.com/one</guid><pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate></item></channel></rss>';
+const emptyFeed =
+  '<?xml version="1.0"?><rss version="2.0"><channel><title>T</title><description>D</description><link>https://example.com</link></channel></rss>';
 
-test('textOf treats an empty string as absent so callers fall through to the next candidate', () => {
-  assert.equal(textOf(''), undefined);
-  assert.equal(textOf(undefined), undefined);
-});
+// These three tests construct FeedReader with a real feedUrl pointed at a local test
+// server (matching the existing resolveEmbedImage tests' own pattern below) and drive
+// it through the real reader.start()/reader.stop(), since there is no longer a private
+// EventEmitter to reach into and emit synthetic 'items'/'error' events on directly.
+test('a poll with items records a successful feed poll', async t => {
+  const {server, port} = await startFeedResponseServer(200, sampleFeedWithOneItem);
+  t.after(() => server.close());
 
-test('two feedme-style attributed guid objects with different text no longer collide on the same dedupeKey', () => {
-  // This is the actual bug this round fixes: item.guid ends up as an OBJECT
-  // ({ ispermalink, text }) whenever the <guid> tag carries an attribute (the
-  // standard RSS 2.0 shape). Before textOf(), both objects coerced to the identical
-  // string "[object Object]" in the dedupeKey template literal and collided.
-  const guidA = {ispermalink: 'false', text: 'urn:uuid:AAA'};
-  const guidB = {ispermalink: 'false', text: 'urn:uuid:BBB'};
+  const dir = mkdtempSync(join(tmpdir(), 'feedreader-test-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const store = new BotStore(join(dir, 'state.sqlite'));
+  t.after(() => store.close());
+  const runtime = createRuntime();
 
-  const keyA = computeDedupeKey(
-    'bot-1',
-    textOf(undefined) || textOf(guidA) || textOf(undefined) || '',
+  const reader = new FeedReader(
+    'test-bot',
+    new URL(`http://127.0.0.1:${port}/feed.xml`),
+    60,
+    {string: '$title'},
+    store,
+    new SharedLimiters({
+      maxConcurrentOpenGraphFetches: 1,
+      maxConcurrentImageJobs: 1,
+      maxImageDownloadBytes: 10_000_000,
+      httpTimeoutMs: 5000,
+    }),
+    runtime,
   );
-  const keyB = computeDedupeKey(
-    'bot-1',
-    textOf(undefined) || textOf(guidB) || textOf(undefined) || '',
-  );
-
-  assert.notEqual(keyA, keyB);
-});
-
-test('an items batch with entries records a successful feed poll', t => {
-  // Break caught: removing the FeedSub `items` success listener leaves successful
-  // polls invisible even though feedsub delivered a complete batch.
-  const {reader, runtime} = createInstrumentedReader(t);
+  t.after(() => reader.stop());
+  reader.onItem(() => undefined);
   reader.start();
 
-  underlyingFeedSub(reader).emit('items', [{title: 'one'}]);
+  await new Promise<void>(resolve => {
+    const check = setInterval(() => {
+      if (runtime.operations.snapshot().counters.feedPollSucceeded > 0) {
+        clearInterval(check);
+        resolve();
+      }
+    }, 10);
+  });
 
   const snapshot = runtime.operations.snapshot();
   assert.equal(snapshot.feedState, 'ok');
   assert.equal(snapshot.counters.feedPollSucceeded, 1);
-  assert.equal(snapshot.lastFeedSuccessAt, fixedNow.toISOString());
 });
 
-test('an empty items batch still records a successful feed poll', t => {
-  // Break caught: treating an empty but successfully fetched feed as a failed or
-  // unrecorded poll hides the health of feeds that simply have no new entries.
-  const {reader, runtime} = createInstrumentedReader(t);
+const sampleFeedWithOneBadItem =
+  '<?xml version="1.0"?><rss version="2.0"><channel><title>T</title><description>D</description><link>https://example.com</link><item><description>no title, only description</description><link>https://example.com/bad</link><guid>https://example.com/bad</guid><pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate></item></channel></rss>';
+
+test('a single bad item is logged but does not affect feed health state', async t => {
+  // Break caught: routing a per-item onItem failure through classifyFeedFailure/
+  // recordFeedFailure would flip a healthy bot's feedState to 'failing' over one
+  // malformed item, producing a false "Feed unavailable" alert - matching the
+  // pre-migration feedsub-based behavior, where an 'item' handler rejection was
+  // always a plain summary log, never a feed-health signal.
+  const {server, port} = await startFeedResponseServer(200, sampleFeedWithOneBadItem);
+  t.after(() => server.close());
+
+  const dir = mkdtempSync(join(tmpdir(), 'feedreader-test-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const store = new BotStore(join(dir, 'state.sqlite'));
+  t.after(() => store.close());
+  const runtime = createRuntime();
+
+  const reader = new FeedReader(
+    'test-bot',
+    new URL(`http://127.0.0.1:${port}/feed.xml`),
+    60,
+    {string: '$title'}, // the bad item has no title, so parseString throws for it
+    store,
+    new SharedLimiters({
+      maxConcurrentOpenGraphFetches: 1,
+      maxConcurrentImageJobs: 1,
+      maxImageDownloadBytes: 10_000_000,
+      httpTimeoutMs: 5000,
+    }),
+    runtime,
+  );
+  t.after(() => reader.stop());
+  reader.onItem(() => undefined);
   reader.start();
 
-  underlyingFeedSub(reader).emit('items', []);
+  await new Promise<void>(resolve => {
+    const check = setInterval(() => {
+      if (runtime.operations.snapshot().counters.feedPollSucceeded > 0) {
+        clearInterval(check);
+        resolve();
+      }
+    }, 10);
+  });
 
   const snapshot = runtime.operations.snapshot();
   assert.equal(snapshot.feedState, 'ok');
+  assert.equal(snapshot.counters.feedPollFailed, 0);
   assert.equal(snapshot.counters.feedPollSucceeded, 1);
+  assert.deepEqual(
+    runtime.records.filter(record => record.level === 'summary').map(record => record.message),
+    ['Item handling failed'],
+  );
 });
 
-test('feed failures are summarized once and a later items batch records the exact recovery count', t => {
+test('an empty feed still records a successful feed poll', async t => {
+  const {server, port} = await startFeedResponseServer(200, emptyFeed);
+  t.after(() => server.close());
+
+  const dir = mkdtempSync(join(tmpdir(), 'feedreader-test-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const store = new BotStore(join(dir, 'state.sqlite'));
+  t.after(() => store.close());
+  const runtime = createRuntime();
+
+  const reader = new FeedReader(
+    'test-bot',
+    new URL(`http://127.0.0.1:${port}/feed.xml`),
+    60,
+    {string: '$title'},
+    store,
+    new SharedLimiters({
+      maxConcurrentOpenGraphFetches: 1,
+      maxConcurrentImageJobs: 1,
+      maxImageDownloadBytes: 10_000_000,
+      httpTimeoutMs: 5000,
+    }),
+    runtime,
+  );
+  t.after(() => reader.stop());
+  reader.onItem(() => undefined);
+  reader.start();
+
+  await new Promise<void>(resolve => {
+    const check = setInterval(() => {
+      if (runtime.operations.snapshot().counters.feedPollSucceeded > 0) {
+        clearInterval(check);
+        resolve();
+      }
+    }, 10);
+  });
+
+  assert.equal(runtime.operations.snapshot().counters.feedPollSucceeded, 1);
+});
+
+test('a feed-fetch failure is recorded and logged per-bot, not an uncaught exception', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'feedreader-test-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const store = new BotStore(join(dir, 'state.sqlite'));
+  t.after(() => store.close());
+  const runtime = createRuntime();
+
+  const reader = new FeedReader(
+    'test-bot',
+    new URL('http://127.0.0.1:1/feed.xml'), // unroutable port - always fails to fetch
+    60,
+    {string: '$title'},
+    store,
+    new SharedLimiters({
+      maxConcurrentOpenGraphFetches: 1,
+      maxConcurrentImageJobs: 1,
+      maxImageDownloadBytes: 10_000_000,
+      httpTimeoutMs: 500,
+    }),
+    runtime,
+  );
+  t.after(() => reader.stop());
+  reader.onItem(() => undefined);
+
+  await assert.doesNotReject(async () => {
+    reader.start();
+    await new Promise<void>(resolve => {
+      const check = setInterval(() => {
+        if (runtime.operations.snapshot().counters.feedPollFailed > 0) {
+          clearInterval(check);
+          resolve();
+        }
+      }, 10);
+    });
+  });
+
+  const snapshot = runtime.operations.snapshot();
+  assert.equal(snapshot.feedState, 'failing');
+  assert.equal(snapshot.counters.feedPollFailed, 1);
+});
+
+function startFailThenSucceedServer(
+  failCount: number,
+  successBody: string,
+): Promise<{server: Server; port: number}> {
+  let requests = 0;
+  return new Promise(resolve => {
+    const server = createServer((_req, res) => {
+      requests++;
+      if (requests <= failCount) {
+        res.writeHead(500);
+        res.end('fail');
+      } else {
+        res.writeHead(200, {'Content-Type': 'application/rss+xml'});
+        res.end(successBody);
+      }
+    });
+    server.listen(0, () => {
+      const port = (server.address() as {port: number}).port;
+      resolve({server, port});
+    });
+  });
+}
+
+test('feed failures are summarized once and a later poll records the exact recovery count', async t => {
   // Break caught: logging every failed poll creates an incident flood, while losing
   // the prior count makes a recovery impossible to assess from the summary line.
-  const {reader, runtime} = createInstrumentedReader(t);
-  reader.start();
+  const {server, port} = await startFailThenSucceedServer(2, sampleFeedWithOneItem);
+  t.after(() => server.close());
 
-  underlyingFeedSub(reader).emit('error', new Error('unable to verify the first certificate'));
-  underlyingFeedSub(reader).emit('error', new Error('unable to verify the first certificate'));
+  const dir = mkdtempSync(join(tmpdir(), 'feedreader-test-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const store = new BotStore(join(dir, 'state.sqlite'));
+  t.after(() => store.close());
+  const runtime = createRuntime();
 
-  const duringFailure = runtime.operations.snapshot();
-  assert.equal(duringFailure.feedState, 'failing');
-  assert.equal(duringFailure.counters.feedPollFailed, 2);
-  assert.equal(duringFailure.consecutiveFeedFailures, 2);
-  assert.equal(duringFailure.lastFeedFailureCategory, 'tls');
-  assert.deepEqual(
-    runtime.records.filter(record => record.level === 'summary').map(record => record.message),
-    ['Feed unavailable (tls)'],
+  const reader = new FeedReader(
+    'test-bot',
+    new URL(`http://127.0.0.1:${port}/feed.xml`),
+    1 / 1200, // 50ms - a fractional-minute interval used only to make this test's
+    // multiple poll cycles observable within a normal test timeout.
+    {string: '$title'},
+    store,
+    new SharedLimiters({
+      maxConcurrentOpenGraphFetches: 1,
+      maxConcurrentImageJobs: 1,
+      maxImageDownloadBytes: 10_000_000,
+      httpTimeoutMs: 500,
+    }),
+    runtime,
   );
+  t.after(() => reader.stop());
+  reader.onItem(() => undefined);
 
-  underlyingFeedSub(reader).emit('items', []);
+  await new Promise<void>(resolve => {
+    const check = setInterval(() => {
+      if (runtime.operations.snapshot().counters.feedPollSucceeded > 0) {
+        clearInterval(check);
+        resolve();
+      }
+    }, 10);
+    reader.start();
+  });
 
-  const recovered = runtime.operations.snapshot();
-  assert.equal(recovered.feedState, 'ok');
-  assert.equal(recovered.counters.feedPollSucceeded, 1);
-  assert.equal(recovered.consecutiveFeedFailures, 0);
+  const snapshot = runtime.operations.snapshot();
+  assert.equal(snapshot.feedState, 'ok');
+  assert.equal(snapshot.counters.feedPollFailed, 2);
+  assert.equal(snapshot.counters.feedPollSucceeded, 1);
+  assert.equal(snapshot.consecutiveFeedFailures, 0);
   assert.deepEqual(
     runtime.records.filter(record => record.level === 'summary').map(record => record.message),
-    ['Feed unavailable (tls)', 'Feed recovered after 2 failed poll(s)'],
+    ['Feed unavailable (http-500)', 'Feed recovered after 2 failed poll(s)'],
   );
 });
 
@@ -278,12 +458,16 @@ test('a successful Open Graph fetch records success', async t => {
   const emitted: unknown[] = [];
   reader.onItem(item => emitted.push(item));
 
-  await handleItem(reader, {
-    title: 'RSS title',
-    link: 'https://example.test/article',
-    description: 'RSS description',
-    pubdate: '2026-08-03T12:01:00.000Z',
-  });
+  await handleItem(
+    reader,
+    normalizedItem({
+      id: 'https://example.test/article',
+      title: 'RSS title',
+      link: 'https://example.test/article',
+      description: 'RSS description',
+      date: '2026-08-03T12:01:00.000Z',
+    }),
+  );
 
   assert.equal(runtime.operations.snapshot().counters.openGraphSucceeded, 1);
   assert.equal(runtime.operations.snapshot().counters.openGraphFallback, 0);
@@ -328,12 +512,16 @@ test('a rejected Open Graph fetch records fallback without leaking item details 
   const emitted: ParsedItem[] = [];
   reader.onItem(item => emitted.push(item));
 
-  await handleItem(reader, {
-    title: itemTitle,
-    link: itemUrl,
-    description: 'RSS fallback description',
-    pubdate: '2026-08-03T12:01:00.000Z',
-  });
+  await handleItem(
+    reader,
+    normalizedItem({
+      id: itemUrl,
+      title: itemTitle,
+      link: itemUrl,
+      description: 'RSS fallback description',
+      date: '2026-08-03T12:01:00.000Z',
+    }),
+  );
 
   assert.deepEqual(emitted[0]!.embed, {
     uri: itemUrl,
@@ -380,12 +568,16 @@ test('an Open Graph rejection with undefined still records fallback and returns 
   const emitted: ParsedItem[] = [];
   reader.onItem(item => emitted.push(item));
 
-  await handleItem(reader, {
-    title: 'RSS fallback title',
-    link: itemUrl,
-    description: 'RSS fallback description',
-    pubdate: '2026-08-03T12:01:00.000Z',
-  });
+  await handleItem(
+    reader,
+    normalizedItem({
+      id: itemUrl,
+      title: 'RSS fallback title',
+      link: itemUrl,
+      description: 'RSS fallback description',
+      date: '2026-08-03T12:01:00.000Z',
+    }),
+  );
 
   assert.deepEqual(emitted[0]!.embed, {
     uri: itemUrl,
@@ -398,41 +590,6 @@ test('an Open Graph rejection with undefined still records fallback and returns 
   const counters = runtime.operations.snapshot().counters;
   assert.equal(counters.openGraphSucceeded, 0);
   assert.equal(counters.openGraphFallback, 1);
-});
-
-test('start() attaches an error listener so a feed-fetch failure is logged per-bot, not an uncaught exception', t => {
-  // Found live in production: FeedSub (a Node EventEmitter) throws an
-  // 'error' event as an uncaught exception by default when nothing is
-  // listening for it - only caught, previously, by the process-wide safety
-  // net rather than handled here. Reproduces by emitting 'error' directly
-  // on the real underlying FeedSub instance after start().
-  const dir = mkdtempSync(join(tmpdir(), 'feedreader-test-'));
-  t.after(() => rmSync(dir, {recursive: true, force: true}));
-  const store = new BotStore(join(dir, 'state.sqlite'));
-  t.after(() => store.close());
-
-  const sharedLimiters = new SharedLimiters({
-    maxConcurrentOpenGraphFetches: 1,
-    maxConcurrentImageJobs: 1,
-    maxImageDownloadBytes: 10_000_000,
-    httpTimeoutMs: 5000,
-  });
-
-  const reader = new FeedReader(
-    'test-bot',
-    new URL('http://127.0.0.1:1/feed.xml'), // unroutable port, never actually fetched in this test
-    5,
-    {string: '$title'},
-    store,
-    sharedLimiters,
-    createRuntime(),
-  );
-  t.after(() => reader.stop());
-  reader.start();
-
-  assert.doesNotThrow(() => {
-    underlyingFeedSub(reader).emit('error', new Error('unable to verify the first certificate'));
-  });
 });
 
 function startFixedResponseServer(body: Buffer): Promise<{server: Server; port: number}> {

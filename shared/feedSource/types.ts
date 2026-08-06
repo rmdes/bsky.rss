@@ -20,6 +20,12 @@ export class FeedSourceError extends Error {
   constructor(
     message: string,
     public readonly cause?: unknown,
+    // 'poll' (default): the whole poll failed (fetch or parse) - callers should treat
+    // this as feed-health-affecting. 'item': one item's onItem handler rejected while
+    // the rest of the batch kept processing - not a feed outage, must not affect feed
+    // health state (matches the pre-migration feedsub-based behavior, where an 'error'
+    // event and a per-item handler rejection were always distinguishable).
+    public readonly scope: 'poll' | 'item' = 'poll',
   ) {
     super(message);
     this.name = 'FeedSourceError';
@@ -34,7 +40,8 @@ export interface FeedSourceCallbacks {
   /** Fired once per item, in feed order. A rejection here is caught by the poller
    * and reported via onError - it does not stop the batch or crash the process. */
   onItem: (item: NormalizedItem) => Promise<void>;
-  /** Fired on a fetch failure, a parse failure, or a single item's onItem rejecting. */
+  /** Fired on a fetch failure, a parse failure, or a single item's onItem rejecting -
+   * check error.scope ('poll' vs 'item') to tell these apart. */
   onError: (error: FeedSourceError) => void;
 }
 

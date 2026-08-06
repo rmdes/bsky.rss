@@ -48,7 +48,7 @@ export function createPoller(
       try {
         await cb.onItem(item);
       } catch (error) {
-        cb.onError(new FeedSourceError('Item handling failed', error));
+        cb.onError(new FeedSourceError('Item handling failed', error, 'item'));
       }
     }
     cb.onItems(items);

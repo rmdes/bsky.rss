@@ -66,7 +66,12 @@ test('createFeedSource reports a fetch failure via onError, not a thrown/unhandl
     source.start({
       onItems: () => assert.fail('should not reach onItems on a fetch failure'),
       onItem: async () => assert.fail('should not reach onItem on a fetch failure'),
-      onError: () => resolve(),
+      onError: err => {
+        // A fetch failure is poll-level, not item-level - callers (e.g. FeedReader)
+        // rely on this to know it's safe to record as a real feed-health failure.
+        assert.equal(err.scope, 'poll');
+        resolve();
+      },
     });
   });
 });
@@ -80,6 +85,7 @@ test('createFeedSource reports one bad item via onError without stopping the bat
 
   const processed: string[] = [];
   const errors: string[] = [];
+  const scopes: string[] = [];
   await new Promise<void>(resolve => {
     source.start({
       onItems: () => undefined,
@@ -87,7 +93,10 @@ test('createFeedSource reports one bad item via onError without stopping the bat
         if (item.title === 'Second Test Article') throw new Error('simulated bad item');
         processed.push(item.title ?? '');
       },
-      onError: err => errors.push(err.message),
+      onError: err => {
+        errors.push(err.message);
+        scopes.push(err.scope);
+      },
     });
     // The poller awaits all 3 items sequentially, in order, on this one poll cycle
     // (the interval is 60 minutes, so a second cycle cannot fire during this test) -
@@ -98,6 +107,9 @@ test('createFeedSource reports one bad item via onError without stopping the bat
   assert.deepEqual(processed, ['First Test Article', 'Article with Image']);
   assert.equal(errors.length, 1);
   assert.ok(errors[0]?.includes('Item handling failed'));
+  // A per-item failure must be scoped 'item', not 'poll' - callers (e.g. FeedReader)
+  // rely on this to avoid treating one malformed item as a feed-health outage.
+  assert.deepEqual(scopes, ['item']);
 });
 
 test('createFeedSource.stop() prevents further polls', async t => {

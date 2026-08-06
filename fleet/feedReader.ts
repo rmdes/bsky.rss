@@ -1,4 +1,3 @@
-import FeedSub from 'feedsub';
 import jimp from 'jimp';
 import axios from 'axios';
 import og from 'open-graph-scraper';
@@ -8,18 +7,8 @@ import {computeDedupeKey} from './dedupeKey.ts';
 import {SharedLimiters} from './sharedLimiters.ts';
 import {BotOperations, classifyFeedFailure} from './botOperations.ts';
 import {FleetLogger, formatDebugError} from './logging.ts';
-
-export interface FeedItem {
-  title: string;
-  link: {href: string} | string;
-  description?: string;
-  content?: string;
-  published?: string;
-  pubdate?: string;
-  // Feeds may carry arbitrary extra fields whose shape can't be known statically.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-}
+import {createFeedSource} from '../shared/feedSource/index.ts';
+import type {FeedSource, NormalizedItem} from '../shared/feedSource/index.ts';
 
 export interface FeedReaderConfig {
   string: string;
@@ -79,19 +68,9 @@ export function fixMalformedUrl(urlString: string): string {
   return urlString.replace(/^https\/\//i, 'https://').replace(/^http\/\//i, 'http://');
 }
 
-// feedme (feedsub's underlying parser) returns a tag as a plain string only when it has
-// no attributes. A tag with attributes - e.g. RSS 2.0's <guid isPermaLink="false"> -
-// comes back as an object like { ispermalink: "false", text: "urn:uuid:..." }. Pulls the
-// actual text out of either shape; also treats an empty string as absent so a blank
-// tag (e.g. <link/>) falls through to the next candidate rather than "winning".
-export function textOf(v: unknown): string | undefined {
-  const text = v && typeof v === 'object' ? (v as {text?: string}).text : (v as string | undefined);
-  return text || undefined;
-}
-
 export function parseString(
   template: string,
-  item: FeedItem,
+  item: NormalizedItem,
   truncate: boolean,
   titleClearHTML: boolean,
   descriptionClearHTML: boolean,
@@ -108,8 +87,7 @@ export function parseString(
 
   if (template.includes('$link')) {
     if (!item.link) throw new Error('No link provided from RSS reader.');
-    const href = typeof item.link === 'object' ? item.link.href : item.link;
-    result = result.replace('$link', href);
+    result = result.replace('$link', item.link);
   }
 
   if (template.includes('$description')) {
@@ -134,9 +112,7 @@ async function resizeImageToBuffer(bufferData: Buffer): Promise<Buffer> {
 }
 
 export class FeedReader {
-  // feedsub's own FeedItem type doesn't match how items are used here.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private reader: any;
+  private reader: FeedSource;
   private itemHandler: ((parsed: ParsedItem) => void) | null = null;
 
   constructor(
@@ -148,12 +124,12 @@ export class FeedReader {
     private sharedLimiters: SharedLimiters,
     private runtime: FeedReaderRuntime,
   ) {
-    this.reader = new FeedSub(String(feedUrl), {
-      interval: fetchIntervalMinutes,
-      emitOnStart: true,
-      lastDate: this.store.readCursor() || null,
-      requestOpts: {timeout: sharedLimiters.httpTimeoutMs},
-    });
+    this.reader = createFeedSource(
+      feedUrl,
+      fetchIntervalMinutes,
+      {imageField: config.imageField},
+      {fetchTimeoutMs: sharedLimiters.httpTimeoutMs},
+    );
   }
 
   onItem(handler: (parsed: ParsedItem) => void): void {
@@ -161,42 +137,37 @@ export class FeedReader {
   }
 
   start(): void {
-    // feedsub's FeedSub is a Node EventEmitter; an 'error' event with no
-    // listener throws as an uncaught exception by default (a classic
-    // EventEmitter gotcha), previously only caught by the process-wide
-    // safety net rather than handled per-bot here - a feed-fetch failure
-    // (a broken TLS cert chain, DNS failure, timeout, etc.) must not be
-    // allowed to fall through to that global handler as the primary defense.
-    this.reader.on('items', () => {
-      const {recoveredFailures} = this.runtime.operations.recordFeedSuccess();
-      if (recoveredFailures > 0) {
-        this.runtime.logger.summary(
-          'FEED',
-          `Feed recovered after ${recoveredFailures} failed poll(s)`,
-          this.botId,
-        );
-      }
+    this.reader.start({
+      onItems: () => {
+        const {recoveredFailures} = this.runtime.operations.recordFeedSuccess();
+        if (recoveredFailures > 0) {
+          this.runtime.logger.summary(
+            'FEED',
+            `Feed recovered after ${recoveredFailures} failed poll(s)`,
+            this.botId,
+          );
+        }
+      },
+      onItem: (item: NormalizedItem) => this.handleItem(item),
+      onError: err => {
+        // A single item's onItem handler rejecting is not a feed outage - keep it out
+        // of classifyFeedFailure/recordFeedFailure so it can't flip feedState to
+        // 'failing' for what's really just one malformed item, matching the
+        // pre-migration behavior where item-handler failures were a plain summary log
+        // and only real feed-fetch/parse errors affected feed health state.
+        if (err.scope === 'item') {
+          this.runtime.logger.summary('FEED', 'Item handling failed', this.botId);
+          this.runtime.logger.debug('FEED', formatDebugError(err.cause ?? err), this.botId);
+          return;
+        }
+        const category = classifyFeedFailure(err.cause ?? err);
+        const {becameFailing} = this.runtime.operations.recordFeedFailure(category);
+        if (becameFailing) {
+          this.runtime.logger.summary('FEED', `Feed unavailable (${category})`, this.botId);
+        }
+        this.runtime.logger.debug('FEED', formatDebugError(err.cause ?? err), this.botId);
+      },
     });
-    this.reader.on('error', (err: unknown) => {
-      const category = classifyFeedFailure(err);
-      const {becameFailing} = this.runtime.operations.recordFeedFailure(category);
-      if (becameFailing) {
-        this.runtime.logger.summary('FEED', `Feed unavailable (${category})`, this.botId);
-      }
-      this.runtime.logger.debug('FEED', formatDebugError(err), this.botId);
-    });
-    this.reader.read();
-    // handleItem is async; the EventEmitter has no way to await or catch a
-    // listener's rejection, so an ordinary bad item (missing title/link)
-    // would otherwise become an unhandled rejection and crash the whole
-    // process - fatal for every other bot sharing this process.
-    this.reader.on('item', (item: FeedItem) => {
-      this.handleItem(item).catch(err => {
-        this.runtime.logger.summary('FEED', 'Item handling failed', this.botId);
-        this.runtime.logger.debug('FEED', formatDebugError(err), this.botId);
-      });
-    });
-    this.reader.start();
   }
 
   stop(): void {
@@ -236,11 +207,17 @@ export class FeedReader {
     }
   }
 
-  private async handleItem(item: FeedItem): Promise<void> {
-    const itemUrl = typeof item.link === 'object' ? item.link.href : item.link;
+  private async handleItem(item: NormalizedItem): Promise<void> {
+    const itemUrl = item.link;
+    // dateField historically pointed at an arbitrary raw feedme tag name (feedme kept
+    // every tag from the source feed as a flat property). NormalizedItem no longer
+    // carries arbitrary per-feed fields - only its own fixed shape - so dateField now
+    // only resolves against NormalizedItem's own field names. All 59 live bot configs
+    // leave dateField empty today, so this has no real-world effect; kept for config
+    // compatibility per the migration spec's Non-goals, not redesigned.
     const useDate: string | undefined = this.config.dateField
-      ? item[this.config.dateField]
-      : (item.pubdate ?? item.published);
+      ? (item as unknown as Record<string, string | undefined>)[this.config.dateField]
+      : item.date;
     if (!useDate) {
       this.runtime.logger.verbose(
         'FEED',
@@ -250,20 +227,7 @@ export class FeedReader {
       return;
     }
 
-    // Fall back to a guid-like field before giving up, so two distinct link-less items
-    // from the same bot don't collide on the same dedupe key / AT-Proto rkey (§3.4 step 5
-    // calls for "item link/guid"). FeedItem has no typed guid field (feedsub's shape
-    // varies by feed), so this reaches for the common RSS/Atom conventions via the
-    // index signature. The real risk isn't a feed item missing all of link/guid/id
-    // (rare) — it's standard RSS 2.0 `<guid isPermaLink="...">`: feedme (feedsub's
-    // parser) returns any tag with attributes as an object like
-    // { ispermalink: "false", text: "urn:uuid:..." }, not a plain string. Two different
-    // guids both being truthy objects would otherwise both stringify to the identical
-    // "[object Object]" and collide, so the actual text has to be pulled out explicitly.
-    const dedupeKey = computeDedupeKey(
-      this.botId,
-      textOf(itemUrl) || textOf(item.guid) || textOf(item.id) || '',
-    );
+    const dedupeKey = computeDedupeKey(this.botId, item.id);
 
     const lastCursor = this.store.readCursor();
     let embed: ParsedEmbed | undefined;
@@ -295,18 +259,7 @@ export class FeedReader {
         }
       }
 
-      let imageUrl: string | undefined;
-      const imageKey = this.config.imageField;
-      if (imageKey && Object.keys(item).includes(imageKey)) {
-        const imageField = item[imageKey];
-        const hasUrl = imageField && Object.keys(imageField).includes('url');
-        const isImageType = !(
-          Object.keys(imageField ?? {}).includes('type') && !imageField.type?.startsWith('image')
-        );
-        if (hasUrl && isImageType) {
-          imageUrl = imageField.url;
-        }
-      }
+      let imageUrl: string | undefined = item.imageUrl;
 
       let description: string | undefined;
       if (this.config.forceDescriptionEmbed) {
@@ -354,7 +307,7 @@ export class FeedReader {
         if (uri && (openGraphResult.ogTitle || item.title)) {
           embed = {
             uri,
-            title: openGraphResult.ogTitle ?? item.title,
+            title: openGraphResult.ogTitle ?? item.title ?? '',
             description,
             imageUrl,
             imageAlt,
@@ -374,7 +327,7 @@ export class FeedReader {
           description = removeHTMLTags(description);
         embed = {
           uri: url,
-          title: item.title,
+          title: item.title ?? '',
           description,
           imageUrl,
           imageAlt,
