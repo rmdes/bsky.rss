@@ -2,6 +2,7 @@ import {describe, it, beforeEach} from 'node:test';
 import assert from 'node:assert';
 import fs from 'fs';
 import path from 'path';
+import {createServer} from 'node:http';
 
 /**
  * Tests for rssHandler module
@@ -608,6 +609,89 @@ describe('rssHandler', () => {
 
       assert.strictEqual(shouldSkipOld, true);
       assert.strictEqual(shouldSkipNew, false);
+    });
+  });
+
+  describe('Cross-poll deduplication', () => {
+    // The shared/feedSource poller deliberately re-delivers every parsed item on every
+    // poll (feedsub used to hide this behind its own internal item history). This is the
+    // only test that drives the real rssHandler.init()/start() against a real feed, so
+    // it is the only thing that can catch the "lastDate never advances" regression -
+    // every other test in this file replicates logic inline against local objects.
+    it('queues a repeated feed item only once across multiple polls', async () => {
+      const feedBody =
+        '<?xml version="1.0"?><rss version="2.0"><channel>' +
+        '<title>T</title><description>D</description><link>https://example.com</link>' +
+        '<item><title>Only Item</title><link>https://example.com/only</link>' +
+        '<guid>https://example.com/only</guid>' +
+        '<pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate></item>' +
+        '</channel></rss>';
+
+      let pollCount = 0;
+      const server = createServer((_req, res) => {
+        pollCount++;
+        res.writeHead(200, {'Content-Type': 'application/rss+xml'});
+        res.end(feedBody);
+      });
+      await new Promise<void>(resolve => server.listen(0, resolve));
+      const port = (server.address() as {port: number}).port;
+
+      // publishEmbed:false keeps handleItem entirely offline (no Open Graph/image
+      // fetch) while still exercising both staleness guards and the queue handoff.
+      fs.writeFileSync(
+        path.join(TEST_DATA_DIR, 'config.json'),
+        JSON.stringify({
+          string: '$title',
+          publishEmbed: false,
+          languages: ['en'],
+          truncate: true,
+          runInterval: 60,
+          dateField: '',
+          imageField: '',
+          ogUserAgent: 'bsky.rss/test',
+          removeDuplicate: false,
+        }),
+        'utf8',
+      );
+
+      const lastPath = path.join(TEST_DATA_DIR, 'last.txt');
+      const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
+      fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
+
+      // Patch the shared queueHandler singleton before requiring rssHandler, so
+      // rssHandler's own `import queue from './queueHandler'` resolves to this object.
+      const queueHandler = require('./queueHandler').default;
+      const realWriteQueue = queueHandler.writeQueue;
+      const queued: {title: string}[] = [];
+      queueHandler.writeQueue = async (item: {title: string}) => {
+        queued.push(item);
+      };
+
+      delete require.cache[require.resolve('./rssHandler')];
+      const rssHandler = require('./rssHandler').default;
+
+      try {
+        // 0.002 minutes = 120ms, so several polls fire inside the wait below.
+        const reader = await rssHandler.init({
+          fetch_interval: 0.002,
+          fetch_url: new URL(`http://127.0.0.1:${port}/feed.xml`),
+        });
+        await rssHandler.start();
+        await new Promise(resolve => setTimeout(resolve, 500));
+        reader.stop();
+      } finally {
+        queueHandler.writeQueue = realWriteQueue;
+        if (savedLast === null) fs.rmSync(lastPath, {force: true});
+        else fs.writeFileSync(lastPath, savedLast, 'utf8');
+        server.close();
+      }
+
+      assert(pollCount >= 2, `expected at least 2 polls, got ${pollCount}`);
+      assert.strictEqual(
+        queued.length,
+        1,
+        `item was queued ${queued.length} times across ${pollCount} polls`,
+      );
     });
   });
 

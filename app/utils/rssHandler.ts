@@ -209,6 +209,15 @@ async function handleItem(item: NormalizedItem): Promise<void> {
     languages: config.languages ? config.languages : undefined,
     date: useDate,
   });
+
+  // Advance the in-memory watermark as soon as an item is *queued*. feedsub used to
+  // dedup across polls with its own internal item history; the shared/feedSource poller
+  // deliberately re-delivers every parsed item on every poll, so without this the
+  // staleness guards above compare against the frozen startup value forever and every
+  // item gets re-queued on every poll. This must not be re-read from db.readLast():
+  // last.txt only advances on a successful *publish*, so a slow queue drain would let
+  // the poller re-queue items that are already waiting in the queue.
+  if (!lastDate || new Date(useDate) > new Date(lastDate)) lastDate = useDate;
 }
 
 async function init({fetch_interval, fetch_url}: {fetch_interval: number; fetch_url: URL}) {
