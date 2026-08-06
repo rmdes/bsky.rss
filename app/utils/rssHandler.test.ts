@@ -440,8 +440,8 @@ describe('rssHandler', () => {
     });
 
     it('should handle imageField configuration', () => {
-      // Matches Item's own [key: string]: any index signature in app/types/index.d.ts -
-      // config.imageField is a runtime-configured field name, not known statically.
+      // config.imageField is a runtime-configured field name, not known statically,
+      // hence the index signature on the local shape here.
       const item: {enclosure: {url: string; type: string}; [key: string]: unknown} = {
         enclosure: {
           url: 'https://example.com/image.jpg',

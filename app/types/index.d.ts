@@ -20,20 +20,6 @@ interface Config {
   maxSpacing?: number;
 }
 
-interface Item {
-  title: string;
-  link: {
-    href: string;
-  };
-  published?: string;
-  pubdate?: string;
-  description: string;
-  // Feeds may carry arbitrary extra fields (config.dateField/imageField reference
-  // these by name), so their shape can't be known statically.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-}
-
 interface ParseResult {
   text: string;
 }

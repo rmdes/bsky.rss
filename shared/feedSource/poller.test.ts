@@ -112,6 +112,39 @@ test('createFeedSource reports one bad item via onError without stopping the bat
   assert.deepEqual(scopes, ['item']);
 });
 
+test('a slow onItem handler does not let a second poll overlap the first', async t => {
+  // Break caught: per-item work (Open Graph fetch + image download) outlasting the
+  // poll interval let setInterval start a concurrent second pass over the same items.
+  let fetchCount = 0;
+  const {server, port} = await startFeedServer(fixture('rss/sample-feed.xml'));
+  server.on('request', () => fetchCount++);
+  t.after(() => server.close());
+
+  // 0.002 minutes = 120ms; three items x 100ms of onItem work = ~300ms per poll, so
+  // at least two interval ticks fire while the first poll is still in flight.
+  const source = createFeedSource(new URL(`http://127.0.0.1:${port}/feed.xml`), 0.002);
+  t.after(() => source.stop());
+
+  let inFlight = 0;
+  let maxInFlight = 0;
+  source.start({
+    onItems: () => undefined,
+    onItem: async () => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      inFlight--;
+    },
+    onError: err => assert.fail(`unexpected error: ${err.message}`),
+  });
+
+  await new Promise(resolve => setTimeout(resolve, 350));
+  source.stop();
+
+  assert.equal(maxInFlight, 1, 'two polls processed items concurrently');
+  assert.equal(fetchCount, 1, `the feed was fetched ${fetchCount} times during one slow poll`);
+});
+
 test('createFeedSource.stop() prevents further polls', async t => {
   const {server, port} = await startFeedServer(fixture('rss/sample-feed.xml'));
   t.after(() => server.close());
