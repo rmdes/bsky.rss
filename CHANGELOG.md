@@ -9,28 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Multi-cloud deployment configurations (Fly.io, Railway, Render, DigitalOcean App Platform)
-- Health check HTTP endpoint at `/health` (port 8080)
-- Comprehensive deployment documentation (DEPLOYMENT.md, PLATFORM-COMPARISON.md)
-- Platform comparison guide with cost breakdown and feature matrix
-- Interactive deployment helper scripts (`scripts/deploy-fly.sh`, `scripts/deploy-railway.sh`)
-- Renovate configuration for automated dependency management
-- Auto-merge rules for minor/patch updates
-- Security vulnerability auto-updates
-- RENOVATE.md documentation with setup guide
-
-### Changed
-- Reorganized README to treat Docker as equal deployment option alongside cloud platforms
-- Enhanced `.dockerignore` for smaller, faster builds
-- Positioned self-hosting and cloud deployments as equal choices
-
-### Documentation
-- Added CONTRIBUTING.md with contribution guidelines
-- Added CHANGELOG.md with full project history
-- Created quick-start deployment guides for all platforms
-- Added platform decision matrix
-
 ---
 
 ## [2.4.0] - 2026-08-06
@@ -41,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `shared/feedSource/` module: shared feed polling, parsing, and normalization used by both single-bot mode (`app/utils/rssHandler.ts`) and fleet mode (`fleet/feedReader.ts`)
 - Native RSS, Atom, JSON Feed, and RDF support (previously RSS/RDF-only via `feedme`)
 - Feed body size cap (20MB) and re-entrancy guard against overlapping polls
+- Quick-start deployment guides for all platforms (QUICKSTART.md)
+- FAQ, config reference, examples, and architecture documentation
 
 ### Changed
 - `imageField` config values (`"enclosure"`, `"media:content"`) now resolved via a dedicated image resolver instead of a raw `feedme` property walk; existing bot configs required no changes
@@ -52,11 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.3.0] - 2026-08-05
 
 ### Added
+- Multi-cloud deployment configurations (Fly.io, Railway, Render, DigitalOcean App Platform)
 - Health check HTTP endpoint (`/health`, port 8080) wired into fleet mode
+- Comprehensive deployment documentation (DEPLOYMENT.md, PLATFORM-COMPARISON.md)
+- Interactive deployment helper scripts (`scripts/deploy-fly.sh`, `scripts/deploy-railway.sh`)
+- Renovate configuration for automated dependency management (RENOVATE.md), with auto-merge rules for minor/patch updates and security vulnerability auto-updates
 - Comprehensive test suite for `app/` modules
-- Renovate configuration for automated dependency management
+- CONTRIBUTING.md and CHANGELOG.md
 
 ### Changed
+- Reorganized README to treat Docker as equal deployment option alongside cloud platforms
 - Resolved all `no-explicit-any` findings across production and test code
 - Fixed CI so typecheck/lint failures are no longer silently misreported
 - Declared `eslint` as a direct devDependency
