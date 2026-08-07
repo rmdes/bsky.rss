@@ -234,7 +234,10 @@ async function init({fetch_interval, fetch_url}: {fetch_interval: number; fetch_
   if (!config.string) throw new Error('No string provided.');
 
   lastDate = await db.readLast();
-  reader = createFeedSource(fetch_url, fetch_interval, {imageField: config.imageField});
+  reader = createFeedSource(fetch_url, fetch_interval, {
+    imageField: config.imageField,
+    mappedValues: config.mappedValues,
+  });
   return reader;
 }
 
@@ -281,6 +284,13 @@ function parseString(string: string, item: NormalizedItem, truncate: boolean) {
       ? `https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}`
       : '';
     parsedString = parsedString.replace('$georss', coords);
+  }
+
+  for (const [key, value] of Object.entries(item.mappedValues)) {
+    const placeholder = `$${key}`;
+    if (parsedString.includes(placeholder)) {
+      parsedString = parsedString.replace(placeholder, value);
+    }
   }
 
   if (parsedString.length > 300 && truncate) {

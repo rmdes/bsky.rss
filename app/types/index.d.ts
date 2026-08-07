@@ -8,6 +8,7 @@ interface Config {
   dateField?: string;
   publishDate?: boolean;
   imageField?: string;
+  mappedValues?: Array<{key: string; value: string}>;
   ogUserAgent: string;
   descriptionClearHTML?: boolean;
   forceDescriptionEmbed?: boolean;
