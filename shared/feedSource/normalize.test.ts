@@ -150,3 +150,18 @@ test('normalizeFeed leaves geo undefined when a feed has no georss:point', () =>
 
   assert.equal(items[0]?.geo, undefined);
 });
+
+test('normalizeFeed falls back to id as link for an Atom entry with no <link> when id is a URL', () => {
+  const parsed = parseRawFeed(fixture('atom/sample-feed-georss-no-link.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.equal(items[0]?.link, 'https://example.com/geo-atom/entry-1');
+});
+
+test('normalizeFeed does not use a non-URL id as link when a real <link> already exists', () => {
+  const parsed = parseRawFeed(fixture('atom/sample-feed-georss-tag-id.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.equal(items[0]?.link, 'https://example.com/photos/1');
+  assert.equal(items[0]?.id, 'tag:example.com,2026:/photo/1');
+});
