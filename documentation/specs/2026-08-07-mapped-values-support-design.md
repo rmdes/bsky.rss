@@ -78,8 +78,9 @@ feedsmith parse
 
 ### Recognized value → extraction mapping
 
-One function per recognized `value` string, mirroring `resolveImageUrl`'s explicit if-chain
-(easy to extend, each addition isolated, unrecognized values degrade gracefully rather than error):
+A single `resolveMappedValue(item, value)` function with an if-chain, matching `resolveImageUrl`'s
+actual shape exactly (that function is one if-chain, not one function per branch - easy to extend,
+each addition an isolated `if`, unrecognized values degrade gracefully rather than error):
 
 | `value` | Source field | Type | Formatting |
 |---|---|---|---|
@@ -87,7 +88,7 @@ One function per recognized `value` string, mirroring `resolveImageUrl`'s explic
 | `dc:date` | `item.dc?.dates` | `TDate[]` | First value, as-is (a string already, matching how `date` elsewhere in `NormalizedItem` is left unparsed) |
 | `dc:subject` | `item.dc?.subjects` | `string[]` | Joined with `", "`, same repeatability reasoning as `dc:creator` |
 | `dc:publisher` | `item.dc?.publishers` | `string[]` | Joined with `", "` |
-| `itunes:duration` | `item.itunes?.duration` | `number` (seconds) | `String(value)` - raw seconds. A future formatter (e.g. `H:MM:SS`) is not in scope here; ship the raw value first, since no real podcast feed has been fetched yet to confirm the number is actually in seconds (feedsmith's type says `number` but the real-world value needs confirming against Testing's real feed before promising a specific format) |
+| `itunes:duration` | `item.itunes?.duration` | `number` per feedsmith's type | **Formatting TBD - see Sequencing below.** feedsmith's type declares `number`, presumably seconds, but no real podcast feed has been fetched directly (bypassing FreshRSS) to confirm. Do not assume the format; confirm against real data as the first step of implementing this row. |
 | `itunes:episode` | `item.itunes?.episode` | `number` | `String(value)` |
 | `itunes:season` | `item.itunes?.season` | `number` | `String(value)` |
 | `itunes:explicit` | `item.itunes?.explicit` | `boolean` | `String(value)` (`"true"`/`"false"`) |
@@ -96,15 +97,28 @@ One function per recognized `value` string, mirroring `resolveImageUrl`'s explic
 All nine only apply to RSS/Atom/RDF (`feedsmith`'s JSON Feed item type has neither `dc` nor
 `itunes` fields at all - no namespace concept in that format).
 
+### Sequencing: `dc:*` first, `itunes:*` gated on a real feed
+
+`dc:creator` (and its siblings) are fully validated against real feeds already fetched during
+design (see above) - nothing about their shape is speculative. `itunes:*` is not: every feed
+checked this round had it stripped by aggregation, so the exact runtime shape of `itunes:duration`
+in particular (is it really seconds? always present? ever a formatted string despite the type
+saying `number`?) is unconfirmed. Implement and ship `dc:*` first. Implement `itunes:*` as a
+distinct, later step whose first action is fetching one real podcast feed directly and inspecting
+its actual `itunes:*` output through `feedsmith` - the same "verify against real data before
+writing extraction code" discipline every other field in this project has followed - and only then
+finalize `itunes:duration`'s formatting rule in the table above. This is a sequencing note for the
+implementation plan, not a reason to defer `itunes:*` out of this spec: unlike `prism`/`slash`/`thr`
+(no candidate feed exists), a real podcast feed for this is one pick away.
+
 ### Duplicate `key` handling
 
 If a config's `mappedValues` array has two entries with the same `key`, the last one wins - the
 extraction function builds `NormalizedItem.mappedValues` by assigning into a plain object in array
 order (`result[entry.key] = ...`), so a later entry's assignment naturally overwrites an earlier
-one's. No startup error for this case, unlike the reserved-word collision above - a same-key
-duplicate is very unlikely to be a real config bug (accidentally reusing `title`/`link` as a key
-name is a bug; a bot author copy-pasting their own array and forgetting to change a `key` is a
-mistake, but not one worth failing startup over).
+one's. No startup error for this case - a same-key duplicate is a copy-paste mistake, not a bug
+worth failing startup over (unlike a reserved-placeholder-name collision, which doesn't get special
+handling either, for a different reason - see below).
 
 ### `NormalizedItem` change
 
@@ -128,12 +142,15 @@ export interface FeedSourceConfig {
 }
 ```
 
-### Config-load validation (both `app/utils/rssHandler.ts` and `fleet/feedReader.ts`)
+### Reserved placeholder names are naturally inert, not validated
 
-At startup, before any feed is polled: reject a `mappedValues` entry whose `key` collides with a
-reserved placeholder name (`title`, `link`, `description`, `georss`) with a clear error - a
-config that silently let a mapped value shadow built-in template behavior would be confusing to
-debug. This is a fail-fast startup check, not a per-item runtime check.
+A `mappedValues` entry whose `key` collides with a built-in placeholder name (`title`, `link`,
+`description`, `georss`) needs no special-case handling: `parseString` substitutes the built-in
+placeholders first, so by the time the `mappedValues` loop below runs, a literal `"$title"` no
+longer exists in the template - it was already replaced with the real title text. A colliding key
+is structurally unable to shadow anything, so no startup validation is needed for this case
+(caught during design review - the originally-drafted fail-fast check would have guarded against
+something the execution order already prevents).
 
 ### `parseString` change (both files, same shape as the `$georss` addition)
 
@@ -156,12 +173,8 @@ exactly - not `.replaceAll()`, no new behavior introduced.
   confirmed to carry `dc:creator` during design (`elpais-en`, `medias-fr`), trimmed to 2-3 entries,
   following the existing `test-fixtures/` convention. Cases: single creator, multiple creators
   (join behavior), field absent (empty-string fallback).
-- **`itunes:*`**: fixtures derived from whichever real podcast feed is hand-picked for the
-  standalone rollout test (see Rollout) - not synthesized blind, since the exact shape of a real
-  podcast feed's iTunes tags (e.g. whether `duration` is genuinely in seconds) needs confirming
-  against real data, not just feedsmith's type declaration.
-- **Reserved-key collision**: a config with `{"key": "title", "value": "dc:creator"}` must fail
-  startup with a clear error, for both `app/utils/rssHandler.ts` and `fleet/feedReader.ts`.
+- **`itunes:*`**: fixtures derived from the real podcast feed fetched per Sequencing above (not
+  synthesized blind) - the same feed used for the standalone rollout test (see Rollout).
 - **Unrecognized `value`**: a config entry with an unrecognized `value` string resolves that key to
   empty string, consistent with `imageField`'s existing "unrecognized degrades gracefully" behavior
   - not a startup error, since a not-yet-supported value shouldn't block an otherwise-valid config.
