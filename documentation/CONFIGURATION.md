@@ -312,6 +312,42 @@ it empty means no field-driven image.
 
 ---
 
+### `mappedValues`
+
+**Type:** `Array<{key: string; value: string}>`
+**Default:** `[]` (empty)
+
+**What it does:** Maps specific Dublin Core or iTunes/Podcast feed fields into new `$key`
+template placeholders, usable in `string` and `imageAlt` alongside `$title`/`$link`/`$description`/
+`$georss`.
+
+**Recognized `value` strings:**
+- `dc:creator` - item author/byline (joined with `, ` if a feed lists more than one)
+- `dc:date` - item's Dublin Core date (first value if repeated)
+- `dc:subject` - item's Dublin Core subject (joined with `, ` if more than one)
+- `dc:publisher` - item's Dublin Core publisher (joined with `, ` if more than one)
+- `itunes:duration` - podcast episode duration in seconds
+- `itunes:episode` - podcast episode number
+- `itunes:season` - podcast season number
+- `itunes:explicit` - `"true"` or `"false"`
+- `itunes:author` - podcast episode/show author
+
+**Example:**
+```json
+{
+  "string": "$title by $author",
+  "mappedValues": [{"key": "author", "value": "dc:creator"}]
+}
+```
+
+**Fallback behavior:**
+- An unrecognized `value` resolves that `$key` to an empty string - never an error
+- A `value` whose field is absent on a given item resolves to an empty string for that item
+- `mappedValues` only resolves for RSS/Atom/RDF feeds - JSON Feed has no namespace concept, so
+  every `$key` resolves to empty string there
+
+---
+
 ### `forceDescriptionEmbed`
 
 **Type:** `boolean`  

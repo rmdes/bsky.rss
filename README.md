@@ -132,6 +132,7 @@ Here's an example of the `config.json` file:
 - `dateField`: The field to use for the date of the RSS post. This can be any field that is available in the RSS feed. If not set, it will default to pubDate and/or date.
 - `publishDate`: Whether or not to use the RSS item's date for the Bluesky post's `createdAt`. When `false`, the current date is used. When `true`, the item's date is used. By default, this is set to `false`.
 - `imageField`: The field to use for fetching the image of the RSS post. This can be any field that is available in the RSS feed. If not set, the poster will fetch the Open Graph data of the URL provided by the RSS post and use the image from there.
+- `mappedValues`: Maps specific `dc:*`/`itunes:*` feed fields into new `$key` template placeholders. See [CONFIGURATION.md](documentation/CONFIGURATION.md#mappedvalues) for the full recognized-value list and examples.
 - `imageAlt`: Alt text for the uploaded image if the `embedType` is set to `image`. Can be any variable (+ string) used in the `string` configuration (e.g. `$title`).
 - `forceDescriptionEmbed`: Force the description of the embed to be the description of the RSS post (as opposed to using Open Graph data).
 - `removeDuplicate`: Instead of using the last date to track which items need to be published, use a text-based database to track duplicate items.
