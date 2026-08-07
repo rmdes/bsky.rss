@@ -10,6 +10,7 @@ export interface NormalizedItem {
   description: string | undefined;
   content: string | undefined;
   imageUrl: string | undefined;
+  geo: {lat: number; lng: number} | undefined;
 }
 
 export interface FeedSourceConfig {

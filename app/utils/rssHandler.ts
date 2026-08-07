@@ -276,6 +276,13 @@ function parseString(string: string, item: NormalizedItem, truncate: boolean) {
     parsedString = parsedString.replace('$description', description ?? '');
   }
 
+  if (string.includes('$georss')) {
+    const coords = item.geo
+      ? `https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}`
+      : '';
+    parsedString = parsedString.replace('$georss', coords);
+  }
+
   if (parsedString.length > 300 && truncate) {
     parsedString = parsedString.slice(0, 277) + '...';
   }

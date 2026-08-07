@@ -3,6 +3,15 @@ import type {DeepPartial} from 'feedsmith/types';
 import type {FeedSourceConfig, NormalizedItem, ParsedFeedResult} from './types.ts';
 import {resolveImageUrl} from './imageResolver.ts';
 
+function extractGeo(
+  point: {lat?: number; lng?: number} | undefined,
+): {lat: number; lng: number} | undefined {
+  if (typeof point?.lat === 'number' && typeof point?.lng === 'number') {
+    return {lat: point.lat, lng: point.lng};
+  }
+  return undefined;
+}
+
 function normalizeRssItem(item: DeepPartial<Rss.Item<string>>): NormalizedItem {
   return {
     id: item.guid?.value || item.link || '',
@@ -12,12 +21,19 @@ function normalizeRssItem(item: DeepPartial<Rss.Item<string>>): NormalizedItem {
     description: item.description,
     content: item.content?.encoded,
     imageUrl: undefined,
+    geo: extractGeo(item.georss?.point),
   };
 }
 
 function normalizeAtomEntry(entry: DeepPartial<Atom.Entry<string>>): NormalizedItem {
-  const link =
+  const explicitLink =
     entry.links?.find(l => !l.rel || l.rel === 'alternate')?.href ?? entry.links?.[0]?.href;
+  // Some Atom feeds (e.g. Environment and Climate Change Canada's earthquake alerts) omit <link>
+  // entirely and use <id> as the permalink instead - a valid Atom pattern. Only trust <id> as a
+  // link when it's actually a URL: other feeds (e.g. Flickr's geo feed) use tag: URIs for <id>
+  // while still providing a real <link>, so this must never override an existing link or promote
+  // a non-URL id.
+  const link = explicitLink ?? (entry.id && /^https?:\/\//.test(entry.id) ? entry.id : undefined);
   return {
     id: entry.id || link || '',
     title: entry.title,
@@ -26,6 +42,7 @@ function normalizeAtomEntry(entry: DeepPartial<Atom.Entry<string>>): NormalizedI
     description: entry.summary,
     content: entry.content,
     imageUrl: undefined,
+    geo: extractGeo(entry.georss?.point),
   };
 }
 
@@ -45,6 +62,7 @@ function normalizeJsonItem(
     // unset imageField means "no field-driven image, use Open Graph only" - the same
     // thing it means for RSS/RDF/Atom.
     imageUrl: imageField ? item.image : undefined,
+    geo: undefined,
   };
 }
 
@@ -57,6 +75,7 @@ function normalizeRdfItem(item: DeepPartial<Rdf.Item<string>>): NormalizedItem {
     description: item.description,
     content: item.content?.encoded,
     imageUrl: undefined,
+    geo: extractGeo(item.georss?.point),
   };
 }
 

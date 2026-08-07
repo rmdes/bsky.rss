@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:georss="http://www.georss.org/georss">
+  <channel>
+    <title>Sample RSS Feed With GeoRSS</title>
+    <description>A sample RSS feed carrying GeoRSS point data</description>
+    <link>https://example.com</link>
+    <item>
+      <title>Earthquake Reported Near Example Town</title>
+      <link>https://example.com/quake-1</link>
+      <description>A minor earthquake was reported near Example Town.</description>
+      <pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate>
+      <guid isPermaLink="true">https://example.com/quake-1</guid>
+      <georss:point>52.9793 -132.6194</georss:point>
+    </item>
+  </channel>
+</rss>

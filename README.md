@@ -122,6 +122,7 @@ Here's an example of the `config.json` file:
   - `$title`: The title of the RSS post
   - `$link`: The link to the RSS post
   - `$description`: The description of the RSS post
+  - `$georss`: An OpenStreetMap link built from the item's GeoRSS coordinates (`<georss:point>`), if the feed provides one. Renders as an empty string when the item has no GeoRSS point.
 - `publishEmbed`: Whether to publish the post as an embed or not. If set to `true`, the post will be published as an embed with the title, description (if available), and link to the RSS post.
 - `embedType`: Type of embed. If set to `card`, the post will be published with an Open Graph/link card. If set to `image` an image will be uploaded.
 - `languages`: The languages to set the posts to. This can be an array of `ISO 639-1` language codes. If not set, it will default to `en`.

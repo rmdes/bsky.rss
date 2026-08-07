@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `$georss` template placeholder (`config.string`/`config.imageAlt`) - renders as an OpenStreetMap link built from a feed item's `<georss:point>` coordinates, if present
+
+### Changed
+- Atom entries with no `<link>` element now fall back to `<id>` as the link, when `<id>` is a real `http(s)://` URL - fixes feeds (e.g. Environment and Climate Change Canada's earthquake alerts) that previously failed with "No link provided from RSS reader" under `publishEmbed: true` or a `$link` template
+
 ---
 
 ## [2.4.0] - 2026-08-06

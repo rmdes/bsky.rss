@@ -22,6 +22,7 @@ test('normalizeFeed maps RSS items to NormalizedItem', () => {
     description: 'This is a test article description with some <strong>HTML</strong> content.',
     content: undefined,
     imageUrl: undefined,
+    geo: undefined,
   });
 });
 
@@ -62,6 +63,7 @@ test('normalizeFeed maps Atom entries to NormalizedItem, preferring published ov
     description: 'A short summary of the first Atom entry.',
     content: 'The full content of the first Atom entry.',
     imageUrl: undefined,
+    geo: undefined,
   });
 });
 
@@ -85,6 +87,7 @@ test('normalizeFeed maps JSON Feed items to NormalizedItem, using the native ima
     description: 'A short summary of the first article.',
     content: 'The full text content of the first article.',
     imageUrl: 'https://example.com/jsonfeed/images/article-1.jpg',
+    geo: undefined,
   });
 });
 
@@ -128,5 +131,42 @@ test('normalizeFeed maps RDF items to NormalizedItem, deriving id from link', ()
     description: 'A test article in RDF/RSS 1.0 format.',
     content: undefined,
     imageUrl: undefined,
+    geo: undefined,
   });
+});
+
+test('normalizeFeed extracts georss:point into geo for an RSS item', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-with-georss.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.deepEqual(items[0]?.geo, {lat: 52.9793, lng: -132.6194});
+});
+
+test('normalizeFeed extracts georss:point into geo for an Atom entry', () => {
+  const parsed = parseRawFeed(fixture('atom/sample-feed-georss-no-link.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.deepEqual(items[0]?.geo, {lat: 47.391, lng: -70.2406});
+});
+
+test('normalizeFeed leaves geo undefined when a feed has no georss:point', () => {
+  const parsed = parseRawFeed(fixture('atom/sample-feed.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.equal(items[0]?.geo, undefined);
+});
+
+test('normalizeFeed falls back to id as link for an Atom entry with no <link> when id is a URL', () => {
+  const parsed = parseRawFeed(fixture('atom/sample-feed-georss-no-link.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.equal(items[0]?.link, 'https://example.com/geo-atom/entry-1');
+});
+
+test('normalizeFeed does not use a non-URL id as link when a real <link> already exists', () => {
+  const parsed = parseRawFeed(fixture('atom/sample-feed-georss-tag-id.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.equal(items[0]?.link, 'https://example.com/photos/1');
+  assert.equal(items[0]?.id, 'tag:example.com,2026:/photo/1');
 });

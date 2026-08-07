@@ -38,6 +38,7 @@ function normalizedItem(overrides: Partial<NormalizedItem> = {}): NormalizedItem
     description: undefined,
     content: undefined,
     imageUrl: undefined,
+    geo: undefined,
     ...overrides,
   };
 }
@@ -157,6 +158,18 @@ test('parseString cleans HTML from the title when titleClearHTML is true', () =>
   });
   const result = parseString('$title', item, false, true, false);
   assert.equal(result, 'Bold Title');
+});
+
+test('parseString substitutes $georss with an OpenStreetMap link built from geo', () => {
+  const item = normalizedItem({geo: {lat: 47.391, lng: -70.2406}});
+  const result = parseString('$georss', item, false, false, false);
+  assert.equal(result, 'https://www.openstreetmap.org/?mlat=47.391&mlon=-70.2406');
+});
+
+test('parseString substitutes $georss with an empty string when geo is absent', () => {
+  const item = normalizedItem({geo: undefined});
+  const result = parseString('Location: $georss', item, false, false, false);
+  assert.equal(result, 'Location: ');
 });
 
 test('computeDedupeKey matches what a FeedReader-computed dedupeKey should look like for a known URL', () => {
