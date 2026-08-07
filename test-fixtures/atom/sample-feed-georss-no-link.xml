@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:georss="http://www.georss.org/georss">
+  <title>Sample GeoRSS Atom Feed (No Link)</title>
+  <id>https://example.com/geo-atom</id>
+  <updated>2026-08-07T10:00:00Z</updated>
+  <entry>
+    <title>M3.2 Earthquake Near Example City</title>
+    <id>https://example.com/geo-atom/entry-1</id>
+    <published>2026-08-07T09:00:00Z</published>
+    <updated>2026-08-07T09:00:00Z</updated>
+    <summary>A magnitude 3.2 earthquake occurred near Example City.</summary>
+    <georss:point>47.391 -70.2406</georss:point>
+  </entry>
+</feed>

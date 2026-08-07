@@ -22,6 +22,7 @@ test('normalizeFeed maps RSS items to NormalizedItem', () => {
     description: 'This is a test article description with some <strong>HTML</strong> content.',
     content: undefined,
     imageUrl: undefined,
+    geo: undefined,
   });
 });
 
@@ -62,6 +63,7 @@ test('normalizeFeed maps Atom entries to NormalizedItem, preferring published ov
     description: 'A short summary of the first Atom entry.',
     content: 'The full content of the first Atom entry.',
     imageUrl: undefined,
+    geo: undefined,
   });
 });
 
@@ -85,13 +87,11 @@ test('normalizeFeed maps JSON Feed items to NormalizedItem, using the native ima
     description: 'A short summary of the first article.',
     content: 'The full text content of the first article.',
     imageUrl: 'https://example.com/jsonfeed/images/article-1.jpg',
+    geo: undefined,
   });
 });
 
 test('normalizeFeed ignores the JSON Feed native image when imageField is unset', () => {
-  // Break caught: JSON Feed's native image was used unconditionally, so a bot with
-  // imageField: "" (deliberately Open-Graph-only) still got a field-driven image -
-  // inconsistent with RSS/Atom/RDF, which resolve nothing when imageField is unset.
   const parsed = parseRawFeed(fixture('jsonfeed/sample-feed.json'));
   const items = normalizeFeed(parsed, {});
 
@@ -99,8 +99,6 @@ test('normalizeFeed ignores the JSON Feed native image when imageField is unset'
 });
 
 test('normalizeFeed resolves an Atom media:content image when imageField is "media:content"', () => {
-  // Break caught: only the RSS and RDF branches called resolveImageUrl, so an Atom
-  // feed carrying media:content silently lost its image.
   const parsed = parseRawFeed(fixture('atom/sample-feed.xml'));
   const items = normalizeFeed(parsed, {imageField: 'media:content'});
 
@@ -128,5 +126,27 @@ test('normalizeFeed maps RDF items to NormalizedItem, deriving id from link', ()
     description: 'A test article in RDF/RSS 1.0 format.',
     content: undefined,
     imageUrl: undefined,
+    geo: undefined,
   });
+});
+
+test('normalizeFeed extracts georss:point into geo for an RSS item', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-with-georss.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.deepEqual(items[0]?.geo, {lat: 52.9793, lng: -132.6194});
+});
+
+test('normalizeFeed extracts georss:point into geo for an Atom entry', () => {
+  const parsed = parseRawFeed(fixture('atom/sample-feed-georss-no-link.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.deepEqual(items[0]?.geo, {lat: 47.391, lng: -70.2406});
+});
+
+test('normalizeFeed leaves geo undefined when a feed has no georss:point', () => {
+  const parsed = parseRawFeed(fixture('atom/sample-feed.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.equal(items[0]?.geo, undefined);
 });
