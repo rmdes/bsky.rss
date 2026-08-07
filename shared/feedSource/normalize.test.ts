@@ -233,3 +233,12 @@ test('normalizeFeed leaves mappedValues empty when the config sets none', () => 
 
   assert.deepEqual(items[0]?.mappedValues, {});
 });
+
+test('normalizeFeed resolves a requested mappedValues key to empty string for JSON Feed items, not an unresolved placeholder', () => {
+  const parsed = parseRawFeed(fixture('jsonfeed/sample-feed.json'));
+  const items = normalizeFeed(parsed, {
+    mappedValues: [{key: 'author', value: 'dc:creator'}],
+  });
+
+  assert.deepEqual(items[0]?.mappedValues, {author: ''});
+});

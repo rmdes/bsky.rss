@@ -285,33 +285,6 @@ it empty means no field-driven image.
 
 ---
 
-### `imageAlt`
-
-**Type:** `string`  
-**Default:** `"$title"`  
-**Requires:** `embedType: "image"`
-
-**What it does:** Alt text for uploaded images (accessibility).
-
-**Supports variables:**
-```json
-{"imageAlt": "$title"}  // Use article title as alt text
-```
-
-**Best practices:**
-- Describe image content for screen readers
-- Keep concise (< 100 chars recommended)
-- Don't just duplicate title if image adds different info
-
-**Examples:**
-```json
-{"imageAlt": "$title"}                          // "How to Deploy Apps"
-{"imageAlt": "Featured image for $title"}       // "Featured image for How to Deploy Apps"
-{"imageAlt": "Podcast cover art"}               // Static alt text
-```
-
----
-
 ### `mappedValues`
 
 **Type:** `Array<{key: string; value: string}>`
@@ -345,6 +318,33 @@ template placeholders, usable in `string` and `imageAlt` alongside `$title`/`$li
 - A `value` whose field is absent on a given item resolves to an empty string for that item
 - `mappedValues` only resolves for RSS/Atom/RDF feeds - JSON Feed has no namespace concept, so
   every `$key` resolves to empty string there
+
+---
+
+### `imageAlt`
+
+**Type:** `string`  
+**Default:** `"$title"`  
+**Requires:** `embedType: "image"`
+
+**What it does:** Alt text for uploaded images (accessibility).
+
+**Supports variables:**
+```json
+{"imageAlt": "$title"}  // Use article title as alt text
+```
+
+**Best practices:**
+- Describe image content for screen readers
+- Keep concise (< 100 chars recommended)
+- Don't just duplicate title if image adds different info
+
+**Examples:**
+```json
+{"imageAlt": "$title"}                          // "How to Deploy Apps"
+{"imageAlt": "Featured image for $title"}       // "Featured image for How to Deploy Apps"
+{"imageAlt": "Podcast cover art"}               // Static alt text
+```
 
 ---
 

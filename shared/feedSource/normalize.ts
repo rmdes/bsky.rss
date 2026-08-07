@@ -60,6 +60,7 @@ function normalizeAtomEntry(entry: DeepPartial<Atom.Entry<string>>): NormalizedI
 function normalizeJsonItem(
   item: DeepPartial<Json.Item<string>>,
   imageField: string | undefined,
+  mappedValues: Array<{key: string; value: string}> | undefined,
 ): NormalizedItem {
   return {
     id: item.id || item.url || '',
@@ -74,7 +75,13 @@ function normalizeJsonItem(
     // thing it means for RSS/RDF/Atom.
     imageUrl: imageField ? item.image : undefined,
     geo: undefined,
-    mappedValues: {},
+    // JSON Feed has no dc/itunes namespace concept, so every requested key falls
+    // through resolveMappedValue's if-chain to '' - but the key must still be present
+    // in the map (not an empty object) so parseString's substitution loop actually
+    // touches it, instead of leaving the literal "$key" placeholder text unsubstituted
+    // in the post. Break caught: an empty object here meant Object.entries(...) never
+    // ran, so a requested $key leaked through as literal text into real posts.
+    mappedValues: resolveMappedValues({}, mappedValues),
   };
 }
 
@@ -114,7 +121,9 @@ export function normalizeFeed(
     }));
   }
   if (parsed.format === 'json') {
-    return (parsed.feed.items ?? []).map(item => normalizeJsonItem(item, config.imageField));
+    return (parsed.feed.items ?? []).map(item =>
+      normalizeJsonItem(item, config.imageField, config.mappedValues),
+    );
   }
   return (parsed.feed.items ?? []).map(item => ({
     ...normalizeRdfItem(item),
