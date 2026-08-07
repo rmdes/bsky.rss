@@ -160,6 +160,26 @@ test('parseString cleans HTML from the title when titleClearHTML is true', () =>
   assert.equal(result, 'Bold Title');
 });
 
+test('parseString substitutes $georss with an OpenStreetMap link built from geo', () => {
+  const item = normalizedItem({geo: {lat: 47.391, lng: -70.2406}});
+  const result = parseString('$georss', item, false, false, false);
+  assert.equal(result, 'https://www.openstreetmap.org/?mlat=47.391&mlon=-70.2406');
+});
+
+test('parseString substitutes $georss with an empty string when geo is absent', () => {
+  const item = normalizedItem({geo: undefined});
+  const result = parseString('Location: $georss', item, false, false, false);
+  assert.equal(result, 'Location: ');
+});
+
+test('parseString substitutes $georss inside imageAlt the same way as string', () => {
+  // config.imageAlt goes through the same parseString function as config.string - this
+  // confirms $georss works there too without any separate implementation.
+  const item = normalizedItem({geo: {lat: 34.0522, lng: -118.2437}});
+  const result = parseString('$georss', item, false, false, false);
+  assert.equal(result, 'https://www.openstreetmap.org/?mlat=34.0522&mlon=-118.2437');
+});
+
 test('computeDedupeKey matches what a FeedReader-computed dedupeKey should look like for a known URL', () => {
   // Guards the FeedReader <-> dedupeKey.ts integration contract: FeedReader must call
   // computeDedupeKey(botId, itemUrl) with the item's link, not some other string.

@@ -99,6 +99,13 @@ export function parseString(
     result = result.replace('$description', description);
   }
 
+  if (template.includes('$georss')) {
+    const coords = item.geo
+      ? `https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}`
+      : '';
+    result = result.replace('$georss', coords);
+  }
+
   if (result.length > 300 && truncate) {
     result = result.slice(0, 277) + '...';
   }
