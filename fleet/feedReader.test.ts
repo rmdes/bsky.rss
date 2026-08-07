@@ -173,6 +173,24 @@ test('parseString substitutes $georss with an empty string when geo is absent', 
   assert.equal(result, 'Location: ');
 });
 
+test('parseString substitutes a $key placeholder from mappedValues', () => {
+  const item = normalizedItem({mappedValues: {author: 'Jane Doe'}});
+  const result = parseString('By $author', item, false, false, false);
+  assert.equal(result, 'By Jane Doe');
+});
+
+test('parseString substitutes multiple $key placeholders from mappedValues', () => {
+  const item = normalizedItem({mappedValues: {author: 'Jane Doe', duration: '2416'}});
+  const result = parseString('$author - $duration seconds', item, false, false, false);
+  assert.equal(result, 'Jane Doe - 2416 seconds');
+});
+
+test('parseString leaves a template placeholder with no matching mappedValues key untouched', () => {
+  const item = normalizedItem({mappedValues: {}});
+  const result = parseString('$unmapped stays literal', item, false, false, false);
+  assert.equal(result, '$unmapped stays literal');
+});
+
 test('computeDedupeKey matches what a FeedReader-computed dedupeKey should look like for a known URL', () => {
   // Guards the FeedReader <-> dedupeKey.ts integration contract: FeedReader must call
   // computeDedupeKey(botId, itemUrl) with the item's link, not some other string.

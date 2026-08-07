@@ -18,6 +18,7 @@ export interface FeedReaderConfig {
   truncate?: boolean;
   dateField?: string;
   imageField?: string;
+  mappedValues?: Array<{key: string; value: string}>;
   imageAlt?: string;
   ogUserAgent?: string;
   descriptionClearHTML?: boolean;
@@ -106,6 +107,13 @@ export function parseString(
     result = result.replace('$georss', coords);
   }
 
+  for (const [key, value] of Object.entries(item.mappedValues)) {
+    const placeholder = `$${key}`;
+    if (result.includes(placeholder)) {
+      result = result.replace(placeholder, value);
+    }
+  }
+
   if (result.length > 300 && truncate) {
     result = result.slice(0, 277) + '...';
   }
@@ -134,7 +142,7 @@ export class FeedReader {
     this.reader = createFeedSource(
       feedUrl,
       fetchIntervalMinutes,
-      {imageField: config.imageField},
+      {imageField: config.imageField, mappedValues: config.mappedValues},
       {fetchTimeoutMs: sharedLimiters.httpTimeoutMs},
     );
   }
