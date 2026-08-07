@@ -287,7 +287,7 @@ it empty means no field-driven image.
 
 ### `mappedValues`
 
-**Type:** `Array<{key: string; value: string}>`
+**Type:** `Array<{key: string; value: string}>`  
 **Default:** `[]` (empty)
 
 **What it does:** Maps specific Dublin Core or iTunes/Podcast feed fields into new `$key`
@@ -318,6 +318,7 @@ template placeholders, usable in `string` and `imageAlt` alongside `$title`/`$li
 - A `value` whose field is absent on a given item resolves to an empty string for that item
 - `mappedValues` only resolves for RSS/Atom/RDF feeds - JSON Feed has no namespace concept, so
   every `$key` resolves to empty string there
+- A `key` must not begin with a built-in placeholder name (`title`, `link`, `description`, `georss`), and no `key` may be a prefix of another `key` in the same array - built-in and earlier substitutions run first and use unanchored text replacement, so a colliding key's placeholder can be partially or fully consumed before it's ever resolved. For example, `key: "titleSlug"` would have `$titleSlug` partially eaten by the `$title` substitution.
 
 ---
 
