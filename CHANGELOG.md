@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `$georss` now also resolves coordinates from the W3C Basic Geo namespace (`geo:lat`/`geo:long`) when a feed carries no `<georss:point>` - fixes feeds (e.g. BGS's world-earthquake RSS feed) that publish coordinates only that way. `georss:point` still wins when both are present.
+
+---
+
+## [2.5.0] - 2026-08-07
+
+**GeoRSS Support** - a `$georss` template placeholder for feeds carrying geographic coordinates
+
+### Added
 - `$georss` template placeholder (`config.string`/`config.imageAlt`) - renders as an OpenStreetMap link built from a feed item's `<georss:point>` coordinates, if present
 
 ### Changed

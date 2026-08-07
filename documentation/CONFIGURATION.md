@@ -79,7 +79,7 @@ Complete reference for all `config.json` options in bsky.rss. Each option includ
 - `$title` - Item title
 - `$link` - Item URL
 - `$description` - Item description/summary
-- `$georss` - An OpenStreetMap link built from the item's GeoRSS coordinates (`<georss:point>`), if the feed provides one. Renders as an empty string when the item has no GeoRSS point.
+- `$georss` - An OpenStreetMap link built from the item's geographic coordinates, if the feed provides any. Checks `<georss:point>` (GeoRSS Simple) first, falling back to `geo:lat`/`geo:long` (W3C Basic Geo) when a feed carries coordinates only that way. Renders as an empty string when the item has neither. GeoRSS-GML encoding (`<georss:where><gml:Point>...`) is not supported.
 
 **Examples:**
 
