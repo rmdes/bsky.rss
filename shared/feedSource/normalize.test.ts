@@ -156,6 +156,16 @@ test('normalizeFeed leaves geo undefined when a feed has no georss:point', () =>
   assert.equal(items[0]?.geo, undefined);
 });
 
+test('normalizeFeed falls back to geo:lat/geo:long when georss:point is absent', () => {
+  // Break caught: BGS's world-earthquake RSS feed carries coordinates only via the
+  // W3C Basic Geo namespace (geo:lat/geo:long), never georss:point - extractGeo only
+  // read georss:point, so $georss silently rendered empty for this real feed.
+  const parsed = parseRawFeed(fixture('rss/sample-feed-with-w3c-geo.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.deepEqual(items[0]?.geo, {lat: 32.682, lng: 130.722});
+});
+
 test('normalizeFeed falls back to id as link for an Atom entry with no <link> when id is a URL', () => {
   const parsed = parseRawFeed(fixture('atom/sample-feed-georss-no-link.xml'));
   const items = normalizeFeed(parsed, {});

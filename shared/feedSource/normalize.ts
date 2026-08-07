@@ -5,9 +5,17 @@ import {resolveImageUrl} from './imageResolver.ts';
 
 function extractGeo(
   point: {lat?: number; lng?: number} | undefined,
+  w3cGeo: {lat?: number; long?: number} | undefined,
 ): {lat: number; lng: number} | undefined {
   if (typeof point?.lat === 'number' && typeof point?.lng === 'number') {
     return {lat: point.lat, lng: point.lng};
+  }
+  // Falls back to the W3C Basic Geo namespace (geo:lat/geo:long) for feeds that carry
+  // coordinates only that way and never emit georss:point - e.g. BGS's world-earthquake
+  // RSS feed. georss:point wins when both are present, matching feeds (e.g. Flickr's)
+  // that emit both redundantly.
+  if (typeof w3cGeo?.lat === 'number' && typeof w3cGeo?.long === 'number') {
+    return {lat: w3cGeo.lat, lng: w3cGeo.long};
   }
   return undefined;
 }
@@ -21,7 +29,7 @@ function normalizeRssItem(item: DeepPartial<Rss.Item<string>>): NormalizedItem {
     description: item.description,
     content: item.content?.encoded,
     imageUrl: undefined,
-    geo: extractGeo(item.georss?.point),
+    geo: extractGeo(item.georss?.point, item.geo),
   };
 }
 
@@ -42,7 +50,7 @@ function normalizeAtomEntry(entry: DeepPartial<Atom.Entry<string>>): NormalizedI
     description: entry.summary,
     content: entry.content,
     imageUrl: undefined,
-    geo: extractGeo(entry.georss?.point),
+    geo: extractGeo(entry.georss?.point, entry.geo),
   };
 }
 
@@ -75,7 +83,8 @@ function normalizeRdfItem(item: DeepPartial<Rdf.Item<string>>): NormalizedItem {
     description: item.description,
     content: item.content?.encoded,
     imageUrl: undefined,
-    geo: extractGeo(item.georss?.point),
+    // feedsmith's Rdf.Item type has no geo (W3C Basic Geo) field - only georss.
+    geo: extractGeo(item.georss?.point, undefined),
   };
 }
 

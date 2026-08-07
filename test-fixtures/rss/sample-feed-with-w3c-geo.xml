@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:geo="http://www.w3.org/2003/01/geo/wgs84_pos#">
+  <channel>
+    <title>Sample RSS Feed With W3C Basic Geo</title>
+    <description>A sample RSS feed carrying geo:lat/geo:long but no georss:point</description>
+    <link>https://example.com</link>
+    <item>
+      <title>Earthquake Reported Near Example Region</title>
+      <link>https://example.com/quake-w3c-1</link>
+      <description>A significant earthquake was reported near Example Region.</description>
+      <pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate>
+      <guid isPermaLink="true">https://example.com/quake-w3c-1</guid>
+      <geo:lat>32.682</geo:lat>
+      <geo:long>130.722</geo:long>
+    </item>
+  </channel>
+</rss>
