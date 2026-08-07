@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Sample RSS Feed With Dublin Core</title>
+    <description>A sample RSS feed carrying dc:creator, including a multi-creator item</description>
+    <link>https://example.com</link>
+    <item>
+      <title>Why have Hollywood blockbusters become so gray?</title>
+      <link>https://english.elpais.com/culture/2026-08-07/why-have-hollywood-blockbusters-become-so-gray.html</link>
+      <description>A single-creator article.</description>
+      <pubDate>Fri, 07 Aug 2026 09:00:00 GMT</pubDate>
+      <guid isPermaLink="true">https://english.elpais.com/culture/2026-08-07/why-have-hollywood-blockbusters-become-so-gray.html</guid>
+      <dc:creator>Ianko López</dc:creator>
+    </item>
+    <item>
+      <title>Washington strikes the CJNG on all fronts</title>
+      <link>https://english.elpais.com/international/2026-08-06/washington-strikes-the-cjng-on-all-fronts.html</link>
+      <description>A two-creator article.</description>
+      <pubDate>Thu, 06 Aug 2026 09:00:00 GMT</pubDate>
+      <guid isPermaLink="true">https://english.elpais.com/international/2026-08-06/washington-strikes-the-cjng-on-all-fronts.html</guid>
+      <dc:creator>Andrés Rodríguez</dc:creator>
+      <dc:creator>Isaías Alvarado</dc:creator>
+    </item>
+    <item>
+      <title>Item with no creator</title>
+      <link>https://example.com/no-creator</link>
+      <description>An article with no dc:creator at all.</description>
+      <pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate>
+      <guid isPermaLink="true">https://example.com/no-creator</guid>
+    </item>
+  </channel>
+</rss>

@@ -11,10 +11,12 @@ export interface NormalizedItem {
   content: string | undefined;
   imageUrl: string | undefined;
   geo: {lat: number; lng: number} | undefined;
+  mappedValues: Record<string, string>;
 }
 
 export interface FeedSourceConfig {
   imageField?: string;
+  mappedValues?: Array<{key: string; value: string}>;
 }
 
 export class FeedSourceError extends Error {

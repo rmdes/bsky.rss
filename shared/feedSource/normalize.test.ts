@@ -23,6 +23,7 @@ test('normalizeFeed maps RSS items to NormalizedItem', () => {
     content: undefined,
     imageUrl: undefined,
     geo: undefined,
+    mappedValues: {},
   });
 });
 
@@ -45,8 +46,6 @@ test('normalizeFeed falls back to guid.value for id when link differs from guid'
   const parsed = parseRawFeed(fixture('rss/sample-feed.xml'));
   const items = normalizeFeed(parsed, {});
 
-  // sample-feed.xml's items use the same URL for both link and guid; this asserts
-  // the id field is genuinely sourced from guid.value, not merely copied from link.
   assert.equal(items[0]?.id, 'https://example.com/article-1');
 });
 
@@ -64,6 +63,7 @@ test('normalizeFeed maps Atom entries to NormalizedItem, preferring published ov
     content: 'The full content of the first Atom entry.',
     imageUrl: undefined,
     geo: undefined,
+    mappedValues: {},
   });
 });
 
@@ -88,13 +88,11 @@ test('normalizeFeed maps JSON Feed items to NormalizedItem, using the native ima
     content: 'The full text content of the first article.',
     imageUrl: 'https://example.com/jsonfeed/images/article-1.jpg',
     geo: undefined,
+    mappedValues: {},
   });
 });
 
 test('normalizeFeed ignores the JSON Feed native image when imageField is unset', () => {
-  // Break caught: JSON Feed's native image was used unconditionally, so a bot with
-  // imageField: "" (deliberately Open-Graph-only) still got a field-driven image -
-  // inconsistent with RSS/Atom/RDF, which resolve nothing when imageField is unset.
   const parsed = parseRawFeed(fixture('jsonfeed/sample-feed.json'));
   const items = normalizeFeed(parsed, {});
 
@@ -102,8 +100,6 @@ test('normalizeFeed ignores the JSON Feed native image when imageField is unset'
 });
 
 test('normalizeFeed resolves an Atom media:content image when imageField is "media:content"', () => {
-  // Break caught: only the RSS and RDF branches called resolveImageUrl, so an Atom
-  // feed carrying media:content silently lost its image.
   const parsed = parseRawFeed(fixture('atom/sample-feed.xml'));
   const items = normalizeFeed(parsed, {imageField: 'media:content'});
 
@@ -132,6 +128,7 @@ test('normalizeFeed maps RDF items to NormalizedItem, deriving id from link', ()
     content: undefined,
     imageUrl: undefined,
     geo: undefined,
+    mappedValues: {},
   });
 });
 
@@ -157,9 +154,6 @@ test('normalizeFeed leaves geo undefined when a feed has no georss:point', () =>
 });
 
 test('normalizeFeed falls back to geo:lat/geo:long when georss:point is absent', () => {
-  // Break caught: BGS's world-earthquake RSS feed carries coordinates only via the
-  // W3C Basic Geo namespace (geo:lat/geo:long), never georss:point - extractGeo only
-  // read georss:point, so $georss silently rendered empty for this real feed.
   const parsed = parseRawFeed(fixture('rss/sample-feed-with-w3c-geo.xml'));
   const items = normalizeFeed(parsed, {});
 
@@ -179,4 +173,63 @@ test('normalizeFeed does not use a non-URL id as link when a real <link> already
 
   assert.equal(items[0]?.link, 'https://example.com/photos/1');
   assert.equal(items[0]?.id, 'tag:example.com,2026:/photo/1');
+});
+
+test('normalizeFeed resolves dc:creator for a single-creator RSS item', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-with-dc.xml'));
+  const items = normalizeFeed(parsed, {mappedValues: [{key: 'author', value: 'dc:creator'}]});
+
+  assert.equal(items[0]?.mappedValues.author, 'Ianko López');
+});
+
+test('normalizeFeed joins multiple dc:creator values with ", "', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-with-dc.xml'));
+  const items = normalizeFeed(parsed, {mappedValues: [{key: 'author', value: 'dc:creator'}]});
+
+  assert.equal(items[1]?.mappedValues.author, 'Andrés Rodríguez, Isaías Alvarado');
+});
+
+test('normalizeFeed resolves dc:creator to empty string when the item has no creator', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-with-dc.xml'));
+  const items = normalizeFeed(parsed, {mappedValues: [{key: 'author', value: 'dc:creator'}]});
+
+  assert.equal(items[2]?.mappedValues.author, '');
+});
+
+test('normalizeFeed resolves itunes:duration and itunes:explicit for a real podcast item', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-podcast.xml'));
+  const items = normalizeFeed(parsed, {
+    mappedValues: [
+      {key: 'duration', value: 'itunes:duration'},
+      {key: 'explicit', value: 'itunes:explicit'},
+    ],
+  });
+
+  assert.equal(items[0]?.mappedValues.duration, '2416');
+  assert.equal(items[0]?.mappedValues.explicit, 'false');
+});
+
+test('normalizeFeed resolves mappedValues to empty string for an item missing every requested field', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-podcast.xml'));
+  const items = normalizeFeed(parsed, {
+    mappedValues: [{key: 'duration', value: 'itunes:duration'}],
+  });
+
+  assert.equal(items[1]?.mappedValues.duration, '');
+});
+
+test('normalizeFeed resolves an unrecognized mappedValues entry to empty string', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-with-dc.xml'));
+  const items = normalizeFeed(parsed, {
+    mappedValues: [{key: 'unknown', value: 'nope:not-a-real-field'}],
+  });
+
+  assert.equal(items[0]?.mappedValues.unknown, '');
+});
+
+test('normalizeFeed leaves mappedValues empty when the config sets none', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-with-dc.xml'));
+  const items = normalizeFeed(parsed, {});
+
+  assert.deepEqual(items[0]?.mappedValues, {});
 });

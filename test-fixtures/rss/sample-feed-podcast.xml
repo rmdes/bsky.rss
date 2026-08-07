@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Sample Podcast Feed</title>
+    <description>A sample RSS feed carrying real itunes:* fields</description>
+    <link>https://example.com</link>
+    <itunes:author>Sample Network</itunes:author>
+    <item>
+      <title>Sand heists and property rights in the Caribbean (Summer School)</title>
+      <link>https://www.npr.org/2026/08/05/nx-s1-5913981/summer-school-caribbean-property-rights-sand-heist</link>
+      <description>A real podcast episode.</description>
+      <pubDate>Tue, 05 Aug 2026 09:00:00 GMT</pubDate>
+      <guid isPermaLink="false">08584965-fc01-4cb2-bc20-65c8f85576f0</guid>
+      <itunes:duration>2416</itunes:duration>
+      <itunes:explicit>no</itunes:explicit>
+      <itunes:episodeType>full</itunes:episodeType>
+    </item>
+    <item>
+      <title>Item with no itunes fields</title>
+      <link>https://example.com/no-itunes</link>
+      <description>An episode with no itunes:* tags at all.</description>
+      <pubDate>Mon, 04 Aug 2026 09:00:00 GMT</pubDate>
+      <guid isPermaLink="true">https://example.com/no-itunes</guid>
+    </item>
+  </channel>
+</rss>

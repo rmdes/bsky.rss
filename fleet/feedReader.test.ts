@@ -39,6 +39,7 @@ function normalizedItem(overrides: Partial<NormalizedItem> = {}): NormalizedItem
     content: undefined,
     imageUrl: undefined,
     geo: undefined,
+    mappedValues: {},
     ...overrides,
   };
 }

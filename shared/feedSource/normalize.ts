@@ -2,6 +2,7 @@ import type {Atom, Json, Rdf, Rss} from 'feedsmith/types';
 import type {DeepPartial} from 'feedsmith/types';
 import type {FeedSourceConfig, NormalizedItem, ParsedFeedResult} from './types.ts';
 import {resolveImageUrl} from './imageResolver.ts';
+import {resolveMappedValues} from './mappedValues.ts';
 
 function extractGeo(
   point: {lat?: number; lng?: number} | undefined,
@@ -30,6 +31,7 @@ function normalizeRssItem(item: DeepPartial<Rss.Item<string>>): NormalizedItem {
     content: item.content?.encoded,
     imageUrl: undefined,
     geo: extractGeo(item.georss?.point, item.geo),
+    mappedValues: {},
   };
 }
 
@@ -51,6 +53,7 @@ function normalizeAtomEntry(entry: DeepPartial<Atom.Entry<string>>): NormalizedI
     content: entry.content,
     imageUrl: undefined,
     geo: extractGeo(entry.georss?.point, entry.geo),
+    mappedValues: {},
   };
 }
 
@@ -71,6 +74,7 @@ function normalizeJsonItem(
     // thing it means for RSS/RDF/Atom.
     imageUrl: imageField ? item.image : undefined,
     geo: undefined,
+    mappedValues: {},
   };
 }
 
@@ -85,6 +89,7 @@ function normalizeRdfItem(item: DeepPartial<Rdf.Item<string>>): NormalizedItem {
     imageUrl: undefined,
     // feedsmith's Rdf.Item type has no geo (W3C Basic Geo) field - only georss.
     geo: extractGeo(item.georss?.point, undefined),
+    mappedValues: {},
   };
 }
 
@@ -96,6 +101,7 @@ export function normalizeFeed(
     return (parsed.feed.items ?? []).map(item => ({
       ...normalizeRssItem(item),
       imageUrl: resolveImageUrl(item, config.imageField),
+      mappedValues: resolveMappedValues(item, config.mappedValues),
     }));
   }
   if (parsed.format === 'atom') {
@@ -104,6 +110,7 @@ export function normalizeFeed(
     return (parsed.feed.entries ?? []).map(entry => ({
       ...normalizeAtomEntry(entry),
       imageUrl: resolveImageUrl(entry, config.imageField),
+      mappedValues: resolveMappedValues(entry, config.mappedValues),
     }));
   }
   if (parsed.format === 'json') {
@@ -112,5 +119,6 @@ export function normalizeFeed(
   return (parsed.feed.items ?? []).map(item => ({
     ...normalizeRdfItem(item),
     imageUrl: resolveImageUrl(item, config.imageField),
+    mappedValues: resolveMappedValues(item, config.mappedValues),
   }));
 }
