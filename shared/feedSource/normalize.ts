@@ -33,8 +33,7 @@ function normalizeAtomEntry(entry: DeepPartial<Atom.Entry<string>>): NormalizedI
   // link when it's actually a URL: other feeds (e.g. Flickr's geo feed) use tag: URIs for <id>
   // while still providing a real <link>, so this must never override an existing link or promote
   // a non-URL id.
-  const link =
-    explicitLink ?? (entry.id && /^https?:\/\//.test(entry.id) ? entry.id : undefined);
+  const link = explicitLink ?? (entry.id && /^https?:\/\//.test(entry.id) ? entry.id : undefined);
   return {
     id: entry.id || link || '',
     title: entry.title,

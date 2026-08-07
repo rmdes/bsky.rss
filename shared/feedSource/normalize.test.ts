@@ -92,6 +92,9 @@ test('normalizeFeed maps JSON Feed items to NormalizedItem, using the native ima
 });
 
 test('normalizeFeed ignores the JSON Feed native image when imageField is unset', () => {
+  // Break caught: JSON Feed's native image was used unconditionally, so a bot with
+  // imageField: "" (deliberately Open-Graph-only) still got a field-driven image -
+  // inconsistent with RSS/Atom/RDF, which resolve nothing when imageField is unset.
   const parsed = parseRawFeed(fixture('jsonfeed/sample-feed.json'));
   const items = normalizeFeed(parsed, {});
 
@@ -99,6 +102,8 @@ test('normalizeFeed ignores the JSON Feed native image when imageField is unset'
 });
 
 test('normalizeFeed resolves an Atom media:content image when imageField is "media:content"', () => {
+  // Break caught: only the RSS and RDF branches called resolveImageUrl, so an Atom
+  // feed carrying media:content silently lost its image.
   const parsed = parseRawFeed(fixture('atom/sample-feed.xml'));
   const items = normalizeFeed(parsed, {imageField: 'media:content'});
 
