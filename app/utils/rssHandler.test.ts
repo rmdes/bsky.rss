@@ -776,6 +776,76 @@ describe('rssHandler', () => {
         `expected all 3 items queued exactly once each, got: ${JSON.stringify(queued.map(item => item.title))}`,
       );
     });
+
+    it('substitutes $georss with an OpenStreetMap link built from georss:point', async () => {
+      const feedBody =
+        '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:georss="http://www.georss.org/georss">' +
+        '<title>T</title><id>https://example.com/geo-atom</id>' +
+        '<updated>2026-08-07T10:00:00Z</updated>' +
+        '<entry><title>Quake</title><id>https://example.com/geo-atom/entry-1</id>' +
+        '<published>2026-08-07T09:00:00Z</published><updated>2026-08-07T09:00:00Z</updated>' +
+        '<georss:point>47.391 -70.2406</georss:point></entry>' +
+        '</feed>';
+
+      const server = createServer((_req, res) => {
+        res.writeHead(200, {'Content-Type': 'application/atom+xml'});
+        res.end(feedBody);
+      });
+      await new Promise<void>(resolve => server.listen(0, resolve));
+      const port = (server.address() as {port: number}).port;
+
+      fs.writeFileSync(
+        path.join(TEST_DATA_DIR, 'config.json'),
+        JSON.stringify({
+          string: '$title $georss',
+          publishEmbed: false,
+          languages: ['en'],
+          truncate: true,
+          runInterval: 60,
+          dateField: '',
+          imageField: '',
+          ogUserAgent: 'bsky.rss/test',
+          removeDuplicate: false,
+        }),
+        'utf8',
+      );
+
+      const lastPath = path.join(TEST_DATA_DIR, 'last.txt');
+      const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
+      fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
+
+      const queueHandler = require('./queueHandler').default;
+      const realWriteQueue = queueHandler.writeQueue;
+      const queued: {content: string}[] = [];
+      queueHandler.writeQueue = async (item: {content: string}) => {
+        queued.push(item);
+      };
+
+      delete require.cache[require.resolve('./rssHandler')];
+      const rssHandler = require('./rssHandler').default;
+
+      try {
+        const reader = await rssHandler.init({
+          fetch_interval: 60,
+          fetch_url: new URL(`http://127.0.0.1:${port}/feed.xml`),
+        });
+        await rssHandler.start();
+        await new Promise(resolve => setTimeout(resolve, 300));
+        reader.stop();
+      } finally {
+        queueHandler.writeQueue = realWriteQueue;
+        if (savedLast === null) fs.rmSync(lastPath, {force: true});
+        else fs.writeFileSync(lastPath, savedLast, 'utf8');
+        server.close();
+      }
+
+      assert.strictEqual(queued.length, 1);
+      assert.strictEqual(
+        queued[0]?.content,
+        'Quake https://www.openstreetmap.org/?mlat=47.391&mlon=-70.2406',
+      );
+    });
   });
 
   describe('User agent configuration', () => {
