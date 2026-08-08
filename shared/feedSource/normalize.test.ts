@@ -217,6 +217,60 @@ test('normalizeFeed resolves itunes:duration and itunes:explicit for a real podc
   assert.equal(items[0]?.mappedValues.explicit, 'false');
 });
 
+test('normalizeFeed resolves dc:date for an RSS item', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-with-dc.xml'));
+  const items = normalizeFeed(parsed, {mappedValues: [{key: 'date', value: 'dc:date'}]});
+
+  assert.equal(items[0]?.mappedValues.date, '2026-08-07T09:00:00Z');
+});
+
+test('normalizeFeed resolves dc:subject for an RSS item', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-with-dc.xml'));
+  const items = normalizeFeed(parsed, {mappedValues: [{key: 'subject', value: 'dc:subject'}]});
+
+  assert.equal(items[0]?.mappedValues.subject, 'Film');
+});
+
+test('normalizeFeed resolves dc:publisher for an RSS item', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-with-dc.xml'));
+  const items = normalizeFeed(parsed, {mappedValues: [{key: 'publisher', value: 'dc:publisher'}]});
+
+  assert.equal(items[0]?.mappedValues.publisher, 'EL PAÍS English');
+});
+
+test('normalizeFeed resolves itunes:episode for a real podcast item', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-podcast.xml'));
+  const items = normalizeFeed(parsed, {
+    mappedValues: [{key: 'episode', value: 'itunes:episode'}],
+  });
+
+  assert.equal(items[0]?.mappedValues.episode, '7');
+});
+
+test('normalizeFeed resolves itunes:season for a real podcast item', () => {
+  const parsed = parseRawFeed(fixture('rss/sample-feed-podcast.xml'));
+  const items = normalizeFeed(parsed, {
+    mappedValues: [{key: 'season', value: 'itunes:season'}],
+  });
+
+  assert.equal(items[0]?.mappedValues.season, '2026');
+});
+
+test('normalizeFeed resolves itunes:author to empty string for an item-level-only lookup against a channel-level-only fixture', () => {
+  // Confirmed: resolveMappedValue's itunes:author branch reads item.itunes?.author
+  // (item-level only), it does not fall back to the channel/show-level
+  // <itunes:author>. This fixture's real-world structure carries <itunes:author> at
+  // the channel level only (a common podcast feed pattern) and not on the item, so
+  // mapping itunes:author against it must resolve to '' - proving the documented
+  // item-level-only behavior, not silently reading the channel value instead.
+  const parsed = parseRawFeed(fixture('rss/sample-feed-podcast.xml'));
+  const items = normalizeFeed(parsed, {
+    mappedValues: [{key: 'author', value: 'itunes:author'}],
+  });
+
+  assert.equal(items[0]?.mappedValues.author, '');
+});
+
 test('normalizeFeed resolves mappedValues to empty string for an item missing every requested field', () => {
   const parsed = parseRawFeed(fixture('rss/sample-feed-podcast.xml'));
   const items = normalizeFeed(parsed, {

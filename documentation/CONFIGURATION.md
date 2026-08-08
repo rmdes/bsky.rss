@@ -303,7 +303,10 @@ template placeholders, usable in `string` and `imageAlt` alongside `$title`/`$li
 - `itunes:episode` - podcast episode number
 - `itunes:season` - podcast season number
 - `itunes:explicit` - `"true"` or `"false"`
-- `itunes:author` - podcast episode/show author
+- `itunes:author` - the item-level `<itunes:author>` element only (per-episode author, e.g. a guest
+  host credit). Does **not** fall back to the channel/show-level `<itunes:author>` - if an episode
+  doesn't repeat the show's `<itunes:author>` at the item level (a common pattern, since podcast feeds
+  often declare it once at the channel level), this resolves to an empty string for that item.
 
 **Example:**
 ```json
