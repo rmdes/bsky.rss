@@ -282,6 +282,36 @@ describe('rssHandler', () => {
       assert.equal(result.text.length, 280);
       assert.deepEqual(result.facets, [{byteStart: 0, byteEnd: 5, uri: 'https://example.com/1'}]);
     });
+
+    test('parseString computes correct facet byte offsets when a bare placeholder precedes a bracket span', () => {
+      const rssHandler = require('./rssHandler').default;
+      const {parseString} = rssHandler;
+
+      const item = {
+        id: '1', title: 'A much longer title than the placeholder', link: 'https://x.com',
+        date: '2026-08-08T00:00:00Z', description: undefined, content: undefined,
+        imageUrl: undefined, geo: undefined, mappedValues: {},
+      };
+      const result = parseString('$title - [text]($link)', item, false);
+      assert.equal(result.text, 'A much longer title than the placeholder - text');
+      const bytes = Buffer.from(result.text, 'utf8');
+      const facetText = bytes.slice(result.facets[0].byteStart, result.facets[0].byteEnd).toString('utf8');
+      assert.equal(facetText, 'text');
+    });
+
+    test('parseString does not throw or corrupt when resolved feed content inside a bracket happens to contain a $-shaped substring', () => {
+      const rssHandler = require('./rssHandler').default;
+      const {parseString} = rssHandler;
+
+      const item = {
+        id: '1', title: undefined, link: 'https://x.com',
+        date: '2026-08-08T00:00:00Z', description: 'Remember to set $title in your config', content: undefined,
+        imageUrl: undefined, geo: undefined, mappedValues: {},
+      };
+      const result = parseString('[$description]($link)', item, false);
+      assert.equal(result.text, 'Remember to set $title in your config');
+      assert.deepEqual(result.facets, [{byteStart: 0, byteEnd: 37, uri: 'https://x.com'}]);
+    });
   });
 
   describe('HTML tag removal', () => {

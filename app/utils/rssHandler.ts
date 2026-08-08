@@ -6,7 +6,7 @@ import og from 'open-graph-scraper';
 import {decode} from 'html-entities';
 import {createFeedSource} from '../../shared/feedSource/index.ts';
 import type {FeedSource, NormalizedItem} from '../../shared/feedSource/index.ts';
-import {resolveMarkdownLinks} from '../../shared/feedSource/markdownLinks.ts';
+import {extractMarkdownLinks, finalizeMarkdownLinks} from '../../shared/feedSource/markdownLinks.ts';
 
 let reader: FeedSource | null = null;
 let lastDate: string = '';
@@ -283,19 +283,21 @@ function parseString(string: string, item: NormalizedItem, truncate: boolean) {
     return Object.hasOwn(item.mappedValues, key) ? item.mappedValues[key] : undefined;
   }
 
-  const markdownResolved = resolveMarkdownLinks(string, resolveToken);
-  result.facets = markdownResolved.facets;
-  let parsedString = markdownResolved.text;
-  const templateForPresenceChecks = markdownResolved.text;
+  const extracted = extractMarkdownLinks(string, resolveToken);
+  let parsedString = extracted.text;
+  const templateForPresenceChecks = extracted.text;
 
   // Runs before $title/$link/$description/$georss (which all splice arbitrary
-  // feed-supplied content into parsedString) and guards against `string` (the
-  // original template), not `parsedString` - otherwise feed content that
+  // feed-supplied content into parsedString) and guards against `templateForPresenceChecks`
+  // (the marker-bearing carrier text from extractMarkdownLinks, not the original raw
+  // template but not yet feed-content-spliced either) - otherwise feed content that
   // happens to literally contain a "$key"-shaped substring (e.g. a
   // $description value containing "$author") could get mistaken for a real
   // mappedValues placeholder and substituted, corrupting the feed content and
   // potentially leaving the operator's real placeholder elsewhere in the
-  // template unsubstituted.
+  // template unsubstituted. Bracket-consumed placeholders were already replaced with
+  // opaque markers in extractMarkdownLinks, so this text can never contain a literal
+  // "$title"-shaped substring from resolved feed content sitting inside a bracket span.
   for (const [key, value] of Object.entries(item.mappedValues).sort(
     (a, b) => b[0].length - a[0].length,
   )) {
@@ -333,6 +335,10 @@ function parseString(string: string, item: NormalizedItem, truncate: boolean) {
       : '';
     parsedString = parsedString.replace('$georss', coords);
   }
+
+  const finalized = finalizeMarkdownLinks(parsedString, extracted.pending);
+  parsedString = finalized.text;
+  result.facets = finalized.facets;
 
   if (parsedString.length > 300 && truncate) {
     const truncated = parsedString.slice(0, 277) + '...';

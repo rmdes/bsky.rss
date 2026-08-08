@@ -9,6 +9,7 @@ import {
 let bskyAgent: BskyAgent | null;
 import {XRPCError, ResponseType} from '@atproto/xrpc';
 import db from './dbHandler';
+import type {MarkdownFacet} from '../../shared/feedSource/markdownLinks.ts';
 
 async function init(service: string) {
   if (bskyAgent) throw new Error('Bluesky agent already initialized.');
@@ -60,7 +61,7 @@ async function post({
   embed?: Embed;
   languages?: string[];
   date?: Date;
-  facets?: Array<{byteStart: number; byteEnd: number; uri: string}>;
+  facets?: MarkdownFacet[];
 }): Promise<{uri: string; cid: string} | {ratelimit: true; retryAfter?: number}> {
   if (!bskyAgent) throw new Error('Bluesky agent not initialized.');
 
