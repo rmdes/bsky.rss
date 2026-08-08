@@ -6,6 +6,7 @@ import {selectEligibleItems, isStillFresh, FreshnessConfig} from './freshnessPol
 import type {QueueItemRow} from './botStore.ts';
 import {BotOperations, type BotOperationalSnapshot} from './botOperations.ts';
 import {FleetLogger, formatDebugError} from './logging.ts';
+import type {MarkdownFacet} from '../shared/feedSource/markdownLinks.ts';
 
 export interface BotWorkerOptions {
   botId: string;
@@ -86,6 +87,7 @@ export class BotWorker {
       content: item.content,
       embedJson: item.embed ? JSON.stringify(item.embed) : null,
       languagesJson: item.languages ? JSON.stringify(item.languages) : null,
+      facetsJson: item.facets.length > 0 ? JSON.stringify(item.facets) : null,
       itemDate: item.itemDate,
       dedupeKey: item.dedupeKey,
     });
@@ -155,6 +157,7 @@ export class BotWorker {
         }
 
         const embed = await this.resolveEmbed(row);
+        const facets: MarkdownFacet[] = row.facetsJson ? JSON.parse(row.facetsJson) : [];
 
         let result;
         try {
@@ -163,6 +166,7 @@ export class BotWorker {
             languages: row.languagesJson ? JSON.parse(row.languagesJson) : undefined,
             rkey: row.dedupeKey,
             embed,
+            facets,
           });
         } catch (err) {
           this.options.operations.recordPostException();

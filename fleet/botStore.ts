@@ -8,6 +8,7 @@ export interface QueueItemRow {
   content: string;
   embedJson: string | null;
   languagesJson: string | null;
+  facetsJson: string | null;
   itemDate: string;
   dedupeKey: string;
   status: 'queued' | 'publishing' | 'published' | 'skipped' | 'failed';
@@ -44,6 +45,7 @@ export class BotStore {
         content TEXT NOT NULL,
         embed_json TEXT,
         languages_json TEXT,
+        facets_json TEXT,
         item_date TEXT NOT NULL,
         dedupe_key TEXT NOT NULL UNIQUE,
         status TEXT NOT NULL DEFAULT 'queued',
@@ -51,6 +53,22 @@ export class BotStore {
         published_at TEXT
       );
     `);
+    this.migrateFacetsColumn();
+  }
+
+  // CREATE TABLE IF NOT EXISTS above only takes effect for brand-new databases - it is a
+  // no-op against any of the 60 already-deployed bot databases, which were created before
+  // facets_json existed. SQLite's ADD COLUMN is safe on a live table (nullable, no data
+  // loss, existing rows read back NULL) - this must run every startup, idempotently, since
+  // there is no schema-version tracking in this file to gate a one-time migration on.
+  private migrateFacetsColumn(): void {
+    const columns = this.db.prepare('PRAGMA table_info(queue_items)').all() as Array<{
+      name: string;
+    }>;
+    const hasFacetsColumn = columns.some(col => col.name === 'facets_json');
+    if (!hasFacetsColumn) {
+      this.db.exec('ALTER TABLE queue_items ADD COLUMN facets_json TEXT');
+    }
   }
 
   writeSession(data: unknown): void {
@@ -115,20 +133,22 @@ export class BotStore {
     content: string;
     embedJson: string | null;
     languagesJson: string | null;
+    facetsJson: string | null;
     itemDate: string;
     dedupeKey: string;
   }): number {
     const now = new Date().toISOString();
     const result = this.db
       .prepare(
-        `INSERT OR IGNORE INTO queue_items (title, content, embed_json, languages_json, item_date, dedupe_key, status, enqueued_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)`,
+        `INSERT OR IGNORE INTO queue_items (title, content, embed_json, languages_json, facets_json, item_date, dedupe_key, status, enqueued_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
       )
       .run(
         item.title,
         item.content,
         item.embedJson,
         item.languagesJson,
+        item.facetsJson,
         item.itemDate,
         item.dedupeKey,
         now,
@@ -145,6 +165,7 @@ export class BotStore {
     return this.db
       .prepare(
         `SELECT id, title, content, embed_json as embedJson, languages_json as languagesJson,
+                facets_json as facetsJson,
                 item_date as itemDate, dedupe_key as dedupeKey, status, enqueued_at as enqueuedAt, published_at as publishedAt
          FROM queue_items WHERE status = 'queued' ORDER BY item_date ASC`,
       )

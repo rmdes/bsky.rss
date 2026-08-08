@@ -10,6 +10,7 @@ function row(overrides: Partial<QueueItemRow>): QueueItemRow {
     content: 'c',
     embedJson: null,
     languagesJson: null,
+    facetsJson: null,
     itemDate: '2026-01-01T00:00:00.000Z',
     dedupeKey: 'k',
     status: 'queued',

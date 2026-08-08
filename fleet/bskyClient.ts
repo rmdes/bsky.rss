@@ -1,8 +1,16 @@
 import {createHash} from 'node:crypto';
-import {BskyAgent, RichText, AtpSessionEvent, AtpSessionData, AppBskyFeedPost} from '@atproto/api';
+import {
+  BskyAgent,
+  RichText,
+  AtpSessionEvent,
+  AtpSessionData,
+  AppBskyFeedPost,
+  type Facet,
+} from '@atproto/api';
 import {XRPCError, ResponseType} from '@atproto/xrpc';
 import {BotStore} from './botStore.ts';
 import {FleetLogger, formatDebugError} from './logging.ts';
+import {buildFacets, type MarkdownFacet} from '../shared/feedSource/markdownLinks.ts';
 
 const TID_CHARSET = '234567abcdefghijklmnopqrstuvwxyz';
 const TID_FIRST_CHAR_CHARSET = '234567abcdefghij';
@@ -161,19 +169,27 @@ export class BskyClient {
     date?: Date;
     rkey: string;
     embed?: ResolvedEmbed;
+    facets?: MarkdownFacet[];
   }): Promise<PostResult> {
     if (this.dryRun) {
       this.logger.verbose('POST', `[dry-run] would publish: ${params.content}`, this.botId);
       return {ok: true, uri: 'dry-run://noop'};
     }
 
-    const richText = new RichText({text: params.content});
+    const autoDetect = new RichText({text: params.content});
     const facetStartedAt = Date.now();
     try {
-      await richText.detectFacets(this.agent);
+      await autoDetect.detectFacets(this.agent);
     } finally {
       this.logDuration('Facet detection', facetStartedAt);
     }
+
+    // buildFacets drops any auto-detected facet that overlaps a hand-built markdown-link
+    // one, so the two sources can never ship as nested/duplicate facets in the same record.
+    const richText = new RichText({
+      text: params.content,
+      facets: buildFacets(params.facets ?? [], autoDetect.facets) as unknown as Facet[],
+    });
 
     let uploadedBlob: unknown;
     if (params.embed?.image) {

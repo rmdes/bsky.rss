@@ -18,6 +18,7 @@
 - `$title`/`$link` used inside `[text](url)` syntax preserve the exact same "throw if the item has no title/link" behavior as bare `$title`/`$link` usage today - this is an existing, deliberate fail-loud contract for those two placeholders specifically (distinct from `$georss`/`mappedValues`' existing graceful-empty-string behavior), and markdown-link syntax must not silently change that for a template that happens to use brackets.
 - Existing 300-char truncation in `parseString` continues running after markdown-link resolution, unchanged position. Any facet whose `byteEnd` exceeds the truncated string's UTF-8 byte length is dropped entirely, never emitted with a dangling out-of-range `byteEnd`.
 - `fleet/botStore.ts`'s `queue_items` SQLite table already exists on 60 live production bots. `CREATE TABLE IF NOT EXISTS` has no effect on already-created tables - adding a column requires an explicit, idempotent `ALTER TABLE ... ADD COLUMN` migration step that checks `PRAGMA table_info` first, or every existing bot's database silently never gains the new column.
+- **Superseded during Task 2's review (read before starting any task below):** `shared/feedSource/markdownLinks.ts` is a two-phase API, not the single `resolveMarkdownLinks()` function described in earlier drafts of this plan. `extractMarkdownLinks(template, resolve)` replaces bracket spans in the raw template with opaque markers and defers facet computation; `finalizeMarkdownLinks(text, pending)` runs *after* all other placeholder substitution completes, replacing markers and computing byte offsets against the final string. A single-pass design computes facet offsets before later substitutions mutate the string's length, staling every facet positioned after the mutation point - confirmed as a real, reproducible bug during Task 2's review, not a theoretical concern. Every task below already reflects this corrected design.
 
 ---
 
@@ -849,6 +850,33 @@ test('parseString drops a facet entirely when truncation cuts into its byte rang
   assert.equal(result.text.length, 280);
   assert.deepEqual(result.facets, []);
 });
+
+test('parseString computes correct facet byte offsets when a bare placeholder precedes a bracket span', () => {
+  // Regression test for a real bug found and fixed in Task 2's rssHandler.ts equivalent:
+  // a single-pass resolver computed facet offsets before the bare-placeholder loop below
+  // it mutated the string's length further, staling every facet positioned after it.
+  const item = {
+    id: '1', title: 'A much longer title than the placeholder', link: 'https://x.com',
+    date: '2026-08-08T00:00:00Z', description: undefined, content: undefined,
+    imageUrl: undefined, geo: undefined, mappedValues: {},
+  };
+  const result = parseString('$title - [text]($link)', item, false, false, false);
+  assert.equal(result.text, 'A much longer title than the placeholder - text');
+  const bytes = Buffer.from(result.text, 'utf8');
+  const facetText = bytes.slice(result.facets[0].byteStart, result.facets[0].byteEnd).toString('utf8');
+  assert.equal(facetText, 'text');
+});
+
+test('parseString does not throw or corrupt when resolved feed content inside a bracket happens to contain a $-shaped substring', () => {
+  const item = {
+    id: '1', title: undefined, link: 'https://x.com',
+    date: '2026-08-08T00:00:00Z', description: 'Remember to set $title in your config', content: undefined,
+    imageUrl: undefined, geo: undefined, mappedValues: {},
+  };
+  const result = parseString('[$description]($link)', item, false, false, false);
+  assert.equal(result.text, 'Remember to set $title in your config');
+  assert.deepEqual(result.facets, [{byteStart: 0, byteEnd: 37, uri: 'https://x.com'}]);
+});
 ```
 
 - [ ] **Step 6: Run tests to verify they fail**
@@ -858,13 +886,15 @@ Expected: FAIL - `parseString` still returns a plain `string`, not `{text, facet
 
 - [ ] **Step 7: Update `fleet/feedReader.ts`**
 
+**Correction (post-Task-2 review):** Task 2's review found that a single-pass `resolveMarkdownLinks()` computes facet byte offsets too early — before the bare-placeholder substitution loop below it mutates the string's length further, staling every facet positioned after the mutation. The fix replaced it with a two-phase API in `shared/feedSource/markdownLinks.ts`: `extractMarkdownLinks(template, resolve)` (Phase 1 — replaces each bracket span in the raw template with an opaque marker, deferring facet computation) and `finalizeMarkdownLinks(text, pending)` (Phase 2 — run *after* all other substitution completes, replaces markers with resolved display text and computes byte offsets against the now-final string). The code below already reflects this corrected, actually-shipped design — do not use a single `resolveMarkdownLinks` call, that function no longer exists.
+
 Add the import:
 
 ```typescript
-import {resolveMarkdownLinks, type MarkdownFacet} from '../shared/feedSource/markdownLinks.ts';
+import {extractMarkdownLinks, finalizeMarkdownLinks, type MarkdownFacet} from '../shared/feedSource/markdownLinks.ts';
 ```
 
-Change `parseString`'s return type and body (same resolver logic as Task 2's `rssHandler.ts`, adapted to this file's parameter-based `titleClearHTML`/`descriptionClearHTML` instead of module-level `config`):
+Change `parseString`'s return type and body (same resolver logic and two-phase ordering as Task 2's `rssHandler.ts`, adapted to this file's parameter-based `titleClearHTML`/`descriptionClearHTML` instead of module-level `config`):
 
 ```typescript
 export function parseString(
@@ -897,11 +927,14 @@ export function parseString(
     return Object.hasOwn(item.mappedValues, key) ? item.mappedValues[key] : undefined;
   }
 
-  const markdownResolved = resolveMarkdownLinks(template, resolveToken);
-  let result = markdownResolved.text;
-  const templateForPresenceChecks = markdownResolved.text;
-  let facets = markdownResolved.facets;
+  const extracted = extractMarkdownLinks(template, resolveToken);
+  let result = extracted.text;
+  const templateForPresenceChecks = extracted.text;
 
+  // Guards against templateForPresenceChecks (the marker-bearing carrier text from
+  // extractMarkdownLinks), not the original raw template - bracket-consumed placeholders
+  // were already replaced with opaque markers, so this text can never contain a literal
+  // "$key"-shaped substring from resolved feed content sitting inside a bracket span.
   for (const [key, value] of Object.entries(item.mappedValues).sort(
     (a, b) => b[0].length - a[0].length,
   )) {
@@ -936,6 +969,10 @@ export function parseString(
       : '';
     result = result.replace('$georss', coords);
   }
+
+  const finalized = finalizeMarkdownLinks(result, extracted.pending);
+  result = finalized.text;
+  let facets = finalized.facets;
 
   if (result.length > 300 && truncate) {
     const truncated = result.slice(0, 277) + '...';

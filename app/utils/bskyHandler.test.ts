@@ -302,4 +302,114 @@ describe('bskyHandler', () => {
       assert(agent !== null);
     });
   });
+
+  describe('post() facet merging', () => {
+    it('constructing RichText with pre-merged facets keeps both sources, not just one', () => {
+      // Guards the exact risk this task fixes: RichText.detectFacets() overwrites
+      // this.facets entirely (confirmed in @atproto/api's own source), so post() must never
+      // call detectFacets() on a RichText that already carries hand-built markdown-link
+      // facets. This test exercises the real RichText constructor's documented contract
+      // (pass facets in, they're kept) without needing a live agent.
+      const {RichText} = require('@atproto/api');
+      const markdownFacets = [
+        {
+          index: {byteStart: 0, byteEnd: 6},
+          features: [{$type: 'app.bsky.richtext.facet#link', uri: 'https://example.com/report'}],
+        },
+      ];
+      const autoDetectedFacets = [
+        {
+          index: {byteStart: 7, byteEnd: 12},
+          features: [{$type: 'app.bsky.richtext.facet#tag', tag: 'news'}],
+        },
+      ];
+
+      const richText = new RichText({
+        text: 'Report #news',
+        facets: [...markdownFacets, ...autoDetectedFacets],
+      });
+
+      assert.equal(richText.facets?.length, 2);
+      assert.deepEqual(richText.facets?.[0]?.index, {byteStart: 0, byteEnd: 6});
+      assert.deepEqual(richText.facets?.[1]?.index, {byteStart: 7, byteEnd: 12});
+    });
+
+    it('post() merges hand-built facets with auto-detected ones end-to-end, via buildFacets', async () => {
+      // Proves post() actually calls buildFacets and produces the deduped result, not just
+      // that RichText's constructor can hold both - mocks agent.post to capture the real
+      // record without a live network call, following this file's established pattern.
+      delete require.cache[require.resolve('./bskyHandler')];
+      const bskyHandler = require('./bskyHandler').default;
+      const agent = await bskyHandler.init('https://bsky.social');
+
+      let capturedRecord:
+        | {
+            facets: Array<{
+              index: {byteStart: number; byteEnd: number};
+              features: Array<{$type: string; tag?: string}>;
+            }>;
+          }
+        | undefined;
+      agent.post = async (record: typeof capturedRecord) => {
+        capturedRecord = record;
+        return {uri: 'at://did:plc:test/app.bsky.feed.post/abc', cid: 'bafycid'};
+      };
+
+      const result = await bskyHandler.post({
+        content: 'Report #news',
+        facets: [{byteStart: 0, byteEnd: 6, uri: 'https://example.com/report'}],
+      });
+
+      assert.deepStrictEqual(result, {
+        uri: 'at://did:plc:test/app.bsky.feed.post/abc',
+        cid: 'bafycid',
+      });
+      assert.strictEqual(capturedRecord!.facets.length, 2);
+      const linkFacet = capturedRecord!.facets.find(
+        f => f.features[0]?.$type === 'app.bsky.richtext.facet#link',
+      );
+      assert.deepStrictEqual(linkFacet?.index, {byteStart: 0, byteEnd: 6});
+      const tagFacet = capturedRecord!.facets.find(
+        f => f.features[0]?.$type === 'app.bsky.richtext.facet#tag',
+      );
+      assert.strictEqual(tagFacet?.features[0]?.tag, 'news');
+    });
+
+    it('post() drops an auto-detected facet that overlaps a hand-built markdown-link facet, end-to-end', async () => {
+      // Regression test for Finding 3: a [text](url) span's display text that happens to
+      // contain a bare URL (e.g. [$title]($link) where the title itself has a raw link) was
+      // independently rediscovered by detectFacets() as a second, overlapping facet.
+      delete require.cache[require.resolve('./bskyHandler')];
+      const bskyHandler = require('./bskyHandler').default;
+      const agent = await bskyHandler.init('https://bsky.social');
+
+      let capturedRecord:
+        | {
+            facets: Array<{
+              index: {byteStart: number; byteEnd: number};
+              features: Array<{$type: string; uri?: string}>;
+            }>;
+          }
+        | undefined;
+      agent.post = async (record: typeof capturedRecord) => {
+        capturedRecord = record;
+        return {uri: 'at://did:plc:test/app.bsky.feed.post/xyz', cid: 'bafycid'};
+      };
+
+      const content = 'Visit https://overlap.example now';
+      const facetByteEnd = Buffer.byteLength(content, 'utf8');
+
+      await bskyHandler.post({
+        content,
+        facets: [{byteStart: 0, byteEnd: facetByteEnd, uri: 'https://example.com/whole'}],
+      });
+
+      assert.strictEqual(capturedRecord!.facets.length, 1);
+      assert.deepStrictEqual(capturedRecord!.facets[0]?.index, {
+        byteStart: 0,
+        byteEnd: facetByteEnd,
+      });
+      assert.strictEqual(capturedRecord!.facets[0]?.features[0]?.uri, 'https://example.com/whole');
+    });
+  });
 });

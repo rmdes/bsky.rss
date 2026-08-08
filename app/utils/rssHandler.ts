@@ -6,6 +6,10 @@ import og from 'open-graph-scraper';
 import {decode} from 'html-entities';
 import {createFeedSource} from '../../shared/feedSource/index.ts';
 import type {FeedSource, NormalizedItem} from '../../shared/feedSource/index.ts';
+import {
+  extractMarkdownLinks,
+  finalizeMarkdownLinks,
+} from '../../shared/feedSource/markdownLinks.ts';
 
 let reader: FeedSource | null = null;
 let lastDate: string = '';
@@ -220,6 +224,7 @@ async function handleItem(item: NormalizedItem): Promise<void> {
     embed: config.publishEmbed ? embed : undefined,
     languages: config.languages ? config.languages : undefined,
     date: useDate,
+    facets: parsed.facets,
   });
 
   // Track the newest queued date in this batch; committed into lastDate once the whole
@@ -249,33 +254,68 @@ export default {
   start,
   init,
   launch,
+  parseString,
 };
 
 function parseString(string: string, item: NormalizedItem, truncate: boolean) {
   const result: ParseResult = {
     text: '',
+    facets: [],
   };
 
-  let parsedString = string;
+  function resolveToken(token: string): string | undefined {
+    if (token === '$title') {
+      if (!item.title) throw new Error('No title provided from RSS reader.');
+      return config.titleClearHTML ? decodeHTML(removeHTMLTags(item.title)) : item.title;
+    }
+    if (token === '$link') {
+      if (!item.link) throw new Error('No link provided from RSS reader.');
+      return item.link;
+    }
+    if (token === '$description') {
+      let description = item.description ? item.description : item.content;
+      if (config.descriptionClearHTML && description) description = removeHTMLTags(description);
+      return description;
+    }
+    if (token === '$georss') {
+      // '' rather than undefined, matching the bare-substitution path below: an
+      // undefined return leaves the literal "$georss" text behind when this token is used
+      // as bracket DISPLAY text (resolve(token) ?? token) instead of vanishing like the
+      // ungeotagged bare-$georss case does. An empty string still fails the URL-side
+      // http(s):// check, so url-side usage ([Map]($georss)) keeps degrading correctly.
+      return item.geo
+        ? `https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}`
+        : '';
+    }
+    const key = token.slice(1);
+    return Object.hasOwn(item.mappedValues, key) ? item.mappedValues[key] : undefined;
+  }
+
+  const extracted = extractMarkdownLinks(string, resolveToken);
+  let parsedString = extracted.text;
+  const templateForPresenceChecks = extracted.text;
 
   // Runs before $title/$link/$description/$georss (which all splice arbitrary
-  // feed-supplied content into parsedString) and guards against `string` (the
-  // original template), not `parsedString` - otherwise feed content that
+  // feed-supplied content into parsedString) and guards against `templateForPresenceChecks`
+  // (the marker-bearing carrier text from extractMarkdownLinks, not the original raw
+  // template but not yet feed-content-spliced either) - otherwise feed content that
   // happens to literally contain a "$key"-shaped substring (e.g. a
   // $description value containing "$author") could get mistaken for a real
   // mappedValues placeholder and substituted, corrupting the feed content and
   // potentially leaving the operator's real placeholder elsewhere in the
-  // template unsubstituted.
+  // template unsubstituted. Bracket-consumed placeholders were already replaced with
+  // opaque markers in extractMarkdownLinks, so this text can never contain a literal
+  // "$title"-shaped substring from resolved feed content sitting inside a bracket span.
   for (const [key, value] of Object.entries(item.mappedValues).sort(
     (a, b) => b[0].length - a[0].length,
   )) {
     const placeholder = `$${key}`;
-    if (string.includes(placeholder)) {
+    if (templateForPresenceChecks.includes(placeholder)) {
       parsedString = parsedString.replace(placeholder, value);
     }
   }
 
-  if (string.includes('$title')) {
+  if (templateForPresenceChecks.includes('$title')) {
     if (!item.title) throw new Error('No title provided from RSS reader.');
 
     if (config.titleClearHTML) {
@@ -285,27 +325,37 @@ function parseString(string: string, item: NormalizedItem, truncate: boolean) {
     }
   }
 
-  if (string.includes('$link')) {
+  if (templateForPresenceChecks.includes('$link')) {
     if (!item.link) throw new Error('No link provided from RSS reader.');
     parsedString = parsedString.replace('$link', item.link);
   }
 
   let description = item.description ? item.description : item.content;
 
-  if (string.includes('$description')) {
+  if (templateForPresenceChecks.includes('$description')) {
     if (config.descriptionClearHTML && description) description = removeHTMLTags(description);
     parsedString = parsedString.replace('$description', description ?? '');
   }
 
-  if (string.includes('$georss')) {
+  if (templateForPresenceChecks.includes('$georss')) {
     const coords = item.geo
       ? `https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}`
       : '';
     parsedString = parsedString.replace('$georss', coords);
   }
 
+  const finalized = finalizeMarkdownLinks(parsedString, extracted.pending);
+  parsedString = finalized.text;
+  result.facets = finalized.facets;
+
   if (parsedString.length > 300 && truncate) {
-    parsedString = parsedString.slice(0, 277) + '...';
+    // Measure the byte length of the KEPT text only, before '...' is appended - measuring
+    // after appending it would let a facet whose byteEnd lands in the ellipsis's own 3
+    // bytes survive, covering part of "..." as if it were still clickable link text.
+    const kept = parsedString.slice(0, 277);
+    const keptByteLength = Buffer.byteLength(kept, 'utf8');
+    result.facets = result.facets.filter(facet => facet.byteEnd <= keptByteLength);
+    parsedString = kept + '...';
   }
   result.text = parsedString;
   return result;

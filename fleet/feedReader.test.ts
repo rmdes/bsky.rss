@@ -133,22 +133,22 @@ test('parseString substitutes $title, $link, $description', () => {
     description: 'My description',
   });
   const result = parseString('$title - $link ($description)', item, false, false, false);
-  assert.equal(result, 'My Title - https://example.com/post (My description)');
+  assert.equal(result.text, 'My Title - https://example.com/post (My description)');
 });
 
 test('parseString truncates past 300 chars to 280 chars when truncate is true', () => {
   const longTitle = 'x'.repeat(400);
   const item = normalizedItem({title: longTitle, link: 'https://example.com', description: ''});
   const result = parseString('$title', item, true, false, false);
-  assert.equal(result.length, 280);
-  assert.ok(result.endsWith('...'));
+  assert.equal(result.text.length, 280);
+  assert.ok(result.text.endsWith('...'));
 });
 
 test('parseString does not truncate when truncate is false', () => {
   const longTitle = 'x'.repeat(400);
   const item = normalizedItem({title: longTitle, link: 'https://example.com', description: ''});
   const result = parseString('$title', item, false, false, false);
-  assert.equal(result.length, 400);
+  assert.equal(result.text.length, 400);
 });
 
 test('parseString cleans HTML from the title when titleClearHTML is true', () => {
@@ -158,37 +158,37 @@ test('parseString cleans HTML from the title when titleClearHTML is true', () =>
     description: '',
   });
   const result = parseString('$title', item, false, true, false);
-  assert.equal(result, 'Bold Title');
+  assert.equal(result.text, 'Bold Title');
 });
 
 test('parseString substitutes $georss with an OpenStreetMap link built from geo', () => {
   const item = normalizedItem({geo: {lat: 47.391, lng: -70.2406}});
   const result = parseString('$georss', item, false, false, false);
-  assert.equal(result, 'https://www.openstreetmap.org/?mlat=47.391&mlon=-70.2406');
+  assert.equal(result.text, 'https://www.openstreetmap.org/?mlat=47.391&mlon=-70.2406');
 });
 
 test('parseString substitutes $georss with an empty string when geo is absent', () => {
   const item = normalizedItem({geo: undefined});
   const result = parseString('Location: $georss', item, false, false, false);
-  assert.equal(result, 'Location: ');
+  assert.equal(result.text, 'Location: ');
 });
 
 test('parseString substitutes a $key placeholder from mappedValues', () => {
   const item = normalizedItem({mappedValues: {author: 'Jane Doe'}});
   const result = parseString('By $author', item, false, false, false);
-  assert.equal(result, 'By Jane Doe');
+  assert.equal(result.text, 'By Jane Doe');
 });
 
 test('parseString substitutes multiple $key placeholders from mappedValues', () => {
   const item = normalizedItem({mappedValues: {author: 'Jane Doe', duration: '2416'}});
   const result = parseString('$author - $duration seconds', item, false, false, false);
-  assert.equal(result, 'Jane Doe - 2416 seconds');
+  assert.equal(result.text, 'Jane Doe - 2416 seconds');
 });
 
 test('parseString leaves a template placeholder with no matching mappedValues key untouched', () => {
   const item = normalizedItem({mappedValues: {}});
   const result = parseString('$unmapped stays literal', item, false, false, false);
-  assert.equal(result, '$unmapped stays literal');
+  assert.equal(result.text, '$unmapped stays literal');
 });
 
 test('parseString substitutes $authorName correctly even when the shorter "author" key is declared first', () => {
@@ -202,7 +202,7 @@ test('parseString substitutes $authorName correctly even when the shorter "autho
     mappedValues: {author: 'Jane', authorName: 'Jane Smith'},
   });
   const result = parseString('By $authorName', item, false, false, false);
-  assert.equal(result, 'By Jane Smith');
+  assert.equal(result.text, 'By Jane Smith');
 });
 
 test('parseString substitutes $authorName correctly when it is declared before the shorter "author" key', () => {
@@ -210,7 +210,7 @@ test('parseString substitutes $authorName correctly when it is declared before t
     mappedValues: {authorName: 'Jane Smith', author: 'Jane'},
   });
   const result = parseString('By $authorName', item, false, false, false);
-  assert.equal(result, 'By Jane Smith');
+  assert.equal(result.text, 'By Jane Smith');
 });
 
 test('parseString does not let the mappedValues loop touch a $key-shaped placeholder leaked from feed content', () => {
@@ -226,7 +226,7 @@ test('parseString does not let the mappedValues loop touch a $key-shaped placeho
     mappedValues: {author: 'Real Author'},
   });
   const result = parseString('$description | $author', item, false, false, false);
-  assert.equal(result, 'buy now $author | Real Author');
+  assert.equal(result.text, 'buy now $author | Real Author');
 });
 
 test('parseString leaves a $key-shaped substring inside feed content untouched when the operator never declared that placeholder in the template', () => {
@@ -235,7 +235,161 @@ test('parseString leaves a $key-shaped substring inside feed content untouched w
     mappedValues: {author: 'Real Author'},
   });
   const result = parseString('$description', item, false, false, false);
-  assert.equal(result, 'buy now $author');
+  assert.equal(result.text, 'buy now $author');
+});
+
+test('parseString resolves [$title]($link) into text plus a facet with correct byte offsets', () => {
+  const item = {
+    id: '1',
+    title: 'Breaking',
+    link: 'https://example.com/1',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
+  };
+  const result = parseString('[$title]($link)', item, false, false, false);
+  assert.equal(result.text, 'Breaking');
+  assert.deepEqual(result.facets, [{byteStart: 0, byteEnd: 8, uri: 'https://example.com/1'}]);
+});
+
+test('parseString throws when [$title](...) is used but the item has no title, matching bare $title', () => {
+  const item = {
+    id: '1',
+    title: undefined,
+    link: 'https://example.com/1',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
+  };
+  assert.throws(
+    () => parseString('[$title]($link)', item, false, false, false),
+    /No title provided/,
+  );
+});
+
+test('parseString returns an empty facets array for a template with no bracket syntax', () => {
+  const item = {
+    id: '1',
+    title: 'T',
+    link: 'https://example.com/1',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
+  };
+  const result = parseString('$title - $link', item, false, false, false);
+  assert.equal(result.text, 'T - https://example.com/1');
+  assert.deepEqual(result.facets, []);
+});
+
+test('parseString drops a facet entirely when truncation cuts into its byte range', () => {
+  const longTitle = 'x'.repeat(320);
+  const item = {
+    id: '1',
+    title: longTitle,
+    link: 'https://example.com/1',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
+  };
+  const result = parseString('[$title]($link)', item, true, false, false);
+  assert.equal(result.text.length, 280);
+  assert.deepEqual(result.facets, []);
+});
+
+test('parseString drops a facet whose byteEnd lands just past the 277-byte cutoff instead of letting it survive covering part of the appended ellipsis', () => {
+  // Regression test for Finding 1: computing the truncation byte-length ceiling on the
+  // string that ALREADY has '...' appended let a facet whose byteEnd fell 1-3 bytes past
+  // the real 277-byte cutoff survive, ending up covering the appended ellipsis. Facet
+  // here spans bytes [270, 279) - 2 bytes past the cutoff.
+  const item = {
+    id: '1',
+    title: undefined,
+    link: 'https://example.com/1',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
+  };
+  const template = 'y'.repeat(270) + '[CLICKHERE]($link)' + 'z'.repeat(100);
+  const result = parseString(template, item, true, false, false);
+  assert.equal(result.text.length, 280);
+  assert.ok(result.text.endsWith('...'));
+  assert.deepEqual(result.facets, []); // byteEnd 279 > 277-byte cutoff - dropped, not partially retained
+});
+
+test('parseString computes correct facet byte offsets when a bare placeholder precedes a bracket span', () => {
+  // Regression test for a real bug found and fixed in Task 2's rssHandler.ts equivalent:
+  // a single-pass resolver computed facet offsets before the bare-placeholder loop below
+  // it mutated the string's length further, staling every facet positioned after it.
+  const item = {
+    id: '1',
+    title: 'A much longer title than the placeholder',
+    link: 'https://x.com',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
+  };
+  const result = parseString('$title - [text]($link)', item, false, false, false);
+  assert.equal(result.text, 'A much longer title than the placeholder - text');
+  const bytes = Buffer.from(result.text, 'utf8');
+  const facetText = bytes
+    .slice(result.facets[0]!.byteStart, result.facets[0]!.byteEnd)
+    .toString('utf8');
+  assert.equal(facetText, 'text');
+});
+
+test('parseString resolves [$georss](...) used as DISPLAY text to an empty, vanished span on a geo-less item, not the literal string "$georss"', () => {
+  // Regression test for Finding 5: the bracket-resolver closure returned undefined for
+  // $georss with no geo data, so resolve(token) ?? token left the literal text "$georss"
+  // behind. The bare substitution path already correctly used '' for this same case.
+  const item = {
+    id: '1',
+    title: 'T',
+    link: 'https://example.com/1',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
+  };
+  const result = parseString('before [$georss]($link) after', item, false, false, false);
+  assert.equal(result.text, 'before  after');
+  assert.deepEqual(result.facets, []);
+});
+
+test('parseString does not throw or corrupt when resolved feed content inside a bracket happens to contain a $-shaped substring', () => {
+  const item = {
+    id: '1',
+    title: undefined,
+    link: 'https://x.com',
+    date: '2026-08-08T00:00:00Z',
+    description: 'Remember to set $title in your config',
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
+  };
+  const result = parseString('[$description]($link)', item, false, false, false);
+  assert.equal(result.text, 'Remember to set $title in your config');
+  assert.deepEqual(result.facets, [{byteStart: 0, byteEnd: 37, uri: 'https://x.com'}]);
 });
 
 test('computeDedupeKey matches what a FeedReader-computed dedupeKey should look like for a known URL', () => {
@@ -608,6 +762,7 @@ test('a successful Open Graph fetch records success', async t => {
     {
       title: 'RSS title',
       content: 'RSS title',
+      facets: [],
       embed: {
         uri: 'https://example.test/canonical',
         title: 'Open Graph title',

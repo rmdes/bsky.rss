@@ -17,8 +17,11 @@ class FakeFeedReader {
   }
   start(): void {}
   stop(): void {}
-  emit(item: ParsedItem): void {
-    this.handler?.(item);
+  // Most fixtures here don't care about markdown-link facets - defaulting facets to []
+  // when a test doesn't supply it keeps those ~25 call sites unchanged instead of forcing
+  // an irrelevant `facets: []` onto every one of them.
+  emit(item: Omit<ParsedItem, 'facets'> & Partial<Pick<ParsedItem, 'facets'>>): void {
+    this.handler?.({facets: [], ...item});
   }
   async resolveEmbedImage(imageUrl: string): Promise<Buffer | undefined> {
     this.resolvedImageUrls.push(imageUrl);
@@ -50,6 +53,7 @@ class FakeBotStore {
     content: string;
     embedJson: string | null;
     languagesJson: string | null;
+    facetsJson: string | null;
     itemDate: string;
     dedupeKey: string;
   }): number {

@@ -5,10 +5,12 @@ import {
   AtpSessionData,
   ComAtprotoRepoUploadBlob,
   AppBskyFeedPost,
+  type Facet,
 } from '@atproto/api';
 let bskyAgent: BskyAgent | null;
 import {XRPCError, ResponseType} from '@atproto/xrpc';
 import db from './dbHandler';
+import {buildFacets, type MarkdownFacet} from '../../shared/feedSource/markdownLinks.ts';
 
 async function init(service: string) {
   if (bskyAgent) throw new Error('Bluesky agent already initialized.');
@@ -54,16 +56,27 @@ async function post({
   embed,
   languages,
   date,
+  facets,
 }: {
   content: string;
   embed?: Embed;
   languages?: string[];
   date?: Date;
+  facets?: MarkdownFacet[];
 }): Promise<{uri: string; cid: string} | {ratelimit: true; retryAfter?: number}> {
   if (!bskyAgent) throw new Error('Bluesky agent not initialized.');
 
-  const bskyText = new RichText({text: content});
-  await bskyText.detectFacets(bskyAgent);
+  const autoDetect = new RichText({text: content});
+  await autoDetect.detectFacets(bskyAgent);
+
+  const bskyText = new RichText({
+    text: content,
+    // RichText's constructor sorts these on assignment (rich-text.ts:159-161) - no manual
+    // sort needed here. buildFacets also drops any auto-detected facet that overlaps a
+    // hand-built markdown-link one, so the two sources can never ship as nested/duplicate
+    // facets in the same record.
+    facets: buildFacets(facets ?? [], autoDetect.facets) as unknown as Facet[],
+  });
 
   let embedImage: ComAtprotoRepoUploadBlob.Response | {ratelimit: true} | null = null;
   if (embed && embed.image) {

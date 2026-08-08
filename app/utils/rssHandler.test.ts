@@ -1,4 +1,4 @@
-import {describe, it, beforeEach} from 'node:test';
+import {describe, it, test, beforeEach} from 'node:test';
 import assert from 'node:assert';
 import fs from 'fs';
 import path from 'path';
@@ -158,6 +158,226 @@ describe('rssHandler', () => {
 
       assert.strictEqual(result, shortText);
       assert(!result.endsWith('...'));
+    });
+  });
+
+  describe('Markdown link syntax in parseString', () => {
+    test('parseString throws when [$title](...) is used but the item has no title, matching bare $title', () => {
+      const rssHandler = require('./rssHandler').default;
+      const {parseString} = rssHandler;
+
+      const item = {
+        id: '1',
+        title: undefined,
+        link: 'https://example.com/1',
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+      assert.throws(
+        () => parseString('[$title]($link)', item, false),
+        /No title provided from RSS reader/,
+      );
+    });
+
+    test('parseString resolves [text]($georss) to plain text with no facet when the item has no geo data', () => {
+      const rssHandler = require('./rssHandler').default;
+      const {parseString} = rssHandler;
+
+      const item = {
+        id: '1',
+        title: 'T',
+        link: 'https://example.com/1',
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+      const result = parseString('[Map]($georss)', item, false);
+      assert.equal(result.text, 'Map');
+      assert.deepEqual(result.facets, []);
+    });
+
+    test('parseString resolves [$title]($link) to a real facet with correct byte offsets', () => {
+      const rssHandler = require('./rssHandler').default;
+      const {parseString} = rssHandler;
+
+      const item = {
+        id: '1',
+        title: 'Breaking',
+        link: 'https://example.com/1',
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+      const result = parseString('[$title]($link)', item, false);
+      assert.equal(result.text, 'Breaking');
+      assert.deepEqual(result.facets, [{byteStart: 0, byteEnd: 8, uri: 'https://example.com/1'}]);
+    });
+
+    test('parseString leaves bracket-free templates and their facets array empty, unchanged from today', () => {
+      const rssHandler = require('./rssHandler').default;
+      const {parseString} = rssHandler;
+
+      const item = {
+        id: '1',
+        title: 'Breaking',
+        link: 'https://example.com/1',
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+      const result = parseString('$title - $link', item, false);
+      assert.equal(result.text, 'Breaking - https://example.com/1');
+      assert.deepEqual(result.facets, []);
+    });
+
+    test('parseString drops a facet entirely when truncation cuts into its byte range, instead of emitting a corrupted byteEnd', () => {
+      const rssHandler = require('./rssHandler').default;
+      const {parseString} = rssHandler;
+
+      const longTitle = 'x'.repeat(320); // resolved display text alone exceeds the 300-char truncate threshold
+      const item = {
+        id: '1',
+        title: longTitle,
+        link: 'https://example.com/1',
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+      const result = parseString('[$title]($link)', item, true);
+      assert.equal(result.text.length, 280); // 277 + '...'
+      assert.deepEqual(result.facets, []); // the one facet's byteEnd (320) exceeds the truncated length (280) - dropped
+    });
+
+    test('parseString keeps a facet that fits entirely within the truncated text', () => {
+      const rssHandler = require('./rssHandler').default;
+      const {parseString} = rssHandler;
+
+      const item = {
+        id: '1',
+        title: 'Short',
+        link: 'https://example.com/1',
+        date: '2026-08-08T00:00:00Z',
+        description: 'y'.repeat(300),
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+      // The [text](url) facet is near the start, well within the 277-byte truncation boundary,
+      // even though the overall post gets truncated because of the long trailing $description.
+      const result = parseString('[$title]($link) $description', item, true);
+      assert.equal(result.text.length, 280);
+      assert.deepEqual(result.facets, [{byteStart: 0, byteEnd: 5, uri: 'https://example.com/1'}]);
+    });
+
+    test('parseString computes correct facet byte offsets when a bare placeholder precedes a bracket span', () => {
+      const rssHandler = require('./rssHandler').default;
+      const {parseString} = rssHandler;
+
+      const item = {
+        id: '1',
+        title: 'A much longer title than the placeholder',
+        link: 'https://x.com',
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+      const result = parseString('$title - [text]($link)', item, false);
+      assert.equal(result.text, 'A much longer title than the placeholder - text');
+      const bytes = Buffer.from(result.text, 'utf8');
+      const facetText = bytes
+        .slice(result.facets[0].byteStart, result.facets[0].byteEnd)
+        .toString('utf8');
+      assert.equal(facetText, 'text');
+    });
+
+    test('parseString drops a facet whose byteEnd lands just past the 277-byte cutoff instead of letting it survive covering part of the appended ellipsis', () => {
+      // Regression test for Finding 1: computing the truncation byte-length ceiling on
+      // the string that ALREADY has '...' appended let a facet whose byteEnd fell 1-3
+      // bytes past the real 277-byte cutoff survive, ending up covering the appended
+      // ellipsis. Facet here spans bytes [270, 279) - 2 bytes past the cutoff.
+      const rssHandler = require('./rssHandler').default;
+      const {parseString} = rssHandler;
+
+      const item = {
+        id: '1',
+        title: undefined,
+        link: 'https://example.com/1',
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+      const template = 'y'.repeat(270) + '[CLICKHERE]($link)' + 'z'.repeat(100);
+      const result = parseString(template, item, true);
+      assert.equal(result.text.length, 280);
+      assert.ok(result.text.endsWith('...'));
+      assert.deepEqual(result.facets, []); // byteEnd 279 > 277-byte cutoff - dropped, not partially retained
+    });
+
+    test('parseString resolves [$georss](...) used as DISPLAY text to an empty, vanished span on a geo-less item, not the literal string "$georss"', () => {
+      // Regression test for Finding 5: the bracket-resolver closure returned undefined
+      // for $georss with no geo data, so resolve(token) ?? token left the literal text
+      // "$georss" behind. The bare substitution path already correctly used '' for this
+      // same case.
+      const rssHandler = require('./rssHandler').default;
+      const {parseString} = rssHandler;
+
+      const item = {
+        id: '1',
+        title: 'T',
+        link: 'https://example.com/1',
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+      const result = parseString('before [$georss]($link) after', item, false);
+      assert.equal(result.text, 'before  after');
+      assert.deepEqual(result.facets, []);
+    });
+
+    test('parseString does not throw or corrupt when resolved feed content inside a bracket happens to contain a $-shaped substring', () => {
+      const rssHandler = require('./rssHandler').default;
+      const {parseString} = rssHandler;
+
+      const item = {
+        id: '1',
+        title: undefined,
+        link: 'https://x.com',
+        date: '2026-08-08T00:00:00Z',
+        description: 'Remember to set $title in your config',
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+      const result = parseString('[$description]($link)', item, false);
+      assert.equal(result.text, 'Remember to set $title in your config');
+      assert.deepEqual(result.facets, [{byteStart: 0, byteEnd: 37, uri: 'https://x.com'}]);
     });
   });
 
