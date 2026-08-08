@@ -2,6 +2,7 @@ import {describe, it, before, after, beforeEach} from 'node:test';
 import assert from 'node:assert';
 import fs from 'fs';
 import path from 'path';
+import healthHandler from './healthHandler';
 
 /**
  * Tests for queueHandler module
@@ -220,6 +221,37 @@ describe('queueHandler', () => {
     // Note: Cannot test start() directly in unit tests because it creates
     // an interval that would cause tests to hang. The interval-based queue
     // processing is better tested in integration/E2E tests.
+  });
+
+  describe('runQueue() health activity tracking', () => {
+    it('updates health activity even when the queue is empty', async () => {
+      // Break: health.updateActivity() was only reachable after the
+      // queueSnapshot.length === 0 early return, so a tick that found
+      // nothing new to post never refreshed activity - a perfectly healthy,
+      // idle bot (the normal case for most feeds) flips /health to 503
+      // after 10 minutes of silence with no new items.
+      // Monkey-patched instead of routed through the real HTTP server:
+      // healthHandler is a singleton also driven by healthHandler.test.ts,
+      // and starting/stopping the same server from two test files races.
+      const queueHandler = require('./queueHandler').default;
+      let updateActivityCalled = false;
+      const original = healthHandler.updateActivity;
+      healthHandler.updateActivity = () => {
+        updateActivityCalled = true;
+      };
+
+      try {
+        await queueHandler.runQueue();
+      } finally {
+        healthHandler.updateActivity = original;
+      }
+
+      assert.strictEqual(
+        updateActivityCalled,
+        true,
+        'runQueue() with an empty queue should still call health.updateActivity()',
+      );
+    });
   });
 
   describe('Adaptive spacing calculations', () => {

@@ -57,6 +57,10 @@ async function createLimitTimer(timeoutSeconds: number = 30) {
 
 async function runQueue() {
   if (queueRunning) return;
+  // Marks activity on every tick, not just ticks that find something to post -
+  // an idle bot (no new items, the normal case for most feeds) is still alive
+  // and functioning, so it must not go stale and start failing health checks.
+  health.updateActivity();
   queueSnapshot = [...queue];
   if (queueSnapshot.length === 0) return queueSnapshot;
   console.log(
@@ -64,7 +68,6 @@ async function runQueue() {
       queueSnapshot.length
     } items`,
   );
-  health.updateActivity();
   if (rateLimited) return {ratelimit: true};
   if (queueSnapshot.length > 0) {
     queueRunning = true;
@@ -105,6 +108,13 @@ async function runQueue() {
         );
         void db.writeDate(new Date(item.date));
         lastPostTimestamp = Date.now();
+        // A large backlog drains inside this same runQueue() call, holding
+        // queueRunning true for the whole drain - later setInterval ticks
+        // bail out immediately (see the guard above) without ever reaching
+        // the top-of-function updateActivity() call, so a long drain must
+        // refresh activity here too or it goes stale mid-drain despite
+        // actively posting.
+        health.updateActivity();
         if (config.adaptiveSpacing && queueSnapshot.length > 0) {
           const remaining = queueSnapshot.length;
           const delaySec = computeDelay(remaining + 1);
@@ -157,4 +167,4 @@ function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export default {writeQueue, start};
+export default {writeQueue, start, runQueue};
