@@ -146,16 +146,16 @@ await bskyText.detectFacets(bskyAgent);
 ```
 
 New code: run auto-detection on a throwaway `RichText` over the same final content, then construct
-the real `RichText` with both facet sources merged and sorted:
+the real `RichText` with both facet sources merged. No manual sort needed - the `RichText`
+constructor already sorts (and filters negative-length) facets whenever `facets` is passed in
+(`rich-text.ts:159-161`, using the identical `byteStart` comparator):
 
 ```typescript
 const autoDetect = new RichText({text: content});
 await autoDetect.detectFacets(bskyAgent);
 const bskyText = new RichText({
   text: content,
-  facets: [...markdownFacets, ...(autoDetect.facets ?? [])].sort(
-    (a, b) => a.index.byteStart - b.index.byteStart,
-  ),
+  facets: [...markdownFacets, ...(autoDetect.facets ?? [])],
 });
 ```
 
