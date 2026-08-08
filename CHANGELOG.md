@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.2] - 2026-08-08
+
+### Fixed
+- Single-bot mode's `/health` endpoint no longer reports `503 unhealthy` after 10 minutes of
+  legitimate quiet (no new feed items) - activity is now refreshed on every queue tick, not only
+  ticks that found something to post, and on every successful post during a long backlog drain
+
+---
+
 ## [2.6.1] - 2026-08-08
 
 ### Fixed
