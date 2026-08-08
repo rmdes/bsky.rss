@@ -286,7 +286,9 @@ function parseString(string: string, item: NormalizedItem, truncate: boolean) {
     parsedString = parsedString.replace('$georss', coords);
   }
 
-  for (const [key, value] of Object.entries(item.mappedValues)) {
+  for (const [key, value] of Object.entries(item.mappedValues).sort(
+    (a, b) => b[0].length - a[0].length,
+  )) {
     const placeholder = `$${key}`;
     if (parsedString.includes(placeholder)) {
       parsedString = parsedString.replace(placeholder, value);

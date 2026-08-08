@@ -318,7 +318,7 @@ template placeholders, usable in `string` and `imageAlt` alongside `$title`/`$li
 - A `value` whose field is absent on a given item resolves to an empty string for that item
 - `mappedValues` only resolves for RSS/Atom/RDF feeds - JSON Feed has no namespace concept, so
   every `$key` resolves to empty string there
-- A `key` must not begin with a built-in placeholder name (`title`, `link`, `description`, `georss`), and no `key` may be a prefix of another `key` in the same array - built-in and earlier substitutions run first and use unanchored text replacement, so a colliding key's placeholder can be partially or fully consumed before it's ever resolved. For example, `key: "titleSlug"` would have `$titleSlug` partially eaten by the `$title` substitution.
+- A `key` must not begin with a built-in placeholder name (`title`, `link`, `description`, `georss`) - built-in substitutions run first and use unanchored text replacement, so a colliding key's placeholder can be partially or fully consumed before it's ever resolved. For example, `key: "titleSlug"` would have `$titleSlug` partially eaten by the `$title` substitution. (This does not apply to two `mappedValues` keys that are prefixes of each other, e.g. `author`/`authorName` - those are substituted longest-key-first, so they never collide with one another.)
 
 ---
 

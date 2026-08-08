@@ -914,6 +914,83 @@ describe('rssHandler', () => {
       assert.strictEqual(queued.length, 1);
       assert.strictEqual(queued[0]?.content, 'Article by Jane Doe');
     });
+
+    it('substitutes $authorName correctly even when the shorter "author" key is declared first in mappedValues', async () => {
+      // Confirmed bug: mappedValues substitution followed Object.entries insertion
+      // order. The template here only uses $authorName (no separate $author). With
+      // "author" declared first, its placeholder "$author" is a literal prefix
+      // substring of "$authorName" in the template text, so the .includes('$author')
+      // check falsely matches and corrupts the front of $authorName before authorName's
+      // own turn ever runs.
+      const feedBody =
+        '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">' +
+        '<channel><title>T</title><description>D</description><link>https://example.com</link>' +
+        '<item><title>Article</title><link>https://example.com/article</link>' +
+        '<guid>https://example.com/article</guid>' +
+        '<pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate>' +
+        '<dc:creator>Jane</dc:creator><dc:publisher>Jane Smith</dc:publisher></item>' +
+        '</channel></rss>';
+
+      const server = createServer((_req, res) => {
+        res.writeHead(200, {'Content-Type': 'application/rss+xml'});
+        res.end(feedBody);
+      });
+      await new Promise<void>(resolve => server.listen(0, resolve));
+      const port = (server.address() as {port: number}).port;
+
+      fs.writeFileSync(
+        path.join(TEST_DATA_DIR, 'config.json'),
+        JSON.stringify({
+          string: 'By $authorName',
+          publishEmbed: false,
+          languages: ['en'],
+          truncate: true,
+          runInterval: 60,
+          dateField: '',
+          imageField: '',
+          ogUserAgent: 'bsky.rss/test',
+          removeDuplicate: false,
+          mappedValues: [
+            {key: 'author', value: 'dc:creator'},
+            {key: 'authorName', value: 'dc:publisher'},
+          ],
+        }),
+        'utf8',
+      );
+
+      const lastPath = path.join(TEST_DATA_DIR, 'last.txt');
+      const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
+      fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
+
+      const queueHandler = require('./queueHandler').default;
+      const realWriteQueue = queueHandler.writeQueue;
+      const queued: {content: string}[] = [];
+      queueHandler.writeQueue = async (item: {content: string}) => {
+        queued.push(item);
+      };
+
+      delete require.cache[require.resolve('./rssHandler')];
+      const rssHandler = require('./rssHandler').default;
+
+      try {
+        const reader = await rssHandler.init({
+          fetch_interval: 60,
+          fetch_url: new URL(`http://127.0.0.1:${port}/feed.xml`),
+        });
+        await rssHandler.start();
+        await new Promise(resolve => setTimeout(resolve, 300));
+        reader.stop();
+      } finally {
+        queueHandler.writeQueue = realWriteQueue;
+        if (savedLast === null) fs.rmSync(lastPath, {force: true});
+        else fs.writeFileSync(lastPath, savedLast, 'utf8');
+        server.close();
+      }
+
+      assert.strictEqual(queued.length, 1);
+      assert.strictEqual(queued[0]?.content, 'By Jane Smith');
+    });
   });
 
   describe('User agent configuration', () => {

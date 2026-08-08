@@ -107,7 +107,9 @@ export function parseString(
     result = result.replace('$georss', coords);
   }
 
-  for (const [key, value] of Object.entries(item.mappedValues)) {
+  for (const [key, value] of Object.entries(item.mappedValues).sort(
+    (a, b) => b[0].length - a[0].length,
+  )) {
     const placeholder = `$${key}`;
     if (result.includes(placeholder)) {
       result = result.replace(placeholder, value);

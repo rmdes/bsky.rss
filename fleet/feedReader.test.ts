@@ -191,6 +191,28 @@ test('parseString leaves a template placeholder with no matching mappedValues ke
   assert.equal(result, '$unmapped stays literal');
 });
 
+test('parseString substitutes $authorName correctly even when the shorter "author" key is declared first', () => {
+  // Confirmed bug: substitution order followed Object.entries insertion order. The
+  // template here only uses $authorName (no separate $author). But when "author" is
+  // processed first, its placeholder "$author" is a literal prefix substring of
+  // "$authorName" in the template text, so `.includes('$author')` falsely matches and
+  // `.replace('$author', ...)` eats the front of $authorName - corrupting the output to
+  // "By JaneName" instead of resolving $authorName to its own mapped value.
+  const item = normalizedItem({
+    mappedValues: {author: 'Jane', authorName: 'Jane Smith'},
+  });
+  const result = parseString('By $authorName', item, false, false, false);
+  assert.equal(result, 'By Jane Smith');
+});
+
+test('parseString substitutes $authorName correctly when it is declared before the shorter "author" key', () => {
+  const item = normalizedItem({
+    mappedValues: {authorName: 'Jane Smith', author: 'Jane'},
+  });
+  const result = parseString('By $authorName', item, false, false, false);
+  assert.equal(result, 'By Jane Smith');
+});
+
 test('computeDedupeKey matches what a FeedReader-computed dedupeKey should look like for a known URL', () => {
   // Guards the FeedReader <-> dedupeKey.ts integration contract: FeedReader must call
   // computeDedupeKey(botId, itemUrl) with the item's link, not some other string.
