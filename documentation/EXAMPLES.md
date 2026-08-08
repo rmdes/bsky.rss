@@ -615,6 +615,53 @@ Each posts to different account or uses filtered feed URL.
 
 ---
 
+### Disaster & Hazard Alerts Feed (Markdown Links + GeoRSS)
+
+**Use case:** Multi-hazard alert feeds (earthquakes, wildfires, floods, cyclones) - clean, short
+clickable links instead of raw URLs, with a map link straight to the event's coordinates.
+
+**Config:**
+```json
+{
+  "string": "$title\n\n🔗 [Source]($link)\n🗺️ [Map]($georss)",
+  "publishEmbed": true,
+  "embedType": "image",
+  "imageField": "enclosure",
+  "imageAlt": "$title",
+  "languages": ["en"],
+  "truncate": true,
+  "runInterval": 60,
+  "removeDuplicate": true,
+  "adaptiveSpacing": true,
+  "spacingWindow": 3600,
+  "minSpacing": 180,
+  "maxSpacing": 600
+}
+```
+
+**Why:**
+- `[Source]($link)` / `[Map]($georss)` - Markdown-style link syntax (see
+  [CONFIGURATION.md](CONFIGURATION.md#string)) turns two long raw URLs into two short clickable
+  words. The blank line (`\n\n`) after `$title` separates the headline from the link row, and the
+  🔗/🗺️ emoji prefixes sit outside the brackets - they're plain text, not part of the clickable
+  span, so only "Source"/"Map" themselves are links.
+- `$georss` - resolves to a real link only when the feed carries coordinates (`<georss:point>` or
+  `geo:lat`/`geo:long` as a fallback); if an item has neither, "🗺️ Map" quietly degrades to plain,
+  non-clickable text instead of erroring or leaving a dead link.
+- `imageField: "enclosure"` - many hazard feeds (e.g. GDACS) publish a generated map/severity image
+  per item; falls back to no image, not a broken post, when an item's enclosure is empty (common
+  for feeds still generating imagery for a just-published event).
+- `adaptiveSpacing` tuned wide (`minSpacing: 180`, `spacingWindow: 3600`) - multi-hazard feeds can
+  queue dozens of items in a single poll (a first-time feed switch, or a busy wildfire season); a
+  3-minute floor keeps posting from flooding the timeline the way a tighter default would.
+
+**Example feed:**
+- GDACS (multi-hazard, global): `https://www.gdacs.org/xml/rss.xml`
+- BGS World Earthquakes (GeoRSS via W3C Basic Geo fallback): `http://earthquakes.bgs.ac.uk/feeds/WorldSeismology.xml`
+- USGS earthquakes: `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.atom`
+
+---
+
 ### Book Reviews / Reading Log
 
 **Use case:** Auto-post book reviews, reading updates
