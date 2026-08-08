@@ -213,6 +213,31 @@ test('parseString substitutes $authorName correctly when it is declared before t
   assert.equal(result, 'By Jane Smith');
 });
 
+test('parseString does not let the mappedValues loop touch a $key-shaped placeholder leaked from feed content', () => {
+  // Confirmed bug: the mappedValues loop guarded its substitution with
+  // `.includes()` on the string-in-progress (already containing $description's
+  // substituted content), unlike every other branch which guards against the
+  // original template. So feed-supplied content that happens to literally contain
+  // "$author" (e.g. "buy now $author") got treated as a real placeholder and
+  // substituted, corrupting the description text - only the operator's real
+  // $author placeholder (declared separately in the template) should ever resolve.
+  const item = normalizedItem({
+    description: 'buy now $author',
+    mappedValues: {author: 'Real Author'},
+  });
+  const result = parseString('$description | $author', item, false, false, false);
+  assert.equal(result, 'buy now $author | Real Author');
+});
+
+test('parseString leaves a $key-shaped substring inside feed content untouched when the operator never declared that placeholder in the template', () => {
+  const item = normalizedItem({
+    description: 'buy now $author',
+    mappedValues: {author: 'Real Author'},
+  });
+  const result = parseString('$description', item, false, false, false);
+  assert.equal(result, 'buy now $author');
+});
+
 test('computeDedupeKey matches what a FeedReader-computed dedupeKey should look like for a known URL', () => {
   // Guards the FeedReader <-> dedupeKey.ts integration contract: FeedReader must call
   // computeDedupeKey(botId, itemUrl) with the item's link, not some other string.

@@ -257,6 +257,24 @@ function parseString(string: string, item: NormalizedItem, truncate: boolean) {
   };
 
   let parsedString = string;
+
+  // Runs before $title/$link/$description/$georss (which all splice arbitrary
+  // feed-supplied content into parsedString) and guards against `string` (the
+  // original template), not `parsedString` - otherwise feed content that
+  // happens to literally contain a "$key"-shaped substring (e.g. a
+  // $description value containing "$author") could get mistaken for a real
+  // mappedValues placeholder and substituted, corrupting the feed content and
+  // potentially leaving the operator's real placeholder elsewhere in the
+  // template unsubstituted.
+  for (const [key, value] of Object.entries(item.mappedValues).sort(
+    (a, b) => b[0].length - a[0].length,
+  )) {
+    const placeholder = `$${key}`;
+    if (string.includes(placeholder)) {
+      parsedString = parsedString.replace(placeholder, value);
+    }
+  }
+
   if (string.includes('$title')) {
     if (!item.title) throw new Error('No title provided from RSS reader.');
 
@@ -284,15 +302,6 @@ function parseString(string: string, item: NormalizedItem, truncate: boolean) {
       ? `https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}`
       : '';
     parsedString = parsedString.replace('$georss', coords);
-  }
-
-  for (const [key, value] of Object.entries(item.mappedValues).sort(
-    (a, b) => b[0].length - a[0].length,
-  )) {
-    const placeholder = `$${key}`;
-    if (parsedString.includes(placeholder)) {
-      parsedString = parsedString.replace(placeholder, value);
-    }
   }
 
   if (parsedString.length > 300 && truncate) {

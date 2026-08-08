@@ -991,6 +991,84 @@ describe('rssHandler', () => {
       assert.strictEqual(queued.length, 1);
       assert.strictEqual(queued[0]?.content, 'By Jane Smith');
     });
+
+    it('does not let the mappedValues loop touch a $key-shaped placeholder leaked from $description feed content', async () => {
+      // Confirmed bug: the mappedValues loop guarded its substitution with
+      // `.includes()` on the string-in-progress (already containing $description's
+      // substituted content), unlike every other branch which guards against the
+      // original template string. So feed-supplied content that happens to
+      // literally contain "$author" (e.g. a description reading "buy now $author")
+      // got treated as a real placeholder and substituted, corrupting the feed
+      // content while leaving the operator's real $author placeholder elsewhere in
+      // the template unsubstituted.
+      const feedBody =
+        '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">' +
+        '<channel><title>T</title><description>D</description><link>https://example.com</link>' +
+        '<item><title>Article</title><link>https://example.com/article</link>' +
+        '<guid>https://example.com/article</guid>' +
+        '<pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate>' +
+        '<description>buy now $author</description>' +
+        '<dc:creator>Real Author</dc:creator></item>' +
+        '</channel></rss>';
+
+      const server = createServer((_req, res) => {
+        res.writeHead(200, {'Content-Type': 'application/rss+xml'});
+        res.end(feedBody);
+      });
+      await new Promise<void>(resolve => server.listen(0, resolve));
+      const port = (server.address() as {port: number}).port;
+
+      fs.writeFileSync(
+        path.join(TEST_DATA_DIR, 'config.json'),
+        JSON.stringify({
+          string: '$description | $author',
+          publishEmbed: false,
+          languages: ['en'],
+          truncate: true,
+          runInterval: 60,
+          dateField: '',
+          imageField: '',
+          ogUserAgent: 'bsky.rss/test',
+          removeDuplicate: false,
+          descriptionClearHTML: false,
+          mappedValues: [{key: 'author', value: 'dc:creator'}],
+        }),
+        'utf8',
+      );
+
+      const lastPath = path.join(TEST_DATA_DIR, 'last.txt');
+      const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
+      fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
+
+      const queueHandler = require('./queueHandler').default;
+      const realWriteQueue = queueHandler.writeQueue;
+      const queued: {content: string}[] = [];
+      queueHandler.writeQueue = async (item: {content: string}) => {
+        queued.push(item);
+      };
+
+      delete require.cache[require.resolve('./rssHandler')];
+      const rssHandler = require('./rssHandler').default;
+
+      try {
+        const reader = await rssHandler.init({
+          fetch_interval: 60,
+          fetch_url: new URL(`http://127.0.0.1:${port}/feed.xml`),
+        });
+        await rssHandler.start();
+        await new Promise(resolve => setTimeout(resolve, 300));
+        reader.stop();
+      } finally {
+        queueHandler.writeQueue = realWriteQueue;
+        if (savedLast === null) fs.rmSync(lastPath, {force: true});
+        else fs.writeFileSync(lastPath, savedLast, 'utf8');
+        server.close();
+      }
+
+      assert.strictEqual(queued.length, 1);
+      assert.strictEqual(queued[0]?.content, 'buy now $author | Real Author');
+    });
   });
 
   describe('User agent configuration', () => {
