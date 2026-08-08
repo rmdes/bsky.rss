@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.6.1] - 2026-08-08
+
+### Fixed
+- `mappedValues`: a malformed config shape (e.g. an object instead of an array) no longer throws
+  and gets misreported as a feed-fetch failure - malformed entries are now skipped instead
+- `mappedValues`: two keys that are prefixes of each other (e.g. `author`/`authorName`) no longer
+  corrupt each other's substitution - keys are substituted longest-first
+- `mappedValues`: substitution now runs before `$title`/`$link`/`$description`/`$georss` and
+  guards against the original template, so feed-supplied content that happens to contain
+  `$key`-shaped text can no longer be mistaken for a real placeholder
+- `itunes:author` documentation now states explicitly that it reads the item-level
+  `<itunes:author>` element only, with no fallback to the channel/show-level element
+
+### Added
+- Test coverage for the 6 previously-untested recognized `mappedValues` values (`dc:date`,
+  `dc:subject`, `dc:publisher`, `itunes:episode`, `itunes:season`, `itunes:author`)
+
+---
+
+## [2.6.0] - 2026-08-08
+
 ### Added
 - `$georss` now also resolves coordinates from the W3C Basic Geo namespace (`geo:lat`/`geo:long`) when a feed carries no `<georss:point>` - fixes feeds (e.g. BGS's world-earthquake RSS feed) that publish coordinates only that way. `georss:point` still wins when both are present.
 - `mappedValues` config option - maps `dc:creator`/`dc:date`/`dc:subject`/`dc:publisher` and
