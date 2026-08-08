@@ -9,6 +9,7 @@ import {BotOperations, classifyFeedFailure} from './botOperations.ts';
 import {FleetLogger, formatDebugError} from './logging.ts';
 import {createFeedSource} from '../shared/feedSource/index.ts';
 import type {FeedSource, NormalizedItem} from '../shared/feedSource/index.ts';
+import {extractMarkdownLinks, finalizeMarkdownLinks, type MarkdownFacet} from '../shared/feedSource/markdownLinks.ts';
 
 export interface FeedReaderConfig {
   string: string;
@@ -47,6 +48,7 @@ export interface ParsedEmbed {
 export interface ParsedItem {
   title: string;
   content: string;
+  facets: MarkdownFacet[];
   embed?: ParsedEmbed;
   languages: string[] | undefined;
   itemDate: string;
@@ -75,26 +77,48 @@ export function parseString(
   truncate: boolean,
   titleClearHTML: boolean,
   descriptionClearHTML: boolean,
-): string {
-  let result = template;
+): {text: string; facets: MarkdownFacet[]} {
+  function resolveToken(token: string): string | undefined {
+    if (token === '$title') {
+      if (!item.title) throw new Error('No title provided from RSS reader.');
+      return titleClearHTML ? decodeHTMLTwice(removeHTMLTags(item.title)) : item.title;
+    }
+    if (token === '$link') {
+      if (!item.link) throw new Error('No link provided from RSS reader.');
+      return item.link;
+    }
+    if (token === '$description') {
+      let description = item.description ?? item.content ?? '';
+      if (descriptionClearHTML) description = removeHTMLTags(description);
+      return description;
+    }
+    if (token === '$georss') {
+      return item.geo
+        ? `https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}`
+        : undefined;
+    }
+    const key = token.slice(1);
+    return Object.hasOwn(item.mappedValues, key) ? item.mappedValues[key] : undefined;
+  }
 
-  // Runs before $title/$link/$description/$georss (which all splice arbitrary
-  // feed-supplied content into `result`) and guards against `template`, not
-  // `result` - otherwise feed content that happens to literally contain a
-  // "$key"-shaped substring (e.g. a $description value containing "$author")
-  // could get mistaken for a real mappedValues placeholder and substituted,
-  // corrupting the feed content and potentially leaving the operator's real
-  // placeholder elsewhere in the template unsubstituted.
+  const extracted = extractMarkdownLinks(template, resolveToken);
+  let result = extracted.text;
+  const templateForPresenceChecks = extracted.text;
+
+  // Guards against templateForPresenceChecks (the marker-bearing carrier text from
+  // extractMarkdownLinks), not the original raw template - bracket-consumed placeholders
+  // were already replaced with opaque markers, so this text can never contain a literal
+  // "$key"-shaped substring from resolved feed content sitting inside a bracket span.
   for (const [key, value] of Object.entries(item.mappedValues).sort(
     (a, b) => b[0].length - a[0].length,
   )) {
     const placeholder = `$${key}`;
-    if (template.includes(placeholder)) {
+    if (templateForPresenceChecks.includes(placeholder)) {
       result = result.replace(placeholder, value);
     }
   }
 
-  if (template.includes('$title')) {
+  if (templateForPresenceChecks.includes('$title')) {
     if (!item.title) throw new Error('No title provided from RSS reader.');
     result = result.replace(
       '$title',
@@ -102,12 +126,12 @@ export function parseString(
     );
   }
 
-  if (template.includes('$link')) {
+  if (templateForPresenceChecks.includes('$link')) {
     if (!item.link) throw new Error('No link provided from RSS reader.');
     result = result.replace('$link', item.link);
   }
 
-  if (template.includes('$description')) {
+  if (templateForPresenceChecks.includes('$description')) {
     // Deliberate improvement over app/utils/rssHandler.ts, which leaves
     // `description` undefined here and lets String.replace stringify it to
     // the literal text "undefined" in the post - a real bug in production.
@@ -116,18 +140,25 @@ export function parseString(
     result = result.replace('$description', description);
   }
 
-  if (template.includes('$georss')) {
+  if (templateForPresenceChecks.includes('$georss')) {
     const coords = item.geo
       ? `https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}`
       : '';
     result = result.replace('$georss', coords);
   }
 
+  const finalized = finalizeMarkdownLinks(result, extracted.pending);
+  result = finalized.text;
+  let facets = finalized.facets;
+
   if (result.length > 300 && truncate) {
-    result = result.slice(0, 277) + '...';
+    const truncated = result.slice(0, 277) + '...';
+    const truncatedByteLength = Buffer.byteLength(truncated, 'utf8');
+    facets = facets.filter(facet => facet.byteEnd <= truncatedByteLength);
+    result = truncated;
   }
 
-  return result;
+  return {text: result, facets};
 }
 
 async function resizeImageToBuffer(bufferData: Buffer): Promise<Buffer> {
@@ -299,7 +330,7 @@ export class FeedReader {
 
       let imageAlt: string | undefined;
       if (this.config.embedType === 'image' && this.config.imageAlt) {
-        imageAlt = parseString(this.config.imageAlt, item, false, false, false);
+        imageAlt = parseString(this.config.imageAlt, item, false, false, false).text;
       }
 
       const defaultUserAgent =
@@ -379,7 +410,7 @@ export class FeedReader {
         ? decodeHTMLTwice(removeHTMLTags(item.title))
         : item.title;
 
-    const content = parseString(
+    const parsed = parseString(
       this.config.string,
       item,
       this.config.truncate === true,
@@ -389,7 +420,8 @@ export class FeedReader {
 
     this.itemHandler?.({
       title,
-      content,
+      content: parsed.text,
+      facets: parsed.facets,
       embed: this.config.publishEmbed ? embed : undefined,
       languages: this.config.languages,
       itemDate: useDate,

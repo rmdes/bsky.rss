@@ -3,6 +3,7 @@ import {BskyAgent, RichText, AtpSessionEvent, AtpSessionData, AppBskyFeedPost} f
 import {XRPCError, ResponseType} from '@atproto/xrpc';
 import {BotStore} from './botStore.ts';
 import {FleetLogger, formatDebugError} from './logging.ts';
+import type {MarkdownFacet} from '../shared/feedSource/markdownLinks.ts';
 
 const TID_CHARSET = '234567abcdefghijklmnopqrstuvwxyz';
 const TID_FIRST_CHAR_CHARSET = '234567abcdefghij';
@@ -161,19 +162,30 @@ export class BskyClient {
     date?: Date;
     rkey: string;
     embed?: ResolvedEmbed;
+    facets?: MarkdownFacet[];
   }): Promise<PostResult> {
     if (this.dryRun) {
       this.logger.verbose('POST', `[dry-run] would publish: ${params.content}`, this.botId);
       return {ok: true, uri: 'dry-run://noop'};
     }
 
-    const richText = new RichText({text: params.content});
+    const markdownFacets = (params.facets ?? []).map(facet => ({
+      index: {byteStart: facet.byteStart, byteEnd: facet.byteEnd},
+      features: [{$type: 'app.bsky.richtext.facet#link', uri: facet.uri}],
+    }));
+
+    const autoDetect = new RichText({text: params.content});
     const facetStartedAt = Date.now();
     try {
-      await richText.detectFacets(this.agent);
+      await autoDetect.detectFacets(this.agent);
     } finally {
       this.logDuration('Facet detection', facetStartedAt);
     }
+
+    const richText = new RichText({
+      text: params.content,
+      facets: [...markdownFacets, ...(autoDetect.facets ?? [])],
+    });
 
     let uploadedBlob: unknown;
     if (params.embed?.image) {

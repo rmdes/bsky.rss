@@ -341,3 +341,44 @@ test('an existing-rkey post message is verbose and cannot leak the rkey at summa
     }
   }
 });
+
+test('post() merges hand-built facets with auto-detected ones, neither overwrites the other', async () => {
+  // Same risk as bskyHandler.ts's equivalent test: RichText.detectFacets() overwrites
+  // this.facets entirely (see rich-text.ts:334-372). This proves post() never lets that
+  // happen - both the hand-built link facet and the real auto-detected #news tag survive
+  // into the record actually sent to the PDS.
+  const runtime = makeClient('summary');
+  let capturedRecord: {facets?: Array<{index: unknown; features: Array<{$type: string; tag?: string}>}>} | undefined;
+  (runtime.client as unknown as {agent: unknown}).agent = {
+    accountDid: 'did:plc:test',
+    app: {
+      bsky: {
+        feed: {
+          post: {
+            create: async (_params: unknown, record: typeof capturedRecord) => {
+              capturedRecord = record;
+              return {uri: 'at://did:plc:test/app.bsky.feed.post/abc'};
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const result = await runtime.client.post({
+    content: 'Report #news',
+    rkey: 'facet-merge-test',
+    facets: [{byteStart: 0, byteEnd: 6, uri: 'https://example.com/report'}],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(capturedRecord?.facets?.length, 2);
+  const linkFacet = capturedRecord!.facets!.find(
+    f => f.features[0]?.$type === 'app.bsky.richtext.facet#link',
+  );
+  assert.deepEqual(linkFacet?.index, {byteStart: 0, byteEnd: 6});
+  const tagFacet = capturedRecord!.facets!.find(
+    f => f.features[0]?.$type === 'app.bsky.richtext.facet#tag',
+  );
+  assert.equal(tagFacet?.features[0]?.tag, 'news');
+});
