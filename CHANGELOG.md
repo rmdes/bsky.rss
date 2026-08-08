@@ -9,10 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.7.0] - 2026-08-08
+
+**Markdown-style links** - `[text](url)` syntax for cleaner, shorter clickable links in posts
+
 ### Added
 - `[text](url)` Markdown-style link syntax for `string`/`imageAlt` - both sides support
-  `$placeholders`, resolved into real Bluesky link facets (clickable custom text instead of a raw
-  URL)
+  `$placeholders` (e.g. `[$title]($link)`, `[Map]($georss)`), resolved into real Bluesky link
+  facets (clickable custom text instead of a raw URL). Bluesky/AT Protocol has no native Markdown
+  parsing - this is bsky.rss's own template syntax, translated into facets before posting.
+
+### Fixed
+- Truncation no longer lets a link facet survive into the appended `...` ellipsis when its byte
+  range lands just past the 277-character cutoff
+- A `mappedValues` key containing `_` or `-` (e.g. `author_name`) used inside `[text](url)` no
+  longer silently resolves to the wrong value - the placeholder-token charset now matches what
+  `mappedValues` keys are actually allowed to be
+- An auto-detected link (a bare URL that happens to appear inside a `[text](url)` span's display
+  text) can no longer ship as a second, overlapping facet alongside the intended hand-built one
 
 ---
 
