@@ -110,6 +110,12 @@ Fallback behavior:
   post - no empty bracket clutter.
 - `@atproto/api`/Bluesky do not parse Markdown themselves - this is bsky.rss's own template syntax,
   translated into real Bluesky link facets before posting.
+- If `truncate: true` and the post text exceeds 300 characters, truncation drops any facet whose
+  byte range crosses the 300-char cutoff entirely, rather than emitting a corrupted/partial link
+  covering only part of a truncated word (or part of the appended `...`).
+- A `$placeholder` token used inside `[text](url)` brackets may contain letters, digits,
+  underscores, and hyphens (e.g. `[$author_name]($link)`) - the same character set `mappedValues`
+  keys themselves support.
 
 **Examples:**
 
@@ -351,7 +357,7 @@ template placeholders, usable in `string` and `imageAlt` alongside `$title`/`$li
 - A `value` whose field is absent on a given item resolves to an empty string for that item
 - `mappedValues` only resolves for RSS/Atom/RDF feeds - JSON Feed has no namespace concept, so
   every `$key` resolves to empty string there
-- A `key` must not begin with a built-in placeholder name (`title`, `link`, `description`, `georss`). `mappedValues` substitution runs before the built-in placeholders and is guarded against the original template, so the `$key` value itself resolves correctly even when it shares a prefix with a built-in name (e.g. `key: "titleSlug"` resolves `$titleSlug` correctly, it is not corrupted by `$title`). But each built-in placeholder's own presence check still scans the raw, unmodified template text for an unanchored substring match - so if a `mappedValues` key's placeholder text contains a built-in name as a prefix (e.g. `$titleSlug` contains the literal text `$title`), the built-in branch still "sees" that substring and runs, and if the feed item is missing that built-in field (e.g. no `<title>`) the post fails with that built-in's "missing" error even though the operator never used the real `$title` placeholder. Avoid the collision entirely by not prefixing a `mappedValues` key with a built-in placeholder name. (This does not apply to two `mappedValues` keys that are prefixes of each other, e.g. `author`/`authorName` - those are substituted longest-key-first, so they never collide with one another.)
+- A `key` must not begin with a built-in placeholder name (`title`, `link`, `description`, `georss`). `mappedValues` substitution runs before the built-in placeholders and is guarded against the original template, so the `$key` value itself resolves correctly even when it shares a prefix with a built-in name (e.g. `key: "titleSlug"` resolves `$titleSlug` correctly, it is not corrupted by `$title`). But each built-in placeholder's own presence check still scans the marker-bearing carrier text produced by the `[text](url)` extraction pass (any bracket span has already been swapped for an opaque marker by this point, not the pristine raw template) for an unanchored substring match - so if a `mappedValues` key's placeholder text contains a built-in name as a prefix (e.g. `$titleSlug` contains the literal text `$title`) and that placeholder sits *outside* any bracket span, the built-in branch still "sees" that substring and runs, and if the feed item is missing that built-in field (e.g. no `<title>`) the post fails with that built-in's "missing" error even though the operator never used the real `$title` placeholder. Avoid the collision entirely by not prefixing a `mappedValues` key with a built-in placeholder name. One practical improvement from this: a `mappedValues` key like `titleSlug` used *inside* a `[text](url)` bracket span no longer trips this check at all, since bracket content is already replaced by an opaque marker before the built-in presence check ever runs. (This does not apply to two `mappedValues` keys that are prefixes of each other, e.g. `author`/`authorName` - those are substituted longest-key-first, so they never collide with one another.)
 - A `$key` placeholder repeated more than once in the template string is only substituted at its
   first occurrence - the second and later occurrences are left as literal `$key` text. This matches
   `$title`/`$link`/`$description`'s existing behavior (all use a single, non-global `String.replace`).

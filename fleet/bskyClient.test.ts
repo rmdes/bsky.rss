@@ -348,7 +348,9 @@ test('post() merges hand-built facets with auto-detected ones, neither overwrite
   // happen - both the hand-built link facet and the real auto-detected #news tag survive
   // into the record actually sent to the PDS.
   const runtime = makeClient('summary');
-  let capturedRecord: {facets?: Array<{index: unknown; features: Array<{$type: string; tag?: string}>}>} | undefined;
+  let capturedRecord:
+    | {facets?: Array<{index: unknown; features: Array<{$type: string; tag?: string}>}>}
+    | undefined;
   (runtime.client as unknown as {agent: unknown}).agent = {
     accountDid: 'did:plc:test',
     app: {
@@ -381,4 +383,49 @@ test('post() merges hand-built facets with auto-detected ones, neither overwrite
     f => f.features[0]?.$type === 'app.bsky.richtext.facet#tag',
   );
   assert.equal(tagFacet?.features[0]?.tag, 'news');
+});
+
+test('post() drops an auto-detected facet that overlaps a hand-built markdown-link facet', async () => {
+  // Regression test for Finding 3: a [text](url) span's display text that happens to
+  // contain a bare URL (e.g. [$title]($link) where the title itself has a raw link) was
+  // independently rediscovered by detectFacets() as a second, overlapping facet -
+  // RichText's constructor sorts facets but does not dedupe/resolve overlaps.
+  const runtime = makeClient('summary');
+  let capturedRecord:
+    | {
+        facets?: Array<{
+          index: {byteStart: number; byteEnd: number};
+          features: Array<{$type: string; uri?: string}>;
+        }>;
+      }
+    | undefined;
+  (runtime.client as unknown as {agent: unknown}).agent = {
+    accountDid: 'did:plc:test',
+    app: {
+      bsky: {
+        feed: {
+          post: {
+            create: async (_params: unknown, record: typeof capturedRecord) => {
+              capturedRecord = record;
+              return {uri: 'at://did:plc:test/app.bsky.feed.post/xyz'};
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const content = 'Visit https://overlap.example now';
+  const facetByteEnd = Buffer.byteLength(content, 'utf8');
+
+  const result = await runtime.client.post({
+    content,
+    rkey: 'overlap-test',
+    facets: [{byteStart: 0, byteEnd: facetByteEnd, uri: 'https://example.com/whole'}],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(capturedRecord?.facets?.length, 1);
+  assert.deepEqual(capturedRecord!.facets![0]?.index, {byteStart: 0, byteEnd: facetByteEnd});
+  assert.equal(capturedRecord!.facets![0]?.features[0]?.uri, 'https://example.com/whole');
 });

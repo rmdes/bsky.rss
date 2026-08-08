@@ -292,27 +292,68 @@ test('BotStore adds facets_json to an existing queue_items table that predates t
       published_at TEXT
     );
   `);
+  // Insert a row via the raw legacy schema BEFORE migration runs - simulates one of the
+  // 60 live bots' already-queued items sitting in the table at upgrade time.
+  legacyDb
+    .prepare(
+      `INSERT INTO queue_items (title, content, embed_json, languages_json, item_date, dedupe_key, status, enqueued_at)
+       VALUES ('Pre-migration', 'legacy content', NULL, NULL, '2026-08-01T00:00:00Z', 'legacy-key', 'queued', '2026-08-01T00:00:00Z')`,
+    )
+    .run();
   legacyDb.close();
 
   // BotStore's constructor must detect the missing column and add it without dropping
   // the table or losing the ability to open the existing database.
   const store = new BotStore(dbPath);
+
+  // The pre-existing row must survive migration and read back correctly, with
+  // facetsJson as null since it predates the column - not lost, not errored on.
+  const rows = store.listQueued();
+  const legacyRow = rows.find(r => r.dedupeKey === 'legacy-key');
+  assert.ok(legacyRow, 'pre-migration row must still exist after BotStore migrates the schema');
+  assert.equal(legacyRow!.title, 'Pre-migration');
+  assert.equal(legacyRow!.content, 'legacy content');
+  assert.equal(legacyRow!.facetsJson, null);
+
   const id = store.enqueue({
-    title: 'T', content: 'C', embedJson: null, languagesJson: null,
-    itemDate: '2026-08-08T00:00:00Z', dedupeKey: 'key-1', facetsJson: '[{"byteStart":0,"byteEnd":1,"uri":"https://x"}]',
+    title: 'T',
+    content: 'C',
+    embedJson: null,
+    languagesJson: null,
+    itemDate: '2026-08-08T00:00:00Z',
+    dedupeKey: 'key-1',
+    facetsJson: '[{"byteStart":0,"byteEnd":1,"uri":"https://x"}]',
   });
   assert.notEqual(id, 0);
 
-  const rows = store.listQueued();
-  assert.equal(rows[0]?.facetsJson, '[{"byteStart":0,"byteEnd":1,"uri":"https://x"}]');
-  cleanup(store, dir);
+  const rowsAfterEnqueue = store.listQueued();
+  const newRow = rowsAfterEnqueue.find(r => r.dedupeKey === 'key-1');
+  assert.equal(newRow?.facetsJson, '[{"byteStart":0,"byteEnd":1,"uri":"https://x"}]');
+  store.close();
+
+  // A second BotStore against the now-migrated database must not throw and must not
+  // attempt to re-add the column - the migration is idempotent, not just "doesn't error
+  // on a fresh DB". Every restart of every one of the 60 live bots runs this path.
+  assert.doesNotThrow(() => {
+    const store2 = new BotStore(dbPath);
+    const rowsAfterReopen = store2.listQueued();
+    assert.equal(rowsAfterReopen.find(r => r.dedupeKey === 'legacy-key')?.title, 'Pre-migration');
+    store2.close();
+  });
+
+  rmSync(dir, {recursive: true, force: true});
 });
 
 test('BotStore.enqueue persists a null facetsJson and listQueued returns it as null', () => {
   const {store, dir} = makeStore();
   store.enqueue({
-    title: 'T', content: 'C', embedJson: null, languagesJson: null,
-    itemDate: '2026-08-08T00:00:00Z', dedupeKey: 'key-2', facetsJson: null,
+    title: 'T',
+    content: 'C',
+    embedJson: null,
+    languagesJson: null,
+    itemDate: '2026-08-08T00:00:00Z',
+    dedupeKey: 'key-2',
+    facetsJson: null,
   });
   const rows = store.listQueued();
   assert.equal(rows[0]?.facetsJson, null);

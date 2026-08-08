@@ -240,8 +240,15 @@ test('parseString leaves a $key-shaped substring inside feed content untouched w
 
 test('parseString resolves [$title]($link) into text plus a facet with correct byte offsets', () => {
   const item = {
-    id: '1', title: 'Breaking', link: 'https://example.com/1', date: '2026-08-08T00:00:00Z',
-    description: undefined, content: undefined, imageUrl: undefined, geo: undefined, mappedValues: {},
+    id: '1',
+    title: 'Breaking',
+    link: 'https://example.com/1',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
   };
   const result = parseString('[$title]($link)', item, false, false, false);
   assert.equal(result.text, 'Breaking');
@@ -250,16 +257,33 @@ test('parseString resolves [$title]($link) into text plus a facet with correct b
 
 test('parseString throws when [$title](...) is used but the item has no title, matching bare $title', () => {
   const item = {
-    id: '1', title: undefined, link: 'https://example.com/1', date: '2026-08-08T00:00:00Z',
-    description: undefined, content: undefined, imageUrl: undefined, geo: undefined, mappedValues: {},
+    id: '1',
+    title: undefined,
+    link: 'https://example.com/1',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
   };
-  assert.throws(() => parseString('[$title]($link)', item, false, false, false), /No title provided/);
+  assert.throws(
+    () => parseString('[$title]($link)', item, false, false, false),
+    /No title provided/,
+  );
 });
 
 test('parseString returns an empty facets array for a template with no bracket syntax', () => {
   const item = {
-    id: '1', title: 'T', link: 'https://example.com/1', date: '2026-08-08T00:00:00Z',
-    description: undefined, content: undefined, imageUrl: undefined, geo: undefined, mappedValues: {},
+    id: '1',
+    title: 'T',
+    link: 'https://example.com/1',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
   };
   const result = parseString('$title - $link', item, false, false, false);
   assert.equal(result.text, 'T - https://example.com/1');
@@ -269,12 +293,42 @@ test('parseString returns an empty facets array for a template with no bracket s
 test('parseString drops a facet entirely when truncation cuts into its byte range', () => {
   const longTitle = 'x'.repeat(320);
   const item = {
-    id: '1', title: longTitle, link: 'https://example.com/1', date: '2026-08-08T00:00:00Z',
-    description: undefined, content: undefined, imageUrl: undefined, geo: undefined, mappedValues: {},
+    id: '1',
+    title: longTitle,
+    link: 'https://example.com/1',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
   };
   const result = parseString('[$title]($link)', item, true, false, false);
   assert.equal(result.text.length, 280);
   assert.deepEqual(result.facets, []);
+});
+
+test('parseString drops a facet whose byteEnd lands just past the 277-byte cutoff instead of letting it survive covering part of the appended ellipsis', () => {
+  // Regression test for Finding 1: computing the truncation byte-length ceiling on the
+  // string that ALREADY has '...' appended let a facet whose byteEnd fell 1-3 bytes past
+  // the real 277-byte cutoff survive, ending up covering the appended ellipsis. Facet
+  // here spans bytes [270, 279) - 2 bytes past the cutoff.
+  const item = {
+    id: '1',
+    title: undefined,
+    link: 'https://example.com/1',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
+  };
+  const template = 'y'.repeat(270) + '[CLICKHERE]($link)' + 'z'.repeat(100);
+  const result = parseString(template, item, true, false, false);
+  assert.equal(result.text.length, 280);
+  assert.ok(result.text.endsWith('...'));
+  assert.deepEqual(result.facets, []); // byteEnd 279 > 277-byte cutoff - dropped, not partially retained
 });
 
 test('parseString computes correct facet byte offsets when a bare placeholder precedes a bracket span', () => {
@@ -282,22 +336,56 @@ test('parseString computes correct facet byte offsets when a bare placeholder pr
   // a single-pass resolver computed facet offsets before the bare-placeholder loop below
   // it mutated the string's length further, staling every facet positioned after it.
   const item = {
-    id: '1', title: 'A much longer title than the placeholder', link: 'https://x.com',
-    date: '2026-08-08T00:00:00Z', description: undefined, content: undefined,
-    imageUrl: undefined, geo: undefined, mappedValues: {},
+    id: '1',
+    title: 'A much longer title than the placeholder',
+    link: 'https://x.com',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
   };
   const result = parseString('$title - [text]($link)', item, false, false, false);
   assert.equal(result.text, 'A much longer title than the placeholder - text');
   const bytes = Buffer.from(result.text, 'utf8');
-  const facetText = bytes.slice(result.facets[0]!.byteStart, result.facets[0]!.byteEnd).toString('utf8');
+  const facetText = bytes
+    .slice(result.facets[0]!.byteStart, result.facets[0]!.byteEnd)
+    .toString('utf8');
   assert.equal(facetText, 'text');
+});
+
+test('parseString resolves [$georss](...) used as DISPLAY text to an empty, vanished span on a geo-less item, not the literal string "$georss"', () => {
+  // Regression test for Finding 5: the bracket-resolver closure returned undefined for
+  // $georss with no geo data, so resolve(token) ?? token left the literal text "$georss"
+  // behind. The bare substitution path already correctly used '' for this same case.
+  const item = {
+    id: '1',
+    title: 'T',
+    link: 'https://example.com/1',
+    date: '2026-08-08T00:00:00Z',
+    description: undefined,
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
+  };
+  const result = parseString('before [$georss]($link) after', item, false, false, false);
+  assert.equal(result.text, 'before  after');
+  assert.deepEqual(result.facets, []);
 });
 
 test('parseString does not throw or corrupt when resolved feed content inside a bracket happens to contain a $-shaped substring', () => {
   const item = {
-    id: '1', title: undefined, link: 'https://x.com',
-    date: '2026-08-08T00:00:00Z', description: 'Remember to set $title in your config', content: undefined,
-    imageUrl: undefined, geo: undefined, mappedValues: {},
+    id: '1',
+    title: undefined,
+    link: 'https://x.com',
+    date: '2026-08-08T00:00:00Z',
+    description: 'Remember to set $title in your config',
+    content: undefined,
+    imageUrl: undefined,
+    geo: undefined,
+    mappedValues: {},
   };
   const result = parseString('[$description]($link)', item, false, false, false);
   assert.equal(result.text, 'Remember to set $title in your config');

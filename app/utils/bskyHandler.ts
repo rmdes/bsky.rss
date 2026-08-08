@@ -5,11 +5,12 @@ import {
   AtpSessionData,
   ComAtprotoRepoUploadBlob,
   AppBskyFeedPost,
+  type Facet,
 } from '@atproto/api';
 let bskyAgent: BskyAgent | null;
 import {XRPCError, ResponseType} from '@atproto/xrpc';
 import db from './dbHandler';
-import type {MarkdownFacet} from '../../shared/feedSource/markdownLinks.ts';
+import {buildFacets, type MarkdownFacet} from '../../shared/feedSource/markdownLinks.ts';
 
 async function init(service: string) {
   if (bskyAgent) throw new Error('Bluesky agent already initialized.');
@@ -65,19 +66,16 @@ async function post({
 }): Promise<{uri: string; cid: string} | {ratelimit: true; retryAfter?: number}> {
   if (!bskyAgent) throw new Error('Bluesky agent not initialized.');
 
-  const markdownFacets = (facets ?? []).map(facet => ({
-    index: {byteStart: facet.byteStart, byteEnd: facet.byteEnd},
-    features: [{$type: 'app.bsky.richtext.facet#link', uri: facet.uri}],
-  }));
-
   const autoDetect = new RichText({text: content});
   await autoDetect.detectFacets(bskyAgent);
 
   const bskyText = new RichText({
     text: content,
-    // RichText's constructor sorts and filters these on assignment (rich-text.ts:159-161) -
-    // no manual sort needed here.
-    facets: [...markdownFacets, ...(autoDetect.facets ?? [])],
+    // RichText's constructor sorts these on assignment (rich-text.ts:159-161) - no manual
+    // sort needed here. buildFacets also drops any auto-detected facet that overlaps a
+    // hand-built markdown-link one, so the two sources can never ship as nested/duplicate
+    // facets in the same record.
+    facets: buildFacets(facets ?? [], autoDetect.facets) as unknown as Facet[],
   });
 
   let embedImage: ComAtprotoRepoUploadBlob.Response | {ratelimit: true} | null = null;

@@ -9,7 +9,11 @@ import {BotOperations, classifyFeedFailure} from './botOperations.ts';
 import {FleetLogger, formatDebugError} from './logging.ts';
 import {createFeedSource} from '../shared/feedSource/index.ts';
 import type {FeedSource, NormalizedItem} from '../shared/feedSource/index.ts';
-import {extractMarkdownLinks, finalizeMarkdownLinks, type MarkdownFacet} from '../shared/feedSource/markdownLinks.ts';
+import {
+  extractMarkdownLinks,
+  finalizeMarkdownLinks,
+  type MarkdownFacet,
+} from '../shared/feedSource/markdownLinks.ts';
 
 export interface FeedReaderConfig {
   string: string;
@@ -93,9 +97,14 @@ export function parseString(
       return description;
     }
     if (token === '$georss') {
+      // '' rather than undefined, matching the bare-substitution path below: an
+      // undefined return leaves the literal "$georss" text behind when this token is used
+      // as bracket DISPLAY text (resolve(token) ?? token) instead of vanishing like the
+      // ungeotagged bare-$georss case does. An empty string still fails the URL-side
+      // http(s):// check, so url-side usage ([Map]($georss)) keeps degrading correctly.
       return item.geo
         ? `https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}`
-        : undefined;
+        : '';
     }
     const key = token.slice(1);
     return Object.hasOwn(item.mappedValues, key) ? item.mappedValues[key] : undefined;
@@ -152,10 +161,13 @@ export function parseString(
   let facets = finalized.facets;
 
   if (result.length > 300 && truncate) {
-    const truncated = result.slice(0, 277) + '...';
-    const truncatedByteLength = Buffer.byteLength(truncated, 'utf8');
-    facets = facets.filter(facet => facet.byteEnd <= truncatedByteLength);
-    result = truncated;
+    // Measure the byte length of the KEPT text only, before '...' is appended - measuring
+    // after appending it would let a facet whose byteEnd lands in the ellipsis's own 3
+    // bytes survive, covering part of "..." as if it were still clickable link text.
+    const kept = result.slice(0, 277);
+    const keptByteLength = Buffer.byteLength(kept, 'utf8');
+    facets = facets.filter(facet => facet.byteEnd <= keptByteLength);
+    result = kept + '...';
   }
 
   return {text: result, facets};
