@@ -6,6 +6,7 @@ import og from 'open-graph-scraper';
 import {decode} from 'html-entities';
 import {createFeedSource} from '../../shared/feedSource/index.ts';
 import type {FeedSource, NormalizedItem} from '../../shared/feedSource/index.ts';
+import {resolveMarkdownLinks} from '../../shared/feedSource/markdownLinks.ts';
 
 let reader: FeedSource | null = null;
 let lastDate: string = '';
@@ -220,6 +221,7 @@ async function handleItem(item: NormalizedItem): Promise<void> {
     embed: config.publishEmbed ? embed : undefined,
     languages: config.languages ? config.languages : undefined,
     date: useDate,
+    facets: parsed.facets,
   });
 
   // Track the newest queued date in this batch; committed into lastDate once the whole
@@ -249,14 +251,42 @@ export default {
   start,
   init,
   launch,
+  parseString,
 };
 
 function parseString(string: string, item: NormalizedItem, truncate: boolean) {
   const result: ParseResult = {
     text: '',
+    facets: [],
   };
 
-  let parsedString = string;
+  function resolveToken(token: string): string | undefined {
+    if (token === '$title') {
+      if (!item.title) throw new Error('No title provided from RSS reader.');
+      return config.titleClearHTML ? decodeHTML(removeHTMLTags(item.title)) : item.title;
+    }
+    if (token === '$link') {
+      if (!item.link) throw new Error('No link provided from RSS reader.');
+      return item.link;
+    }
+    if (token === '$description') {
+      let description = item.description ? item.description : item.content;
+      if (config.descriptionClearHTML && description) description = removeHTMLTags(description);
+      return description;
+    }
+    if (token === '$georss') {
+      return item.geo
+        ? `https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}`
+        : undefined;
+    }
+    const key = token.slice(1);
+    return Object.hasOwn(item.mappedValues, key) ? item.mappedValues[key] : undefined;
+  }
+
+  const markdownResolved = resolveMarkdownLinks(string, resolveToken);
+  result.facets = markdownResolved.facets;
+  let parsedString = markdownResolved.text;
+  const templateForPresenceChecks = markdownResolved.text;
 
   // Runs before $title/$link/$description/$georss (which all splice arbitrary
   // feed-supplied content into parsedString) and guards against `string` (the
@@ -270,12 +300,12 @@ function parseString(string: string, item: NormalizedItem, truncate: boolean) {
     (a, b) => b[0].length - a[0].length,
   )) {
     const placeholder = `$${key}`;
-    if (string.includes(placeholder)) {
+    if (templateForPresenceChecks.includes(placeholder)) {
       parsedString = parsedString.replace(placeholder, value);
     }
   }
 
-  if (string.includes('$title')) {
+  if (templateForPresenceChecks.includes('$title')) {
     if (!item.title) throw new Error('No title provided from RSS reader.');
 
     if (config.titleClearHTML) {
@@ -285,19 +315,19 @@ function parseString(string: string, item: NormalizedItem, truncate: boolean) {
     }
   }
 
-  if (string.includes('$link')) {
+  if (templateForPresenceChecks.includes('$link')) {
     if (!item.link) throw new Error('No link provided from RSS reader.');
     parsedString = parsedString.replace('$link', item.link);
   }
 
   let description = item.description ? item.description : item.content;
 
-  if (string.includes('$description')) {
+  if (templateForPresenceChecks.includes('$description')) {
     if (config.descriptionClearHTML && description) description = removeHTMLTags(description);
     parsedString = parsedString.replace('$description', description ?? '');
   }
 
-  if (string.includes('$georss')) {
+  if (templateForPresenceChecks.includes('$georss')) {
     const coords = item.geo
       ? `https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}`
       : '';
@@ -305,7 +335,10 @@ function parseString(string: string, item: NormalizedItem, truncate: boolean) {
   }
 
   if (parsedString.length > 300 && truncate) {
-    parsedString = parsedString.slice(0, 277) + '...';
+    const truncated = parsedString.slice(0, 277) + '...';
+    const truncatedByteLength = Buffer.byteLength(truncated, 'utf8');
+    result.facets = result.facets.filter(facet => facet.byteEnd <= truncatedByteLength);
+    parsedString = truncated;
   }
   result.text = parsedString;
   return result;

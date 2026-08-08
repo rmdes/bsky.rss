@@ -54,16 +54,30 @@ async function post({
   embed,
   languages,
   date,
+  facets,
 }: {
   content: string;
   embed?: Embed;
   languages?: string[];
   date?: Date;
+  facets?: Array<{byteStart: number; byteEnd: number; uri: string}>;
 }): Promise<{uri: string; cid: string} | {ratelimit: true; retryAfter?: number}> {
   if (!bskyAgent) throw new Error('Bluesky agent not initialized.');
 
-  const bskyText = new RichText({text: content});
-  await bskyText.detectFacets(bskyAgent);
+  const markdownFacets = (facets ?? []).map(facet => ({
+    index: {byteStart: facet.byteStart, byteEnd: facet.byteEnd},
+    features: [{$type: 'app.bsky.richtext.facet#link', uri: facet.uri}],
+  }));
+
+  const autoDetect = new RichText({text: content});
+  await autoDetect.detectFacets(bskyAgent);
+
+  const bskyText = new RichText({
+    text: content,
+    // RichText's constructor sorts and filters these on assignment (rich-text.ts:159-161) -
+    // no manual sort needed here.
+    facets: [...markdownFacets, ...(autoDetect.facets ?? [])],
+  });
 
   let embedImage: ComAtprotoRepoUploadBlob.Response | {ratelimit: true} | null = null;
   if (embed && embed.image) {

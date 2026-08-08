@@ -302,4 +302,36 @@ describe('bskyHandler', () => {
       assert(agent !== null);
     });
   });
+
+  describe('post() facet merging', () => {
+    it('constructing RichText with pre-merged facets keeps both sources, not just one', () => {
+      // Guards the exact risk this task fixes: RichText.detectFacets() overwrites
+      // this.facets entirely (confirmed in @atproto/api's own source), so post() must never
+      // call detectFacets() on a RichText that already carries hand-built markdown-link
+      // facets. This test exercises the real RichText constructor's documented contract
+      // (pass facets in, they're kept) without needing a live agent.
+      const {RichText} = require('@atproto/api');
+      const markdownFacets = [
+        {
+          index: {byteStart: 0, byteEnd: 6},
+          features: [{$type: 'app.bsky.richtext.facet#link', uri: 'https://example.com/report'}],
+        },
+      ];
+      const autoDetectedFacets = [
+        {
+          index: {byteStart: 7, byteEnd: 12},
+          features: [{$type: 'app.bsky.richtext.facet#tag', tag: 'news'}],
+        },
+      ];
+
+      const richText = new RichText({
+        text: 'Report #news',
+        facets: [...markdownFacets, ...autoDetectedFacets],
+      });
+
+      assert.equal(richText.facets?.length, 2);
+      assert.deepEqual(richText.facets?.[0]?.index, {byteStart: 0, byteEnd: 6});
+      assert.deepEqual(richText.facets?.[1]?.index, {byteStart: 7, byteEnd: 12});
+    });
+  });
 });

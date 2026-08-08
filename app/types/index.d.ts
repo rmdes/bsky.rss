@@ -23,6 +23,7 @@ interface Config {
 
 interface ParseResult {
   text: string;
+  facets: Array<{byteStart: number; byteEnd: number; uri: string}>;
 }
 
 interface Embed {
@@ -40,4 +41,5 @@ interface QueueItems {
   languages: string[] | undefined;
   title: string;
   date: string;
+  facets: Array<{byteStart: number; byteEnd: number; uri: string}>;
 }

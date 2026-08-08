@@ -92,6 +92,7 @@ async function runQueue() {
         embed: item.embed,
         languages: item.languages,
         date: config.publishDate ? new Date(item.date) : undefined,
+        facets: item.facets,
       });
       if ('ratelimit' in post) {
         queue.unshift(item);
@@ -144,9 +145,9 @@ async function runQueue() {
   }
 }
 
-async function writeQueue({content, embed, languages, title, date}: QueueItems) {
+async function writeQueue({content, embed, languages, title, date, facets}: QueueItems) {
   console.log(`[${new Date().toUTCString()}] - [bsky.rss QUEUE] Queuing item (${title})`);
-  queue.push({content, embed, languages, title, date});
+  queue.push({content, embed, languages, title, date, facets});
   return queue;
 }
 
