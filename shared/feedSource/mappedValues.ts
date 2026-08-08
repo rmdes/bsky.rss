@@ -45,7 +45,8 @@ export function resolveMappedValues(
   mappedValues: Array<{key: string; value: string}> | undefined,
 ): Record<string, string> {
   const result: Record<string, string> = {};
-  for (const entry of mappedValues ?? []) {
+  for (const entry of Array.isArray(mappedValues) ? mappedValues : []) {
+    if (typeof entry?.key !== 'string' || typeof entry?.value !== 'string') continue;
     result[entry.key] = resolveMappedValue(item, entry.value);
   }
   return result;
