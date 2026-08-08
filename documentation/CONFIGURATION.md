@@ -81,6 +81,36 @@ Complete reference for all `config.json` options in bsky.rss. Each option includ
 - `$description` - Item description/summary
 - `$georss` - An OpenStreetMap link built from the item's geographic coordinates, if the feed provides any. Checks `<georss:point>` (GeoRSS Simple) first, falling back to `geo:lat`/`geo:long` (W3C Basic Geo) when a feed carries coordinates only that way. Renders as an empty string when the item has neither. GeoRSS-GML encoding (`<georss:where><gml:Point>...`) is not supported.
 
+**Markdown-style links:**
+
+`string` also supports `[displayText](urlPlaceholder)` syntax - clickable text instead of a raw
+URL. Both sides may contain `$placeholders`:
+
+```json
+{"string": "[$title]($link)\n[Map]($georss)"}
+```
+
+This renders the item's real title as clickable text pointing at its link, with a separate short
+"Map" link to the georss coordinates on its own line. An operator can just as easily make the
+whole post plain text with only a trailing link, or any mix:
+
+```json
+{"string": "$title\n\n[Read more]($link)"}
+```
+
+Fallback behavior:
+- The url side accepts any known placeholder - a built-in (`$link`, `$georss`) or a `mappedValues`
+  key. If the resolved value isn't a real `http(s)://` URL (an unrecognized/absent field, or a
+  non-URL `mappedValues` value like `itunes:duration`), the bracket span still renders its display
+  text, just as plain, non-clickable text - never an error.
+- `[$title]($link)` still throws the same "No title/link provided from RSS reader" error as bare
+  `$title`/`$link` do when the feed item is missing that field - this syntax doesn't change that
+  existing required-field behavior.
+- If the display text resolves to an empty string, the whole `[...](...)` span disappears from the
+  post - no empty bracket clutter.
+- `@atproto/api`/Bluesky do not parse Markdown themselves - this is bsky.rss's own template syntax,
+  translated into real Bluesky link facets before posting.
+
 **Examples:**
 
 **Simple (title + link):**
@@ -340,6 +370,10 @@ template placeholders, usable in `string` and `imageAlt` alongside `$title`/`$li
 ```json
 {"imageAlt": "$title"}  // Use article title as alt text
 ```
+
+**Markdown-style links:** `[text](url)` syntax is parsed here too, but alt text has no clickable-link
+concept - a bracket span only ever contributes its display text (`[Cover]($link)` renders as plain
+"Cover"). Little practical reason to use it here beyond shortening what would otherwise be a raw URL.
 
 **Best practices:**
 - Describe image content for screen readers

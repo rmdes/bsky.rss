@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `[text](url)` Markdown-style link syntax for `string`/`imageAlt` - both sides support
+  `$placeholders`, resolved into real Bluesky link facets (clickable custom text instead of a raw
+  URL)
+
 ---
 
 ## [2.6.2] - 2026-08-08
