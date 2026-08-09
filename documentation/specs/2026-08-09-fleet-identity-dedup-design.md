@@ -35,13 +35,15 @@ has posted yet.
 
 ## Architecture
 
-One new file, `fleet/identityStore.ts`, exporting an `IdentityStore` class — a thin
-`node:sqlite`-backed store, structurally mirroring `BotStore`'s existing
-`seenValueExists`/`writeSeenValue`/`cleanupOldSeenValues` shape (the same shape single-bot
-mode's `app/utils/dbHandler.ts` already established for this exact kind of "have we seen this
-URL" tracking). One `IdentityStore` instance exists per distinct Bluesky `identifier` — not
-per bot config — built once at fleet startup and shared by every `FeedReader` whose bot config
-publishes to that identity.
+No new class. `BotStore` already exposes exactly the shape this needs —
+`seenValueExists(value)`/`writeSeenValue(value)`/`cleanupOldSeenValues(maxAgeHours)`/`close()`,
+backed by a `seen_items` table (the same shape single-bot mode's `app/utils/dbHandler.ts`
+already established for this exact kind of "have we seen this URL" tracking). One extra
+`BotStore` instance is constructed per distinct Bluesky `identifier` — not per bot config —
+pointed at a per-identity `dbPath`, built once at fleet startup, and shared by every
+`FeedReader` whose bot config publishes to that identity. `BotStore` also unconditionally
+creates `session`/`cursor`/`queue_items` tables for this instance; they're simply never read or
+written — harmless, and not worth a second class to avoid.
 
 `fleet/feedReader.ts`'s `handleItem()` gains one new unconditional check, placed immediately
 after the existing `computeDedupeKey()` call and before the `publishEmbed` block — i.e. before
@@ -50,7 +52,7 @@ any network work, and regardless of a bot's own `publishEmbed`/`removeDuplicate`
 ```ts
 const dedupeKey = computeDedupeKey(this.identifier, item.link || item.id);
 
-if (this.identityStore.publishedExists(dedupeKey)) {
+if (this.identityStore.seenValueExists(dedupeKey)) {
   this.runtime.logger.verbose(
     'FEED',
     `Skipping cross-bot duplicate: ${item.title ?? '(untitled)'} (${itemUrl ?? item.id})`,
@@ -58,11 +60,14 @@ if (this.identityStore.publishedExists(dedupeKey)) {
   );
   return;
 }
-this.identityStore.writePublished(dedupeKey);
+this.identityStore.writeSeenValue(dedupeKey);
 
 const lastCursor = this.store.readCursor();
 // ...existing publishEmbed / removeDuplicate / staleness logic, unchanged...
 ```
+
+`this.identityStore` is typed `BotStore`, same as `this.store` — a second instance of the same
+class, pointed at a different file, used for a narrower slice of its API.
 
 This check runs unconditionally rather than mirroring the existing nested placement, so it
 also incidentally closes a pre-existing gap: bots configured with `publishEmbed: false`
@@ -74,54 +79,38 @@ this is a second, earlier, identity-scoped gate layered in front of it, not a re
 
 ## Storage
 
-`data/fleet/identities/<identifier>/published.sqlite`. Bluesky identifiers (e.g.
-`trumpwatch.skyfleet.blue`) are already safe path segments — the same assumption
-`configLoader.ts` already makes for `bot.id` when building `dbPath`; no sanitization needed.
+`data/fleet/identities/<identifier>.sqlite` — flat, one file per identity, no subdirectory (the
+per-bot equivalent, `bots/<botId>/state.sqlite`, holds nothing else in that directory either).
+Bluesky identifiers (e.g. `trumpwatch.skyfleet.blue`) are already safe path segments — the same
+assumption `configLoader.ts` already makes for `bot.id` when building `dbPath`; no sanitization
+needed.
 
-```sql
-CREATE TABLE IF NOT EXISTS published_items (
-  dedupe_key TEXT PRIMARY KEY,
-  recorded_at TEXT NOT NULL
-)
-```
+The `seen_items` table `BotStore`'s constructor already creates is used as-is — keyed by the
+same `dedupeKey` produced by `fleet/dedupeKey.ts`'s `computeDedupeKey(identifier, url)`, one
+canonical definition of "this identity has published this URL," reused rather than redefined,
+so the identity store and the AT-Proto `rkey` backstop can never disagree about what counts as
+a duplicate.
 
-Keyed by the same `dedupeKey` produced by `fleet/dedupeKey.ts`'s `computeDedupeKey(identifier,
-url)` — one canonical definition of "this identity has published this URL," reused rather than
-redefined, so the identity store and the AT-Proto `rkey` backstop can never disagree about what
-counts as a duplicate.
-
-`IdentityStore` public API:
-
-```ts
-class IdentityStore {
-  constructor(dbPath: string);
-  publishedExists(dedupeKey: string): boolean;
-  writePublished(dedupeKey: string): void;
-  cleanupOldPublished(maxAgeHours: number): void;
-  close(): void;
-}
-```
-
-`cleanupOldPublished` uses the same 96-hour convention already established by
-`dbHandler.cleanupOldValues()` and `BotStore.cleanupOldSeenValues()`, and — unlike
-`BotStore`'s existing (never-called) equivalent — is actually wired up: called from
-`fleet/botWorker.ts`'s drain cycle. Multiple `BotWorker`s sharing one `IdentityStore` will each
-call it once per cycle — harmless, since it's a plain `DELETE ... WHERE recorded_at < cutoff`
-against an indexed primary key, not a correctness concern to dedupe.
+`BotStore.cleanupOldSeenValues(96)` — the same 96-hour convention `dbHandler.cleanupOldValues()`
+already established — is called from `fleet/botWorker.ts`'s drain cycle for the identity
+instance. Unlike `BotStore`'s per-bot equivalent (never called today — see Out of scope), this
+call site is new and real. Multiple `BotWorker`s sharing one identity instance will each call it
+once per cycle — harmless, a plain `DELETE ... WHERE recorded_at < cutoff` against an indexed
+primary key, not a correctness concern to dedupe.
 
 ## Wiring
 
 `fleet/runFleet.ts`'s `main()`, immediately after `loadFleet()` returns `bots`: build
-`const identityStores = new Map<string, IdentityStore>()`, populating it lazily while
-iterating `bots` — one `IdentityStore` constructed per distinct `spec.identifier`, reused for
-every subsequent bot config sharing that identifier. `buildWorker` gains an `identityStore:
-IdentityStore` parameter, threaded straight into `new FeedReader(...)`. On shutdown, every
-`IdentityStore` in the map is closed alongside the existing per-bot `store.close()` calls.
+`const identityStores = new Map<string, BotStore>()`, populating it lazily while iterating
+`bots` — one `new BotStore(identityDbPath)` constructed per distinct `spec.identifier`, reused
+for every subsequent bot config sharing that identifier. `buildWorker` gains an `identityStore:
+BotStore` parameter, threaded straight into `new FeedReader(...)`. On shutdown, every store in
+the map is closed alongside the existing per-bot `store.close()` calls.
 
 `fleet/benchmarkHarness.ts` (synthetic bots, each with an independent identity today) and
 `fleet/feedReader.test.ts` (8 `FeedReader` construction call sites) need the same mechanical
 constructor-arg threading the `a435f52` `identifier` fix already required — a new required
-`IdentityStore` argument, backed by a throwaway in-memory or tmp-file instance in tests.
+`identityStore: BotStore` argument, backed by a throwaway tmp-file instance in tests.
 
 ## Backfill
 
@@ -135,14 +124,13 @@ as "already published" for a given identity.
 
 ## Testing
 
-- `fleet/identityStore.test.ts` (new): `publishedExists`/`writePublished` round-trip,
-  `cleanupOldPublished` removes only entries past the age cutoff (mirroring
-  `botStore.test.ts`'s existing `cleanupOldSeenValues` test).
-- `fleet/feedReader.test.ts`: two `FeedReader` instances constructed with the same `identifier`
-  but different `botId`s and different feed URLs — posting the same URL through the first
-  marks it published in the shared `IdentityStore`; the second, given the same URL, must skip
-  it via the new early check. A second regression test proves two different identifiers do
-  *not* cross-block each other on the same URL.
+`seenValueExists`/`writeSeenValue`/`cleanupOldSeenValues` are already covered by
+`botStore.test.ts` — no new store-level tests needed. `fleet/feedReader.test.ts` gets two new
+regression tests: two `FeedReader` instances constructed with the same `identifier` but
+different `botId`s and different feed URLs — posting the same URL through the first marks it
+seen in the shared `BotStore` instance; the second, given the same URL, must skip it via the
+new early check. A second test proves two different identifiers do *not* cross-block each other
+on the same URL.
 
 ## Out of scope
 
