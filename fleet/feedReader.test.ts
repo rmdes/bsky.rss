@@ -71,17 +71,22 @@ function createRuntime(
 function createInstrumentedReader(
   t: {after(callback: () => void): void},
   options: {
+    botId?: string;
+    identifier?: string;
     config?: Record<string, unknown>;
     fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>;
   } = {},
 ) {
+  const botId = options.botId ?? 'test-bot';
+  const identifier = options.identifier ?? botId;
   const dir = mkdtempSync(join(tmpdir(), 'feedreader-test-'));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const store = new BotStore(join(dir, 'state.sqlite'));
   t.after(() => store.close());
-  const runtime = createRuntime('test-bot', options.fetchOpenGraph);
+  const runtime = createRuntime(botId, options.fetchOpenGraph);
   const reader = new FeedReader(
-    'test-bot',
+    botId,
+    identifier,
     new URL('http://127.0.0.1:1/feed.xml'),
     5,
     {string: '$title', ...options.config},
@@ -448,6 +453,55 @@ test('handleItem falls back to the item id for the dedupe key when there is no l
   assert.equal(emitted[0]?.dedupeKey, computeDedupeKey('test-bot', 'urn:uuid:abc-123'));
 });
 
+test('two bot configs sharing one Bluesky identifier compute the same dedupeKey for the same item, even with different botIds', async t => {
+  // Real production bug: multiple bot configs (different feeds - e.g. separate FreshRSS
+  // category exports) can deliberately share one Bluesky identifier so several feeds post
+  // to one logical account. The same story appearing in both feeds must dedupe against
+  // that shared identity, not against whichever bot config happened to discover it first.
+  // Before this fix, dedupeKey was computed from botId, so two differently-configured
+  // bots sharing one identifier never recognized each other's posts as duplicates - the
+  // same story got posted twice to the same account.
+  const {reader: readerA} = createInstrumentedReader(t, {
+    botId: 'trumpwatch-en',
+    identifier: 'trumpwatch.skyfleet.blue',
+  });
+  const {reader: readerB} = createInstrumentedReader(t, {
+    botId: 'trumpnews-en',
+    identifier: 'trumpwatch.skyfleet.blue',
+  });
+  const emittedA: ParsedItem[] = [];
+  const emittedB: ParsedItem[] = [];
+  readerA.onItem(item => emittedA.push(item));
+  readerB.onItem(item => emittedB.push(item));
+
+  const item = normalizedItem({
+    id: 'https://example.test/shared-story',
+    link: 'https://example.test/shared-story',
+    date: '2026-08-03T12:01:00.000Z',
+  });
+
+  await handleItem(readerA, item);
+  await handleItem(readerB, item);
+
+  assert.equal(emittedA[0]?.dedupeKey, emittedB[0]?.dedupeKey);
+});
+
+test('two bot configs with different identifiers compute different dedupeKeys for the same item', async t => {
+  const {reader: readerA} = createInstrumentedReader(t, {identifier: 'accountA.example'});
+  const {reader: readerB} = createInstrumentedReader(t, {identifier: 'accountB.example'});
+  const emittedA: ParsedItem[] = [];
+  const emittedB: ParsedItem[] = [];
+  readerA.onItem(item => emittedA.push(item));
+  readerB.onItem(item => emittedB.push(item));
+
+  const item = normalizedItem({link: 'https://example.test/same-story'});
+
+  await handleItem(readerA, item);
+  await handleItem(readerB, item);
+
+  assert.notEqual(emittedA[0]?.dedupeKey, emittedB[0]?.dedupeKey);
+});
+
 function startFeedResponseServer(
   status: number,
   body: string,
@@ -484,6 +538,7 @@ test('a poll with items records a successful feed poll', async t => {
   const runtime = createRuntime();
 
   const reader = new FeedReader(
+    'test-bot',
     'test-bot',
     new URL(`http://127.0.0.1:${port}/feed.xml`),
     60,
@@ -535,6 +590,7 @@ test('a single bad item is logged but does not affect feed health state', async 
 
   const reader = new FeedReader(
     'test-bot',
+    'test-bot',
     new URL(`http://127.0.0.1:${port}/feed.xml`),
     60,
     {string: '$title'}, // the bad item has no title, so parseString throws for it
@@ -582,6 +638,7 @@ test('an empty feed still records a successful feed poll', async t => {
 
   const reader = new FeedReader(
     'test-bot',
+    'test-bot',
     new URL(`http://127.0.0.1:${port}/feed.xml`),
     60,
     {string: '$title'},
@@ -618,6 +675,7 @@ test('a feed-fetch failure is recorded and logged per-bot, not an uncaught excep
   const runtime = createRuntime();
 
   const reader = new FeedReader(
+    'test-bot',
     'test-bot',
     new URL('http://127.0.0.1:1/feed.xml'), // unroutable port - always fails to fetch
     60,
@@ -687,6 +745,7 @@ test('feed failures are summarized once and a later poll records the exact recov
   const runtime = createRuntime();
 
   const reader = new FeedReader(
+    'test-bot',
     'test-bot',
     new URL(`http://127.0.0.1:${port}/feed.xml`),
     1 / 1200, // 50ms - a fractional-minute interval used only to make this test's
@@ -906,6 +965,7 @@ test('resolveEmbedImage returns undefined when the response exceeds maxImageDown
   const runtime = createRuntime();
   const reader = new FeedReader(
     'test-bot',
+    'test-bot',
     new URL(`http://127.0.0.1:${port}/feed.xml`),
     5,
     {string: '$title'},
@@ -952,6 +1012,7 @@ test('resolveEmbedImage succeeds when the response is within maxImageDownloadByt
   });
 
   const reader = new FeedReader(
+    'test-bot',
     'test-bot',
     new URL(`http://127.0.0.1:${port}/feed.xml`),
     5,

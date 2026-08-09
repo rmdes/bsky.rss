@@ -184,6 +184,11 @@ export class FeedReader {
 
   constructor(
     private botId: string,
+    // The Bluesky handle this bot config publishes to - deliberately separate from botId.
+    // Multiple bot configs (different feeds) can share one identifier, and dedupeKey must
+    // be scoped to that shared publishing identity, not to whichever bot config happened
+    // to discover an item first - see dedupeKey.ts.
+    private identifier: string,
     feedUrl: URL,
     fetchIntervalMinutes: number,
     private config: FeedReaderConfig,
@@ -299,7 +304,7 @@ export class FeedReader {
     // and the AT-Proto record key, so flipping to guid-first would recompute a new key
     // for every already-queued item on any feed where guid !== link (e.g. WordPress's
     // <guid isPermaLink="false">), letting it enqueue and post a second time at cutover.
-    const dedupeKey = computeDedupeKey(this.botId, item.link || item.id);
+    const dedupeKey = computeDedupeKey(this.identifier, item.link || item.id);
 
     const lastCursor = this.store.readCursor();
     let embed: ParsedEmbed | undefined;

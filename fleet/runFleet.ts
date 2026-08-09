@@ -36,6 +36,7 @@ async function buildWorker(
 
     const feedReader = new FeedReader(
       spec.botId,
+      spec.identifier,
       new URL(spec.feedUrl),
       spec.fetchIntervalMinutes,
       spec.feedReaderConfig,

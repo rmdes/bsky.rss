@@ -129,6 +129,7 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
     const bskyClient = new BskyClient(botId, 'https://bsky.social', store, logger, true);
     const feedReader = new FeedReader(
       botId,
+      botId, // synthetic benchmark bots each have their own independent identity
       new URL(`http://127.0.0.1:${port}/feed`),
       options.fetchIntervalMinutes,
       {
