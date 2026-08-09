@@ -193,6 +193,11 @@ export class FeedReader {
     fetchIntervalMinutes: number,
     private config: FeedReaderConfig,
     private store: BotStore,
+    // A second BotStore instance, shared by every FeedReader/BotWorker publishing to the
+    // same `identifier` (built once per identity in runFleet.ts, not per bot config) - see
+    // documentation/specs/2026-08-09-fleet-identity-dedup-design.md. Distinct from `store`,
+    // which is this bot config's own private per-bot state.
+    private identityStore: BotStore,
     private sharedLimiters: SharedLimiters,
     private runtime: FeedReaderRuntime,
   ) {
@@ -305,6 +310,22 @@ export class FeedReader {
     // for every already-queued item on any feed where guid !== link (e.g. WordPress's
     // <guid isPermaLink="false">), letting it enqueue and post a second time at cutover.
     const dedupeKey = computeDedupeKey(this.identifier, item.link || item.id);
+
+    // Identity-scoped cross-bot duplicate check - runs unconditionally (regardless of
+    // this bot's own publishEmbed/removeDuplicate settings), before any OG/image work,
+    // so two bot configs sharing one Bluesky identity (different feeds, same account)
+    // never both post the same story. See documentation/specs/2026-08-09-fleet-identity-
+    // dedup-design.md. The existing per-bot removeDuplicate/staleness logic below is
+    // unchanged - this is a second, earlier gate in front of it.
+    if (this.identityStore.seenValueExists(dedupeKey)) {
+      this.runtime.logger.verbose(
+        'FEED',
+        `Skipping cross-bot duplicate: ${item.title ?? '(untitled)'} (${itemUrl ?? item.id})`,
+        this.botId,
+      );
+      return;
+    }
+    this.identityStore.writeSeenValue(dedupeKey);
 
     const lastCursor = this.store.readCursor();
     let embed: ParsedEmbed | undefined;

@@ -73,6 +73,7 @@ function createInstrumentedReader(
   options: {
     botId?: string;
     identifier?: string;
+    identityStore?: BotStore;
     config?: Record<string, unknown>;
     fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>;
   } = {},
@@ -83,6 +84,8 @@ function createInstrumentedReader(
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const store = new BotStore(join(dir, 'state.sqlite'));
   t.after(() => store.close());
+  const identityStore = options.identityStore ?? new BotStore(join(dir, 'identity.sqlite'));
+  if (!options.identityStore) t.after(() => identityStore.close());
   const runtime = createRuntime(botId, options.fetchOpenGraph);
   const reader = new FeedReader(
     botId,
@@ -91,6 +94,7 @@ function createInstrumentedReader(
     5,
     {string: '$title', ...options.config},
     store,
+    identityStore,
     new SharedLimiters({
       maxConcurrentOpenGraphFetches: 1,
       maxConcurrentImageJobs: 1,
@@ -502,6 +506,73 @@ test('two bot configs with different identifiers compute different dedupeKeys fo
   assert.notEqual(emittedA[0]?.dedupeKey, emittedB[0]?.dedupeKey);
 });
 
+test('a duplicate item posted through one FeedReader is skipped by a second FeedReader sharing its identity', async t => {
+  // The actual production bug this feature fixes: two bot configs (different feeds,
+  // different botIds) sharing one Bluesky identifier must recognize a story the OTHER
+  // bot already saw as a duplicate, before either one calls itemHandler for it - not
+  // just compute a matching dedupeKey (that's the a435f52 backstop, already covered
+  // by the tests above).
+  const dir = mkdtempSync(join(tmpdir(), 'feedreader-test-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const identityStore = new BotStore(join(dir, 'identity.sqlite'));
+  t.after(() => identityStore.close());
+
+  const {reader: readerA} = createInstrumentedReader(t, {
+    botId: 'trumpwatch-en',
+    identifier: 'trumpwatch.skyfleet.blue',
+    identityStore,
+  });
+  const {reader: readerB} = createInstrumentedReader(t, {
+    botId: 'trumpnews-en',
+    identifier: 'trumpwatch.skyfleet.blue',
+    identityStore,
+  });
+  const emittedA: ParsedItem[] = [];
+  const emittedB: ParsedItem[] = [];
+  readerA.onItem(item => emittedA.push(item));
+  readerB.onItem(item => emittedB.push(item));
+
+  const item = normalizedItem({
+    id: 'https://example.test/shared-story',
+    link: 'https://example.test/shared-story',
+    date: '2026-08-03T12:01:00.000Z',
+  });
+
+  await handleItem(readerA, item);
+  await handleItem(readerB, item);
+
+  assert.equal(emittedA.length, 1);
+  assert.equal(emittedB.length, 0);
+});
+
+test('two FeedReaders with different identities sharing one identity store do not cross-block a shared URL', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'feedreader-test-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const identityStore = new BotStore(join(dir, 'identity.sqlite'));
+  t.after(() => identityStore.close());
+
+  const {reader: readerA} = createInstrumentedReader(t, {
+    identifier: 'accountA.example',
+    identityStore,
+  });
+  const {reader: readerB} = createInstrumentedReader(t, {
+    identifier: 'accountB.example',
+    identityStore,
+  });
+  const emittedA: ParsedItem[] = [];
+  const emittedB: ParsedItem[] = [];
+  readerA.onItem(item => emittedA.push(item));
+  readerB.onItem(item => emittedB.push(item));
+
+  const item = normalizedItem({link: 'https://example.test/same-story'});
+
+  await handleItem(readerA, item);
+  await handleItem(readerB, item);
+
+  assert.equal(emittedA.length, 1);
+  assert.equal(emittedB.length, 1);
+});
+
 function startFeedResponseServer(
   status: number,
   body: string,
@@ -535,6 +606,8 @@ test('a poll with items records a successful feed poll', async t => {
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const store = new BotStore(join(dir, 'state.sqlite'));
   t.after(() => store.close());
+  const identityStore = new BotStore(join(dir, 'identity.sqlite'));
+  t.after(() => identityStore.close());
   const runtime = createRuntime();
 
   const reader = new FeedReader(
@@ -544,6 +617,7 @@ test('a poll with items records a successful feed poll', async t => {
     60,
     {string: '$title'},
     store,
+    identityStore,
     new SharedLimiters({
       maxConcurrentOpenGraphFetches: 1,
       maxConcurrentImageJobs: 1,
@@ -586,6 +660,8 @@ test('a single bad item is logged but does not affect feed health state', async 
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const store = new BotStore(join(dir, 'state.sqlite'));
   t.after(() => store.close());
+  const identityStore = new BotStore(join(dir, 'identity.sqlite'));
+  t.after(() => identityStore.close());
   const runtime = createRuntime();
 
   const reader = new FeedReader(
@@ -595,6 +671,7 @@ test('a single bad item is logged but does not affect feed health state', async 
     60,
     {string: '$title'}, // the bad item has no title, so parseString throws for it
     store,
+    identityStore,
     new SharedLimiters({
       maxConcurrentOpenGraphFetches: 1,
       maxConcurrentImageJobs: 1,
@@ -634,6 +711,8 @@ test('an empty feed still records a successful feed poll', async t => {
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const store = new BotStore(join(dir, 'state.sqlite'));
   t.after(() => store.close());
+  const identityStore = new BotStore(join(dir, 'identity.sqlite'));
+  t.after(() => identityStore.close());
   const runtime = createRuntime();
 
   const reader = new FeedReader(
@@ -643,6 +722,7 @@ test('an empty feed still records a successful feed poll', async t => {
     60,
     {string: '$title'},
     store,
+    identityStore,
     new SharedLimiters({
       maxConcurrentOpenGraphFetches: 1,
       maxConcurrentImageJobs: 1,
@@ -672,6 +752,8 @@ test('a feed-fetch failure is recorded and logged per-bot, not an uncaught excep
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const store = new BotStore(join(dir, 'state.sqlite'));
   t.after(() => store.close());
+  const identityStore = new BotStore(join(dir, 'identity.sqlite'));
+  t.after(() => identityStore.close());
   const runtime = createRuntime();
 
   const reader = new FeedReader(
@@ -681,6 +763,7 @@ test('a feed-fetch failure is recorded and logged per-bot, not an uncaught excep
     60,
     {string: '$title'},
     store,
+    identityStore,
     new SharedLimiters({
       maxConcurrentOpenGraphFetches: 1,
       maxConcurrentImageJobs: 1,
@@ -742,6 +825,8 @@ test('feed failures are summarized once and a later poll records the exact recov
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const store = new BotStore(join(dir, 'state.sqlite'));
   t.after(() => store.close());
+  const identityStore = new BotStore(join(dir, 'identity.sqlite'));
+  t.after(() => identityStore.close());
   const runtime = createRuntime();
 
   const reader = new FeedReader(
@@ -752,6 +837,7 @@ test('feed failures are summarized once and a later poll records the exact recov
     // multiple poll cycles observable within a normal test timeout.
     {string: '$title'},
     store,
+    identityStore,
     new SharedLimiters({
       maxConcurrentOpenGraphFetches: 1,
       maxConcurrentImageJobs: 1,
@@ -954,6 +1040,8 @@ test('resolveEmbedImage returns undefined when the response exceeds maxImageDown
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const store = new BotStore(join(dir, 'state.sqlite'));
   t.after(() => store.close());
+  const identityStore = new BotStore(join(dir, 'identity.sqlite'));
+  t.after(() => identityStore.close());
 
   const sharedLimiters = new SharedLimiters({
     maxConcurrentOpenGraphFetches: 1,
@@ -970,6 +1058,7 @@ test('resolveEmbedImage returns undefined when the response exceeds maxImageDown
     5,
     {string: '$title'},
     store,
+    identityStore,
     sharedLimiters,
     runtime,
   );
@@ -1003,6 +1092,8 @@ test('resolveEmbedImage succeeds when the response is within maxImageDownloadByt
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const store = new BotStore(join(dir, 'state.sqlite'));
   t.after(() => store.close());
+  const identityStore = new BotStore(join(dir, 'identity.sqlite'));
+  t.after(() => identityStore.close());
 
   const sharedLimiters = new SharedLimiters({
     maxConcurrentOpenGraphFetches: 1,
@@ -1018,6 +1109,7 @@ test('resolveEmbedImage succeeds when the response is within maxImageDownloadByt
     5,
     {string: '$title'},
     store,
+    identityStore,
     sharedLimiters,
     createRuntime(),
   );

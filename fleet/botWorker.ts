@@ -14,6 +14,7 @@ export interface BotWorkerOptions {
   scheduler: Scheduler;
   bskyClient: BskyClient;
   store: BotStore;
+  identityStore: BotStore;
   runIntervalSeconds: number;
   freshnessConfig: FreshnessConfig;
   perBotQueueMaxLength: number;

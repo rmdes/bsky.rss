@@ -1,5 +1,6 @@
 // fleet/runFleet.ts
 import 'dotenv/config';
+import {join} from 'node:path';
 import {BotStore} from './botStore.ts';
 import {Scheduler} from './scheduler.ts';
 import {BskyClient} from './bskyClient.ts';
@@ -28,6 +29,7 @@ async function buildWorker(
   runIntervalSeconds: number,
   freshnessConfig: FreshnessConfig,
   perBotQueueMaxLength: number,
+  identityStore: BotStore,
 ): Promise<BotWorker> {
   const store = new BotStore(spec.dbPath);
   try {
@@ -41,6 +43,7 @@ async function buildWorker(
       spec.fetchIntervalMinutes,
       spec.feedReaderConfig,
       store,
+      identityStore,
       sharedLimiters,
       {operations, logger},
     );
@@ -51,6 +54,7 @@ async function buildWorker(
       scheduler: new Scheduler(spec.schedulerConfig),
       bskyClient,
       store,
+      identityStore,
       runIntervalSeconds,
       freshnessConfig,
       perBotQueueMaxLength,
@@ -109,6 +113,16 @@ async function main(): Promise<void> {
     logger.debug('CONFIG', formatDebugError(error.error), error.botId);
   }
 
+  const identityStores = new Map<string, BotStore>();
+  function getIdentityStore(identifier: string): BotStore {
+    let store = identityStores.get(identifier);
+    if (!store) {
+      store = new BotStore(join(dataRoot, 'identities', `${identifier}.sqlite`));
+      identityStores.set(identifier, store);
+    }
+    return store;
+  }
+
   const sharedLimiters = new SharedLimiters(fleetConfig.sharedLimiters);
   const operations = new Map(bots.map(spec => [spec.botId, new BotOperations(spec.botId)]));
 
@@ -128,6 +142,7 @@ async function main(): Promise<void> {
         fleetConfig.runIntervalSeconds,
         fleetConfig.freshness,
         fleetConfig.perBotQueueMaxLength,
+        getIdentityStore(spec.identifier),
       );
     },
   });
@@ -164,6 +179,7 @@ async function main(): Promise<void> {
       coordinator.shutdownAll(shutdownPerBotTimeoutMs),
       new Promise(resolve => setTimeout(resolve, shutdownOverallTimeoutMs)),
     ]);
+    for (const identityStore of identityStores.values()) identityStore.close();
     releaseLock(lockFilePath);
     logger.summary('FLEET', 'Shutdown complete');
     process.exit(0);

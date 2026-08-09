@@ -125,6 +125,8 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
     const botId = `bench-bot-${i}`;
     const store = new BotStore(join(tmpDir, `${botId}.sqlite`));
     stores.push(store);
+    const identityStore = new BotStore(join(tmpDir, `${botId}-identity.sqlite`));
+    stores.push(identityStore);
     const operations = new BotOperations(botId);
     const bskyClient = new BskyClient(botId, 'https://bsky.social', store, logger, true);
     const feedReader = new FeedReader(
@@ -143,6 +145,7 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
         descriptionClearHTML: false,
       },
       store,
+      identityStore,
       sharedLimiters,
       {operations, logger},
     );
@@ -158,6 +161,7 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
       }),
       bskyClient,
       store,
+      identityStore,
       runIntervalSeconds: 1,
       freshnessConfig: {maxCatchupItems: 50, maxItemAgeMinutes: 60},
       perBotQueueMaxLength: 500,
