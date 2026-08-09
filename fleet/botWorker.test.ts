@@ -181,6 +181,29 @@ test('an emitted item is durably queued via BotStore, then drained on the next t
   assert.equal(worker.operationalSnapshot().counters.postSucceeded, 1);
 });
 
+test('drainOnce prunes the identity store after a completed drain pass', async t => {
+  const cleanupCalls: number[] = [];
+  const identityStore = {
+    cleanupOldSeenValues: (maxAgeHours: number) => cleanupCalls.push(maxAgeHours),
+  };
+  const {worker, feedReader} = makeWorker(t, {
+    identityStore: identityStore as unknown as BotStore,
+  });
+  await worker.start();
+
+  feedReader.emit({
+    title: 't',
+    content: 'hello world',
+    languages: ['en'],
+    itemDate: new Date().toISOString(),
+    dedupeKey: 'key-1',
+  });
+
+  await worker.drainOnce();
+
+  assert.deepEqual(cleanupCalls, [96]);
+});
+
 test("rkey passed to BskyClient.post matches the item's dedupeKey exactly", async t => {
   const {worker, bskyClient} = makeWorker(t);
   await worker.start();

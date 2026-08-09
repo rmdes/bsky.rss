@@ -229,6 +229,11 @@ export class BotWorker {
         );
       }
     } finally {
+      // 96-hour retention, matching dbHandler.cleanupOldValues()'s and this same class's
+      // own (per-bot) cleanupOldSeenValues() convention. Multiple BotWorkers sharing one
+      // identityStore each call this once per drain pass - harmless, a DELETE against an
+      // indexed primary key, not worth coordinating away.
+      this.options.identityStore.cleanupOldSeenValues(96);
       this.queueRunning = false;
     }
   }
