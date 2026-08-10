@@ -204,6 +204,22 @@ test('drainOnce prunes the identity store after a completed drain pass', async t
   assert.deepEqual(cleanupCalls, [96]);
 });
 
+test('drainOnce prunes the identity store even on an empty-queue tick', async t => {
+  const cleanupCalls: number[] = [];
+  const identityStore = {
+    cleanupOldSeenValues: (maxAgeHours: number) => cleanupCalls.push(maxAgeHours),
+  };
+  const {worker} = makeWorker(t, {
+    identityStore: identityStore as unknown as BotStore,
+  });
+  await worker.start();
+
+  assert.equal(worker.queueLength(), 0);
+  await worker.drainOnce();
+
+  assert.deepEqual(cleanupCalls, [96]);
+});
+
 test("rkey passed to BskyClient.post matches the item's dedupeKey exactly", async t => {
   const {worker, bskyClient} = makeWorker(t);
   await worker.start();

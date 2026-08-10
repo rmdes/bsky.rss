@@ -24,7 +24,11 @@ Dockerfile and image - only the container's `command:` differs.
   (`node:sqlite`'s `DatabaseSync`), at `<dataRoot>/bots/<botId>/state.sqlite`.
   It holds four tables: `session` (the atproto session), `cursor` (last seen
   item date), `seen_items` (dedup), and `queue_items` (the post queue, with a
-  `status` column).
+  `status` column). A second `BotStore` instance also exists per shared
+  Bluesky identity, at `<dataRoot>/identities/<identifier>.sqlite`, used only
+  for its `seen_items` table - the other three tables are created but unused
+  for this instance - holding the cross-bot duplicate-detection state for bot
+  configs that share one Bluesky account.
 - **`SharedLimiters`** (`fleet/sharedLimiters.ts`) is fleet-wide, not
   per-bot: a concurrency limiter for Open Graph scraping
   (`maxConcurrentOpenGraphFetches`) and image processing
