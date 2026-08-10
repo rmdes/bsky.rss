@@ -5,6 +5,7 @@
     ":semanticCommits",
     ":preserveSemverRanges"
   ],
+  "forkProcessing": "enabled",
   "packageRules": [
     {
       "description": "Automerge non-major updates",
