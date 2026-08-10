@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.1] - 2026-08-10
+
+### Fixed
+- Fleet mode's identity-scoped duplicate check no longer labels an ordinary same-bot re-poll
+  skip as "cross-bot duplicate" - verified in production that the majority of these log lines
+  came from bots with no shared identity at all (the same "already seen, skip" event that
+  always happened, just now caught earlier and mislabeled). The message is identity-neutral now,
+  matching the pre-2.8.0 wording.
+
+---
+
 ## [2.8.0] - 2026-08-10
 
 **Fleet mode: identity-scoped duplicate detection** - fixes bot configs sharing one Bluesky
