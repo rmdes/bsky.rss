@@ -311,16 +311,23 @@ export class FeedReader {
     // <guid isPermaLink="false">), letting it enqueue and post a second time at cutover.
     const dedupeKey = computeDedupeKey(this.identifier, item.link || item.id);
 
-    // Identity-scoped cross-bot duplicate check - runs unconditionally (regardless of
-    // this bot's own publishEmbed/removeDuplicate settings), before any OG/image work,
-    // so two bot configs sharing one Bluesky identity (different feeds, same account)
-    // never both post the same story. See documentation/specs/2026-08-09-fleet-identity-
-    // dedup-design.md. The existing per-bot removeDuplicate/staleness logic below is
+    // Identity-scoped duplicate check - runs unconditionally (regardless of this bot's
+    // own publishEmbed/removeDuplicate settings), before any OG/image work, so two bot
+    // configs sharing one Bluesky identity (different feeds, same account) never both
+    // post the same story. See documentation/specs/2026-08-09-fleet-identity-dedup-
+    // design.md. The existing per-bot removeDuplicate/staleness logic below is
     // unchanged - this is a second, earlier gate in front of it.
+    //
+    // This is the FIRST check to see a repeat item now, for every bot - not just bots
+    // sharing an identity. For a bot with no shared identity, this fires just as often
+    // as the old per-bot check used to (same item reappearing on a normal re-poll), not
+    // a new/extra event - it's simply relabeled since this check now wins the race to
+    // catch it. The log message stays identity-neutral (doesn't say "cross-bot") since
+    // this check has no way to know whether a second bot was actually involved.
     if (this.identityStore.seenValueExists(dedupeKey)) {
       this.runtime.logger.verbose(
         'FEED',
-        `Skipping cross-bot duplicate: ${item.title ?? '(untitled)'} (${itemUrl ?? item.id})`,
+        `Skipping duplicate item (already published to this identity): ${item.title ?? '(untitled)'} (${itemUrl ?? item.id})`,
         this.botId,
       );
       return;
