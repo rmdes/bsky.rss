@@ -84,11 +84,38 @@ change, not a refactor.
    `yarn lint` during implementation; fall back to a `.cjs` rename (keeping today's
    `module.exports`/`require` syntax unchanged) only if the ESM conversion proves awkward.
 
-5. **Sweep for other CJS-only idioms**: grep the whole tree for `__dirname`, `__filename`,
-   `require.resolve`, and any remaining bare `require(...)` calls outside `eslint.config.cjs`.
-   None were spotted during this design's exploration, but that was a spot-check, not an
-   exhaustive pass — the implementation must verify this directly rather than assume the spec's
-   exploration caught everything.
+5. **Sweep for other CJS-only idioms** — the real sweep (done during plan-writing, not just a
+   spot-check) found three categories, all confined to `app/`:
+
+   - **`app/index.ts:7`**: bare `require('dotenv').config()` → `import 'dotenv/config';`,
+     matching the exact pattern `fleet/runFleet.ts` already uses.
+   - **`app/utils/dbHandler.ts`** (8 call sites) plus `app/utils/test-helpers.ts`,
+     `app/utils/dbHandler.test.ts`, `app/utils/queueHandler.test.ts`,
+     `app/utils/rssHandler.test.ts`, `shared/feedSource/normalize.test.ts`,
+     `shared/feedSource/parse.test.ts`, `shared/feedSource/poller.test.ts`: `__dirname` → Node's
+     native `import.meta.dirname` (available since Node 20.11 — this project already runs Node
+     24 in both Docker and local dev, so no `fileURLToPath(import.meta.url)` fallback dance is
+     needed).
+   - **`app/utils/healthHandler.ts:40`**: `require('../../package.json').version` → read via
+     `fs.readFileSync` + `JSON.parse`, or a JSON module import with an import attribute
+     (`import pkg from '../../package.json' with {type: 'json'}`) — pick whichever the
+     implementation finds cleaner; both work under Node 24 ESM.
+   - **`app/utils/{bskyHandler,queueHandler,rssHandler,dbHandler}.test.ts`** (~40 call sites
+     combined): the CJS module-reset pattern `delete require.cache[require.resolve('./x')];
+     const x = require('./x').default;`, used because these handlers hold module-level mutable
+     `let` state and each test needs a fresh instance. **ESM has no direct equivalent** —
+     `require.cache` doesn't exist, and an already-imported ES module is a permanent singleton
+     for the life of the process. Resolved via explicit discussion (not assumed): the "correct"
+     fix — refactor `app/`'s handlers to factory functions instead of module-level singletons —
+     is real production-code restructuring, out of scope for a module-system migration, and is
+     tracked as its own separate follow-up (session task #74). **This migration's interim fix**:
+     convert every call site to a dynamic `import()` with a cache-busting query string —
+     `const x = (await import(\`./x.ts?t=${Date.now()}\`)).default;` — a widely-relied-upon (if
+     not first-class-documented) Node ESM pattern for forcing a fresh module instance. Requires
+     the enclosing test function to be `async` (most already are; verify each one during
+     implementation). No production code changes — purely test-file mechanics. When task #74
+     lands later, these call sites collapse to a plain factory call
+     (e.g. `const x = createBskyHandler();`), a clean one-line swap per site.
 
 6. **Bump `@atproto/api` to 0.20.38 and `@atproto/xrpc` to 0.8.10** (matching Renovate PR #11's
    target versions) as part of this same change — the direct proof the architectural fix works,
