@@ -28,7 +28,7 @@
     {
       "description": "Update Docker base images weekly",
       "matchDatasources": ["docker"],
-      "schedule": ["before 6am on monday"],
+      "schedule": ["at any time"],
       "automerge": true
     },
     {
@@ -49,7 +49,7 @@
     "assignees": ["@rmdes"]
   },
   "timezone": "UTC",
-  "schedule": ["before 6am on monday"],
+  "schedule": ["at any time"],
   "labels": ["dependencies"],
   "commitMessagePrefix": "chore(deps):",
   "prConcurrentLimit": 5,
