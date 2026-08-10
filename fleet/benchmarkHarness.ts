@@ -3,7 +3,7 @@ import {createServer, Server} from 'node:http';
 import {mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import jimp from 'jimp';
+import {Jimp, JimpMime} from 'jimp';
 import {BotStore} from './botStore.ts';
 import {Scheduler} from './scheduler.ts';
 import {BskyClient} from './bskyClient.ts';
@@ -61,8 +61,8 @@ function buildArticleHtml(uid: string, withImage: boolean, port: number): string
 }
 
 async function createSyntheticImage(): Promise<Buffer> {
-  const image = new jimp(400, 300, 0x336699ff);
-  return image.getBufferAsync(jimp.MIME_JPEG);
+  const image = new Jimp({width: 400, height: 300, color: 0x336699ff});
+  return image.getBuffer(JimpMime.jpeg);
 }
 
 export async function createMockFeedServer(

@@ -1,4 +1,4 @@
-import jimp from 'jimp';
+import {Jimp, JimpMime} from 'jimp';
 import axios from 'axios';
 import og from 'open-graph-scraper';
 import {decode} from 'html-entities';
@@ -174,8 +174,9 @@ export function parseString(
 }
 
 async function resizeImageToBuffer(bufferData: Buffer): Promise<Buffer> {
-  const image = await jimp.read(bufferData);
-  return image.resize(800, jimp.AUTO).quality(80).getBufferAsync(jimp.MIME_JPEG);
+  const image = await Jimp.read(bufferData);
+  // Omitting h maintains aspect ratio (jimp v1 dropped the AUTO sentinel).
+  return image.resize({w: 800}).getBuffer(JimpMime.jpeg, {quality: 80});
 }
 
 export class FeedReader {

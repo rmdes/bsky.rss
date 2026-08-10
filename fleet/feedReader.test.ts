@@ -19,7 +19,7 @@ import {BotStore} from './botStore.ts';
 import {SharedLimiters} from './sharedLimiters.ts';
 import {BotOperations} from './botOperations.ts';
 import {FleetLogger, type FleetLogRecord} from './logging.ts';
-import jimp from 'jimp';
+import {Jimp, JimpMime} from 'jimp';
 
 // handleItem is private; these tests drive it directly to exercise item-processing
 // behavior without going through a real feed poll.
@@ -1082,8 +1082,8 @@ test('resolveEmbedImage succeeds when the response is within maxImageDownloadByt
   // Must be real, decodable JPEG bytes: resolveEmbedImage feeds the response body
   // through jimp to resize it, and jimp rejects arbitrary/zero-filled bytes as
   // "Could not find MIME for Buffer" regardless of whether the size cap passed.
-  const image = await jimp.create(2, 2, 0xff0000ff);
-  const imageBuffer = await image.getBufferAsync(jimp.MIME_JPEG);
+  const image = new Jimp({width: 2, height: 2, color: 0xff0000ff});
+  const imageBuffer = await image.getBuffer(JimpMime.jpeg);
 
   const {server, port} = await startFixedResponseServer(imageBuffer);
   t.after(() => server.close());

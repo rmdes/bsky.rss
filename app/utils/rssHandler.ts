@@ -1,4 +1,4 @@
-import jimp from 'jimp';
+import {Jimp, JimpMime} from 'jimp';
 import axios from 'axios';
 import queue from './queueHandler';
 import db from './dbHandler';
@@ -400,9 +400,8 @@ function fixMalformedUrl(urlString: string): string {
 }
 
 async function resizeImageToBuffer(bufferData: Buffer) {
-  const image = await jimp.read(bufferData);
+  const image = await Jimp.read(bufferData);
   return image
-    .resize(800, jimp.AUTO) // null equivalent to Jimp.AUTO, Jimp.AUTO maintains aspect ratio
-    .quality(80) // Setting JPEG quality
-    .getBufferAsync(jimp.MIME_JPEG); // Getting the buffer as JPEG
+    .resize({w: 800}) // omitting h maintains aspect ratio (jimp v1 dropped the AUTO sentinel)
+    .getBuffer(JimpMime.jpeg, {quality: 80}); // Getting the buffer as JPEG
 }
