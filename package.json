@@ -28,8 +28,8 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
-    "@atproto/api": "0.19.19",
-    "@atproto/xrpc": "0.7.7",
+    "@atproto/api": "0.20.38",
+    "@atproto/xrpc": "0.8.10",
     "axios": "1.19.0",
     "dotenv": "^17.0.0",
     "feedsmith": "^2.9.6",
