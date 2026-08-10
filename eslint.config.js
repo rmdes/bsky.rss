@@ -3,7 +3,6 @@ module.exports = [
   ...require('gts'),
   {
     files: ['**/*.ts', '**/*.tsx'],
-    plugins: {'@typescript-eslint': require('typescript-eslint').plugin},
     rules: {
       '@typescript-eslint/no-unused-vars': [
         'error',
