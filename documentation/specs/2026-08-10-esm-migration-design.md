@@ -74,9 +74,15 @@ change, not a refactor.
    resolve `multiformats`'s import-only export condition during `yarn typecheck` — the same
    condition that fails today under `moduleResolution: "node"`.
 
-4. **`eslint.config.js` → `eslint.config.cjs`**: rename only, no syntax change. `.cjs` is always
-   CommonJS regardless of `package.json`'s `"type"` field — the simplest fix, and ESLint's flat
-   config loader has explicit, documented support for `.cjs` config files.
+4. **`eslint.config.js`**: convert to native ESM syntax (`import` + `export default`) rather than
+   just renaming to `.cjs` — more consistent with the rest of the migration, and ESLint's flat
+   config loader fully supports ESM config files once `package.json` sets `"type": "module"`.
+   `require('gts')`'s current CJS `module.exports = [...]` (an array) becomes `import gtsConfig
+   from 'gts'` — Node's CJS-from-ESM interop hands the same array to the default import, so the
+   config's actual content is unchanged, only its syntax. Same for
+   `require('typescript-eslint').plugin` → a named/default import. Verify this interop holds via
+   `yarn lint` during implementation; fall back to a `.cjs` rename (keeping today's
+   `module.exports`/`require` syntax unchanged) only if the ESM conversion proves awkward.
 
 5. **Sweep for other CJS-only idioms**: grep the whole tree for `__dirname`, `__filename`,
    `require.resolve`, and any remaining bare `require(...)` calls outside `eslint.config.cjs`.
