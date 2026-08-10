@@ -229,12 +229,17 @@ export class BotWorker {
         );
       }
     } finally {
-      // 96-hour retention, matching dbHandler.cleanupOldValues()'s and this same class's
-      // own (per-bot) cleanupOldSeenValues() convention. Multiple BotWorkers sharing one
-      // identityStore each call this once per drain pass - harmless, a DELETE against an
-      // indexed primary key, not worth coordinating away.
-      this.options.identityStore.cleanupOldSeenValues(96);
-      this.queueRunning = false;
+      try {
+        // 96-hour retention, matching dbHandler.cleanupOldValues()'s and this same
+        // class's own (per-bot) cleanupOldSeenValues() convention. Multiple
+        // BotWorkers sharing one identityStore each call this once per drain pass -
+        // a full table scan (seen_items has no index on seen_at, only a primary key
+        // on value), but the row counts here are small enough that coordinating the
+        // call away isn't worth the complexity.
+        this.options.identityStore.cleanupOldSeenValues(96);
+      } finally {
+        this.queueRunning = false;
+      }
     }
   }
 }
