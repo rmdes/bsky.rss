@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.0] - 2026-08-10
+
+**Fleet mode: identity-scoped duplicate detection** - fixes bot configs sharing one Bluesky
+account (e.g. multiple FreshRSS category feeds posting to the same identity) sometimes posting
+the same story twice
+
+### Fixed
+- Fleet mode bot configs that deliberately share one Bluesky identity (different feeds, one
+  account) now share duplicate-detection state across those configs, not just within each bot's
+  own feed. Previously, the same story appearing in two category feeds could get posted twice to
+  the same account, since each bot config only tracked what it had seen on its own. The check
+  runs early, before any Open Graph/image work, and applies regardless of a bot's own
+  `publishEmbed`/`removeDuplicate` settings.
+- `dedupeKey` (the deterministic AT-Proto record key) is now scoped by the Bluesky identifier a
+  bot config publishes to, not by its internal bot ID - a genuine cross-bot duplicate now
+  collides at the PDS's own atomic per-record-key uniqueness constraint as defense-in-depth,
+  even in the rare race window where two bots discover the same story in the same poll cycle.
+- Fleet mode's per-bot `seen_items` table is now actually pruned on a 96-hour retention window
+  (`BotStore.cleanupOldSeenValues`, implemented since the original fleet consolidation but never
+  wired up) - it previously grew unboundedly for every bot with `removeDuplicate` enabled.
+
+### Added
+- `documentation/fleet.md` documents the new per-identity SQLite store
+  (`data/fleet/identities/<identifier>.sqlite`) used for cross-bot duplicate detection.
+
+---
+
 ## [2.7.0] - 2026-08-08
 
 **Markdown-style links** - `[text](url)` syntax for cleaner, shorter clickable links in posts
