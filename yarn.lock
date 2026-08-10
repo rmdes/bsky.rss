@@ -1389,7 +1389,7 @@ __metadata:
     gts: "npm:7.0.0"
     html-entities: "npm:2.6.0"
     jimp: "npm:^0.22.12"
-    open-graph-scraper: "npm:6.11.0"
+    open-graph-scraper: "npm:6.12.0"
     tsx: "npm:4.22.2"
     typescript: "npm:6.0.3"
     underscore-cli: "npm:^0.2.19"
@@ -1496,10 +1496,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"chardet@npm:^2.1.1":
-  version: 2.1.1
-  resolution: "chardet@npm:2.1.1"
-  checksum: 10c0/d8391dd412338442b3de0d3a488aa9327f8bcf74b62b8723d6bd0b85c4084d50b731320e0a7c710edb1d44de75969995d2784b80e4c13b004a6c7a0db4c6e793
+"chardet@npm:^2.2.0":
+  version: 2.2.0
+  resolution: "chardet@npm:2.2.0"
+  checksum: 10c0/8d43a1dd3ce535aa070d04139fae62f879b4388394eb1d857364ce416675a1f0f63974fba8208e9cd11b49e1a6da3e65ea6393d0fc654a8c4217c0d74c16b1b4
   languageName: node
   linkType: hard
 
@@ -1517,22 +1517,22 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cheerio@npm:^1.1.2":
-  version: 1.1.2
-  resolution: "cheerio@npm:1.1.2"
+"cheerio@npm:^1.2.0":
+  version: 1.2.0
+  resolution: "cheerio@npm:1.2.0"
   dependencies:
     cheerio-select: "npm:^2.1.0"
     dom-serializer: "npm:^2.0.0"
     domhandler: "npm:^5.0.3"
     domutils: "npm:^3.2.2"
     encoding-sniffer: "npm:^0.2.1"
-    htmlparser2: "npm:^10.0.0"
+    htmlparser2: "npm:^10.1.0"
     parse5: "npm:^7.3.0"
     parse5-htmlparser2-tree-adapter: "npm:^7.1.0"
     parse5-parser-stream: "npm:^7.1.2"
-    undici: "npm:^7.12.0"
+    undici: "npm:^7.19.0"
     whatwg-mimetype: "npm:^4.0.0"
-  checksum: 10c0/2c6d2274666fe122f54fdca457ee76453e1a993b19563acaa23eb565bf7776f0f01e4c3800092f00e84aa13c83a161f0cf000ac0a8332d1d7f2b2387d6ecc5fc
+  checksum: 10c0/91a566aabfa9962f28056045bb7d92d79c0f8f3abb1fb86a852a9d1760556adddeb01a36b6f08fa7c133282375d387ae450a181a659e76c6a64016c30cc3f611
   languageName: node
   linkType: hard
 
@@ -1763,7 +1763,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"domutils@npm:^3.2.1, domutils@npm:^3.2.2":
+"domutils@npm:^3.2.2":
   version: 3.2.2
   resolution: "domutils@npm:3.2.2"
   dependencies:
@@ -2711,15 +2711,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"htmlparser2@npm:^10.0.0":
-  version: 10.0.0
-  resolution: "htmlparser2@npm:10.0.0"
+"htmlparser2@npm:^10.1.0":
+  version: 10.1.0
+  resolution: "htmlparser2@npm:10.1.0"
   dependencies:
     domelementtype: "npm:^2.3.0"
     domhandler: "npm:^5.0.3"
-    domutils: "npm:^3.2.1"
-    entities: "npm:^6.0.0"
-  checksum: 10c0/47cfa37e529c86a7ba9a1e0e6f951ad26ef8ca5af898ab6e8916fa02c0264c1453b4a65f28b7b8a7f9d0d29b5a70abead8203bf8b3f07bc69407e85e7d9a68e4
+    domutils: "npm:^3.2.2"
+    entities: "npm:^7.0.1"
+  checksum: 10c0/36394e29b80cfcc5e78e0fa4d3aa21fdaac3e6778d23e5c933e625c290987cd9a724a2eb0753ab60ed0c69dfaba0ab115f0ee50fb112fd8f0c4d522e7e0089a2
   languageName: node
   linkType: hard
 
@@ -2785,12 +2785,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"iconv-lite@npm:^0.7.0":
-  version: 0.7.0
-  resolution: "iconv-lite@npm:0.7.0"
+"iconv-lite@npm:^0.7.2":
+  version: 0.7.3
+  resolution: "iconv-lite@npm:0.7.3"
   dependencies:
     safer-buffer: "npm:>= 2.1.2 < 3.0.0"
-  checksum: 10c0/2382400469071c55b6746c531eed5fa4d033e5db6690b7331fb2a5f59a30d7a9782932e92253db26df33c1cf46fa200a3fbe524a2a7c62037c762283f188ec2f
+  checksum: 10c0/be2fd2414f7e94be3a63063fa0ad5919c16bc7b6e00c77eea0765ced6db405739f38dd51016583058fba25cc1d0106ba30b83fbb7a7e32f824d4db76f23d8d33
   languageName: node
   linkType: hard
 
@@ -3601,15 +3601,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"open-graph-scraper@npm:6.11.0":
-  version: 6.11.0
-  resolution: "open-graph-scraper@npm:6.11.0"
+"open-graph-scraper@npm:6.12.0":
+  version: 6.12.0
+  resolution: "open-graph-scraper@npm:6.12.0"
   dependencies:
-    chardet: "npm:^2.1.1"
-    cheerio: "npm:^1.1.2"
-    iconv-lite: "npm:^0.7.0"
-    undici: "npm:^7.16.0"
-  checksum: 10c0/7265928f6b70bd720359ff7bad75b2eee48fda9e5fd6cd0135611c2a05263858c1941c663e79ab3f91221aa9f34fa49e0a69dfdcdd82a7b218556ab1d42783d3
+    chardet: "npm:^2.2.0"
+    cheerio: "npm:^1.2.0"
+    iconv-lite: "npm:^0.7.2"
+    undici: "npm:^7.28.0"
+  checksum: 10c0/1b5785bb88be71542db575e605a8f8c2638d67a7dc4a28c88654d0d7d3d6a38495bdd0e5798c795a4788ab0927f81754b96d9d9dcf8a53532be14ebe664c0f49
   languageName: node
   linkType: hard
 
@@ -4613,10 +4613,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"undici@npm:^7.12.0, undici@npm:^7.16.0":
-  version: 7.16.0
-  resolution: "undici@npm:7.16.0"
-  checksum: 10c0/efd867792e9f233facf9efa0a087e2d9c3e4415c0b234061b9b40307ca4fa01d945fee4d43c7b564e1b80e0d519bcc682f9f6e0de13c717146c00a80e2f1fb0f
+"undici@npm:^7.19.0, undici@npm:^7.28.0":
+  version: 7.29.0
+  resolution: "undici@npm:7.29.0"
+  checksum: 10c0/85ea96e91e7f3de24de678cbbc54230fdd641a3b0643005f2aef044af1f1a2db8fbecb88b28e6fa78bb41ffeafda4479b57075b6b6ab92beac4b7b5ab53f9b10
   languageName: node
   linkType: hard
 
