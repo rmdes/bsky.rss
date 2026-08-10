@@ -45,8 +45,13 @@ class FakeBskyClient {
 // closely enough to exercise BotWorker's drain logic without touching real SQLite.
 class FakeBotStore {
   public cursor = '';
+  public cleanupCalls: number[] = [];
   private rows: QueueItemRow[] = [];
   private nextId = 1;
+
+  cleanupOldSeenValues(maxAgeHours: number): void {
+    this.cleanupCalls.push(maxAgeHours);
+  }
 
   enqueue(item: {
     title: string;
@@ -218,6 +223,20 @@ test('drainOnce prunes the identity store even on an empty-queue tick', async t 
   await worker.drainOnce();
 
   assert.deepEqual(cleanupCalls, [96]);
+});
+
+test("drainOnce prunes this bot's own per-bot store, not just the shared identity store", async t => {
+  // Session task #68: BotStore.cleanupOldSeenValues existed and was tested but was never
+  // called from any fleet mode production code path - the per-bot seen_items table grew
+  // unboundedly. Mirrors the identityStore cleanup wiring above, at the same unconditional,
+  // every-tick placement.
+  const {worker, store} = makeWorker(t);
+  await worker.start();
+
+  assert.equal(worker.queueLength(), 0);
+  await worker.drainOnce();
+
+  assert.deepEqual(store.cleanupCalls, [96]);
 });
 
 test("rkey passed to BskyClient.post matches the item's dedupeKey exactly", async t => {

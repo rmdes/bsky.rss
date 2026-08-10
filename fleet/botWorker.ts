@@ -134,6 +134,11 @@ export class BotWorker {
     // row counts here are small enough that coordinating the call away across
     // multiple BotWorkers sharing one identityStore isn't worth the complexity.
     this.options.identityStore.cleanupOldSeenValues(96);
+    // Same pruning for this bot's own per-bot seen_items table (written by
+    // FeedReader.handleItem's removeDuplicate check) - previously implemented and
+    // tested (BotStore.cleanupOldSeenValues) but never called from any fleet mode
+    // code path, so it grew unboundedly. Session task #68.
+    this.options.store.cleanupOldSeenValues(96);
 
     const rows = this.options.store.listQueued();
     if (rows.length === 0) return;
