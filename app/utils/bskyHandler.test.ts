@@ -1,6 +1,11 @@
-import {describe, it} from 'node:test';
+import {describe, it, beforeEach, afterEach} from 'node:test';
 import assert from 'node:assert';
+import {mkdtempSync, rmSync} from 'fs';
+import {tmpdir} from 'os';
+import path from 'path';
 import {RichText} from '@atproto/api';
+import {createDbHandler} from './dbHandler.ts';
+import {createBskyHandler, type BskyHandler} from './bskyHandler.ts';
 
 /**
  * Tests for bskyHandler module
@@ -11,9 +16,23 @@ import {RichText} from '@atproto/api';
  */
 
 describe('bskyHandler', () => {
+  let testDataDir: string;
+
+  beforeEach(() => {
+    testDataDir = mkdtempSync(path.join(tmpdir(), 'bsky-rss-test-'));
+  });
+
+  afterEach(() => {
+    rmSync(testDataDir, {recursive: true, force: true});
+  });
+
+  function freshBskyHandler(): BskyHandler {
+    return createBskyHandler(createDbHandler(testDataDir));
+  }
+
   describe('Module exports', () => {
-    it('should export init, login, and post functions', async () => {
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+    it('should export init, login, and post functions', () => {
+      const bskyHandler = freshBskyHandler();
 
       assert(typeof bskyHandler.init === 'function');
       assert(typeof bskyHandler.login === 'function');
@@ -23,8 +42,7 @@ describe('bskyHandler', () => {
 
   describe('init()', () => {
     it('should require service URL parameter', async () => {
-      // Reload module to reset state
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler = freshBskyHandler();
 
       const agent = await bskyHandler.init('https://bsky.social');
       assert(agent, 'Agent should be returned');
@@ -32,7 +50,7 @@ describe('bskyHandler', () => {
     });
 
     it('should throw error if initialized twice', async () => {
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler = freshBskyHandler();
 
       await bskyHandler.init('https://bsky.social');
 
@@ -47,11 +65,11 @@ describe('bskyHandler', () => {
     });
 
     it('should create agent with different service URLs', async () => {
-      const bskyHandler1 = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler1 = freshBskyHandler();
       const agent1 = await bskyHandler1.init('https://bsky.social');
       assert(agent1);
 
-      const bskyHandler2 = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler2 = freshBskyHandler();
       const agent2 = await bskyHandler2.init('https://custom.bsky.host');
       assert(agent2);
     });
@@ -59,7 +77,7 @@ describe('bskyHandler', () => {
 
   describe('login()', () => {
     it('should throw error if agent not initialized', async () => {
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler = freshBskyHandler();
 
       await assert.rejects(
         async () => {
@@ -75,31 +93,26 @@ describe('bskyHandler', () => {
     });
 
     it('should require identifier and password parameters', async () => {
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler = freshBskyHandler();
       await bskyHandler.init('https://bsky.social');
 
-      // Should accept object with identifier and password
       const credentials = {
         identifier: 'test.bsky.social',
         password: 'test-password',
       };
 
-      // We can't test the actual login without credentials,
-      // but we can verify it attempts to read persisted data
-      // and the function signature is correct
       try {
         await bskyHandler.login(credentials);
       } catch (error) {
         assert(error instanceof Error, 'Expected an Error instance');
-        // Expected to fail without valid credentials
-        // Just verify it's attempting authentication
         assert(
           error.message.includes('Login failed') ||
             error.message.includes('Invalid') ||
             error.message.includes('fetch') ||
             error.message.includes('ENOTFOUND') ||
             error.message.includes('Forbidden') ||
-            error.message.includes('Unauthorized'),
+            error.message.includes('Unauthorized') ||
+            error.message.includes('Rate Limit'),
           `Error should be related to authentication or network: ${error.message}`,
         );
       }
@@ -108,7 +121,7 @@ describe('bskyHandler', () => {
 
   describe('post()', () => {
     it('should throw error if agent not initialized', async () => {
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler = freshBskyHandler();
 
       await assert.rejects(
         async () => {
@@ -121,21 +134,17 @@ describe('bskyHandler', () => {
     });
 
     it('should require content parameter', async () => {
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler = freshBskyHandler();
       await bskyHandler.init('https://bsky.social');
 
-      // Should accept object with content
       const postData = {
         content: 'Test post content',
       };
 
-      // We can't test actual posting without authentication,
-      // but we can verify the function signature
       try {
         await bskyHandler.post(postData);
       } catch (error) {
         assert(error instanceof Error, 'Expected an Error instance');
-        // Expected to fail without authentication
         assert(
           error.message.includes('not initialized') ||
             error.message.includes('authenticated') ||
@@ -148,7 +157,7 @@ describe('bskyHandler', () => {
     });
 
     it('should accept optional parameters', async () => {
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler = freshBskyHandler();
       await bskyHandler.init('https://bsky.social');
 
       const postData = {
@@ -163,12 +172,10 @@ describe('bskyHandler', () => {
         },
       };
 
-      // Verify function accepts these parameters without throwing TypeError
       try {
         await bskyHandler.post(postData);
       } catch (error) {
         assert(error instanceof Error, 'Expected an Error instance');
-        // Should not be a TypeError about parameters
         assert(
           error.constructor.name !== 'TypeError' || !error.message.includes('undefined'),
           'Should not throw TypeError for valid parameters',
@@ -179,7 +186,6 @@ describe('bskyHandler', () => {
 
   describe('Type safety and parameter validation', () => {
     it('should handle embed with image type', () => {
-      // Test that embed structure is accepted
       const embedImage = {
         type: 'image',
         image: Buffer.from('fake-image'),
@@ -230,9 +236,8 @@ describe('bskyHandler', () => {
     });
 
     it('should validate initialization state before operations', async () => {
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler = freshBskyHandler();
 
-      // Should throw before init
       await assert.rejects(
         () => bskyHandler.login({identifier: 'test', password: 'test'}),
         /not initialized/,
@@ -240,49 +245,42 @@ describe('bskyHandler', () => {
 
       await assert.rejects(() => bskyHandler.post({content: 'test'}), /not initialized/);
 
-      // Should work after init (may fail for other reasons)
       await bskyHandler.init('https://bsky.social');
-
-      // Now functions should at least attempt to execute
-      // (they may fail for authentication reasons, but not initialization)
     });
   });
 
   describe('Module state management', () => {
     it('should maintain singleton agent across function calls', async () => {
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler = freshBskyHandler();
 
       await bskyHandler.init('https://bsky.social');
 
-      // Second init should fail
       await assert.rejects(() => bskyHandler.init('https://bsky.social'), /already initialized/);
     });
 
-    it('should reset state when module is reloaded', async () => {
-      let bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+    it('should reset state when constructed again', async () => {
+      let bskyHandler = freshBskyHandler();
       await bskyHandler.init('https://bsky.social');
 
-      // Reload module
-      bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      // A fresh instance starts with unset state, same as a reloaded module used to.
+      bskyHandler = freshBskyHandler();
 
-      // Should be able to init again
       const agent = await bskyHandler.init('https://bsky.social');
       assert(agent);
     });
   });
 
   describe('Integration contract', () => {
-    it('should export functions that match expected signatures', async () => {
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+    it('should export functions that match expected signatures', () => {
+      const bskyHandler = freshBskyHandler();
 
-      // Check function signatures
       assert.strictEqual(bskyHandler.init.length, 1); // service parameter
       assert.strictEqual(bskyHandler.login.length, 1); // credentials object
       assert.strictEqual(bskyHandler.post.length, 1); // post data object
     });
 
     it('should return expected types', async () => {
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler = freshBskyHandler();
 
       const agent = await bskyHandler.init('https://bsky.social');
       assert.strictEqual(typeof agent, 'object');
@@ -321,10 +319,7 @@ describe('bskyHandler', () => {
     });
 
     it('post() merges hand-built facets with auto-detected ones end-to-end, via buildFacets', async () => {
-      // Proves post() actually calls buildFacets and produces the deduped result, not just
-      // that RichText's constructor can hold both - mocks agent.post to capture the real
-      // record without a live network call, following this file's established pattern.
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler = freshBskyHandler();
       const agent = await bskyHandler.init('https://bsky.social');
 
       let capturedRecord:
@@ -361,10 +356,7 @@ describe('bskyHandler', () => {
     });
 
     it('post() drops an auto-detected facet that overlaps a hand-built markdown-link facet, end-to-end', async () => {
-      // Regression test for Finding 3: a [text](url) span's display text that happens to
-      // contain a bare URL (e.g. [$title]($link) where the title itself has a raw link) was
-      // independently rediscovered by detectFacets() as a second, overlapping facet.
-      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const bskyHandler = freshBskyHandler();
       const agent = await bskyHandler.init('https://bsky.social');
 
       let capturedRecord:
