@@ -13,7 +13,8 @@ import healthHandler from './healthHandler.ts';
  */
 
 describe('queueHandler', () => {
-  const TEST_DATA_DIR = path.join(__dirname, '../../data');
+  const TEST_DATA_DIR = path.join(import.meta.dirname, '../../data');
+  let queueHandler: typeof import('./queueHandler.ts').default;
 
   before(() => {
     // Ensure data directory exists
@@ -22,7 +23,7 @@ describe('queueHandler', () => {
     }
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Create minimal config for tests
     const testConfig = {
       string: '$title - $link',
@@ -48,8 +49,7 @@ describe('queueHandler', () => {
 
     fs.writeFileSync(path.join(TEST_DATA_DIR, 'config.json'), JSON.stringify(testConfig), 'utf8');
 
-    // Clear module cache to reset queue state
-    delete require.cache[require.resolve('./queueHandler')];
+    queueHandler = (await import(`./queueHandler.ts?t=${crypto.randomUUID()}`)).default;
   });
 
   after(() => {
@@ -62,8 +62,6 @@ describe('queueHandler', () => {
 
   describe('Module exports', () => {
     it('should export writeQueue and start functions', () => {
-      const queueHandler = require('./queueHandler').default;
-
       assert(typeof queueHandler.writeQueue === 'function');
       assert(typeof queueHandler.start === 'function');
     });
@@ -71,8 +69,6 @@ describe('queueHandler', () => {
 
   describe('writeQueue()', () => {
     it('should add item to queue', async () => {
-      const queueHandler = require('./queueHandler').default;
-
       const item = {
         content: 'Test post content',
         title: 'Test Article',
@@ -89,9 +85,6 @@ describe('queueHandler', () => {
     });
 
     it('should accept item with embed', async () => {
-      delete require.cache[require.resolve('./queueHandler')];
-      const queueHandler = require('./queueHandler').default;
-
       const item = {
         content: 'Post with embed',
         title: 'Article with Card',
@@ -113,9 +106,6 @@ describe('queueHandler', () => {
     });
 
     it('should add multiple items to queue', async () => {
-      delete require.cache[require.resolve('./queueHandler')];
-      const queueHandler = require('./queueHandler').default;
-
       await queueHandler.writeQueue({
         content: 'Post 1',
         title: 'Article 1',
@@ -141,9 +131,6 @@ describe('queueHandler', () => {
     });
 
     it('should preserve item order in queue', async () => {
-      delete require.cache[require.resolve('./queueHandler')];
-      const queueHandler = require('./queueHandler').default;
-
       await queueHandler.writeQueue({
         content: 'First',
         title: 'First Article',
@@ -171,9 +158,6 @@ describe('queueHandler', () => {
     });
 
     it('should handle items with all optional fields', async () => {
-      delete require.cache[require.resolve('./queueHandler')];
-      const queueHandler = require('./queueHandler').default;
-
       const item = {
         content: 'Complete post',
         title: 'Complete Article',
@@ -196,9 +180,6 @@ describe('queueHandler', () => {
     });
 
     it('should return queue array', async () => {
-      delete require.cache[require.resolve('./queueHandler')];
-      const queueHandler = require('./queueHandler').default;
-
       const result = await queueHandler.writeQueue({
         content: 'Test',
         title: 'Test',
@@ -213,8 +194,6 @@ describe('queueHandler', () => {
 
   describe('start()', () => {
     it('should be a function', () => {
-      const queueHandler = require('./queueHandler').default;
-
       assert.strictEqual(typeof queueHandler.start, 'function');
     });
 
@@ -233,7 +212,6 @@ describe('queueHandler', () => {
       // Monkey-patched instead of routed through the real HTTP server:
       // healthHandler is a singleton also driven by healthHandler.test.ts,
       // and starting/stopping the same server from two test files races.
-      const queueHandler = require('./queueHandler').default;
       let updateActivityCalled = false;
       const original = healthHandler.updateActivity;
       healthHandler.updateActivity = () => {
