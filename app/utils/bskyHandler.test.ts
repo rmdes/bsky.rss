@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import {mkdtempSync, rmSync} from 'fs';
 import {tmpdir} from 'os';
 import path from 'path';
-import {RichText} from '@atproto/api';
+import {RichText, AppBskyFeedPost} from '@atproto/api';
 import {createDbHandler} from './dbHandler.ts';
 import {createBskyHandler, type BskyHandler} from './bskyHandler.ts';
 
@@ -323,14 +323,9 @@ describe('bskyHandler', () => {
       const agent = await bskyHandler.init('https://bsky.social');
 
       let capturedRecord:
-        | {
-            facets: Array<{
-              index: {byteStart: number; byteEnd: number};
-              features: Array<{$type: string; tag?: string}>;
-            }>;
-          }
+        | (Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>)
         | undefined;
-      agent.post = async (record: typeof capturedRecord) => {
+      agent.post = async (record: Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>) => {
         capturedRecord = record;
         return {uri: 'at://did:plc:test/app.bsky.feed.post/abc', cid: 'bafycid'};
       };
@@ -344,15 +339,15 @@ describe('bskyHandler', () => {
         uri: 'at://did:plc:test/app.bsky.feed.post/abc',
         cid: 'bafycid',
       });
-      assert.strictEqual(capturedRecord!.facets.length, 2);
-      const linkFacet = capturedRecord!.facets.find(
+      assert.strictEqual(capturedRecord!.facets!.length, 2);
+      const linkFacet = capturedRecord!.facets!.find(
         f => f.features[0]?.$type === 'app.bsky.richtext.facet#link',
       );
       assert.deepStrictEqual(linkFacet?.index, {byteStart: 0, byteEnd: 6});
-      const tagFacet = capturedRecord!.facets.find(
+      const tagFacet = capturedRecord!.facets!.find(
         f => f.features[0]?.$type === 'app.bsky.richtext.facet#tag',
       );
-      assert.strictEqual(tagFacet?.features[0]?.tag, 'news');
+      assert.strictEqual((tagFacet?.features[0] as any)?.tag, 'news');
     });
 
     it('post() drops an auto-detected facet that overlaps a hand-built markdown-link facet, end-to-end', async () => {
@@ -360,14 +355,9 @@ describe('bskyHandler', () => {
       const agent = await bskyHandler.init('https://bsky.social');
 
       let capturedRecord:
-        | {
-            facets: Array<{
-              index: {byteStart: number; byteEnd: number};
-              features: Array<{$type: string; uri?: string}>;
-            }>;
-          }
+        | (Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>)
         | undefined;
-      agent.post = async (record: typeof capturedRecord) => {
+      agent.post = async (record: Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>) => {
         capturedRecord = record;
         return {uri: 'at://did:plc:test/app.bsky.feed.post/xyz', cid: 'bafycid'};
       };
@@ -380,12 +370,12 @@ describe('bskyHandler', () => {
         facets: [{byteStart: 0, byteEnd: facetByteEnd, uri: 'https://example.com/whole'}],
       });
 
-      assert.strictEqual(capturedRecord!.facets.length, 1);
-      assert.deepStrictEqual(capturedRecord!.facets[0]?.index, {
+      assert.strictEqual(capturedRecord!.facets!.length, 1);
+      assert.deepStrictEqual(capturedRecord!.facets![0]?.index, {
         byteStart: 0,
         byteEnd: facetByteEnd,
       });
-      assert.strictEqual(capturedRecord!.facets[0]?.features[0]?.uri, 'https://example.com/whole');
+      assert.strictEqual((capturedRecord!.facets![0]?.features[0] as any)?.uri, 'https://example.com/whole');
     });
   });
 });
