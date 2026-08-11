@@ -74,14 +74,16 @@ describe('queueHandler', () => {
         title: 'Test Article',
         date: new Date('2026-08-05T10:00:00.000Z').toString(),
         languages: ['en'],
+        embed: undefined,
+        facets: [],
       };
 
       const result = await queueHandler.writeQueue(item);
 
       assert(Array.isArray(result));
       assert.strictEqual(result.length, 1);
-      assert.strictEqual(result[0].content, item.content);
-      assert.strictEqual(result[0].title, item.title);
+      assert.strictEqual(result[0]!.content, item.content);
+      assert.strictEqual(result[0]!.title, item.title);
     });
 
     it('should accept item with embed', async () => {
@@ -96,13 +98,14 @@ describe('queueHandler', () => {
           title: 'Example Article',
           description: 'Description',
         },
+        facets: [],
       };
 
       const result = await queueHandler.writeQueue(item);
 
       assert.strictEqual(result.length, 1);
-      assert(result[0].embed);
-      assert.strictEqual(result[0].embed.uri, 'https://example.com/article');
+      assert(result[0]!.embed);
+      assert.strictEqual(result[0]!.embed.uri, 'https://example.com/article');
     });
 
     it('should add multiple items to queue', async () => {
@@ -111,6 +114,8 @@ describe('queueHandler', () => {
         title: 'Article 1',
         date: new Date().toString(),
         languages: ['en'],
+        embed: undefined,
+        facets: [],
       });
 
       await queueHandler.writeQueue({
@@ -118,6 +123,8 @@ describe('queueHandler', () => {
         title: 'Article 2',
         date: new Date().toString(),
         languages: ['en'],
+        embed: undefined,
+        facets: [],
       });
 
       const queue = await queueHandler.writeQueue({
@@ -125,6 +132,8 @@ describe('queueHandler', () => {
         title: 'Article 3',
         date: new Date().toString(),
         languages: ['en'],
+        embed: undefined,
+        facets: [],
       });
 
       assert.strictEqual(queue.length, 3);
@@ -136,6 +145,8 @@ describe('queueHandler', () => {
         title: 'First Article',
         date: new Date().toString(),
         languages: ['en'],
+        embed: undefined,
+        facets: [],
       });
 
       await queueHandler.writeQueue({
@@ -143,6 +154,8 @@ describe('queueHandler', () => {
         title: 'Second Article',
         date: new Date().toString(),
         languages: ['en'],
+        embed: undefined,
+        facets: [],
       });
 
       const queue = await queueHandler.writeQueue({
@@ -150,11 +163,13 @@ describe('queueHandler', () => {
         title: 'Third Article',
         date: new Date().toString(),
         languages: ['en'],
+        embed: undefined,
+        facets: [],
       });
 
-      assert.strictEqual(queue[0].content, 'First');
-      assert.strictEqual(queue[1].content, 'Second');
-      assert.strictEqual(queue[2].content, 'Third');
+      assert.strictEqual(queue[0]!.content, 'First');
+      assert.strictEqual(queue[1]!.content, 'Second');
+      assert.strictEqual(queue[2]!.content, 'Third');
     });
 
     it('should handle items with all optional fields', async () => {
@@ -164,19 +179,22 @@ describe('queueHandler', () => {
         date: new Date('2026-08-05T10:00:00.000Z').toString(),
         languages: ['en', 'fr'],
         embed: {
+          uri: 'https://example.com/complete-article',
+          title: 'Complete Article',
           type: 'image',
           image: Buffer.from('fake-image'),
           imageAlt: 'Image description',
         },
+        facets: [],
       };
 
       const result = await queueHandler.writeQueue(item);
 
-      assert.strictEqual(result[0].content, item.content);
-      assert.strictEqual(result[0].title, item.title);
-      assert.strictEqual(result[0].date, item.date);
-      assert.deepStrictEqual(result[0].languages, item.languages);
-      assert(result[0].embed);
+      assert.strictEqual(result[0]!.content, item.content);
+      assert.strictEqual(result[0]!.title, item.title);
+      assert.strictEqual(result[0]!.date, item.date);
+      assert.deepStrictEqual(result[0]!.languages, item.languages);
+      assert(result[0]!.embed);
     });
 
     it('should return queue array', async () => {
@@ -185,6 +203,8 @@ describe('queueHandler', () => {
         title: 'Test',
         date: new Date().toString(),
         languages: ['en'],
+        embed: undefined,
+        facets: [],
       });
 
       assert(Array.isArray(result));
