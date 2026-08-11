@@ -46,7 +46,7 @@ rewound `data/last.txt` — a hazard regardless of whether the race triggers on 
 
 ### Factory functions, not classes
 
-Each of `app/utils/{dbHandler,bskyHandler,queueHandler,rssHandler,healthHandler}.ts` changes from
+Each of `app/utils/{dbHandler,bskyHandler,queueHandler,rssHandler}.ts` changes from
 
 ```ts
 let someState: T = ...;
@@ -89,31 +89,35 @@ instance (which would leak the first `BskyAgent` and leave its `persistSession` 
 the second one's writes to `db.writePersistDate`), a real invariant independent of whether the
 state lives at module or closure scope.
 
-**`queueHandler.ts`** — `createQueueHandler(bsky: BskyHandler, db: DbHandler, health:
-HealthHandler): QueueHandler`. `queue`, `rateLimited`, `queueRunning`, `queueSnapshot`,
-`lastPostTimestamp`, `config` all move into the closure.
+**`queueHandler.ts`** — `createQueueHandler(bsky: BskyHandler, db: DbHandler): QueueHandler`.
+`queue`, `rateLimited`, `queueRunning`, `queueSnapshot`, `lastPostTimestamp`, `config` all move
+into the closure. `healthHandler` is left untouched (see below) — `queueHandler.ts` keeps its
+existing `import health from './healthHandler.ts'` and calls `health.updateActivity()` exactly as
+it does today.
 
 **`rssHandler.ts`** — `createRssHandler(queue: QueueHandler, db: DbHandler): RssHandler`. `reader`,
 `lastDate`, `batchMax`, `config` move into the closure.
 
-**`healthHandler.ts`** — `createHealthHandler(): HealthHandler`. No constructor dependencies. Binds
-one real OS port per instance (`process.env.HEALTH_CHECK_PORT || 8080`); both `app/index.ts` and
-`fleet/runFleet.ts` construct exactly one instance per process, same as today's one-singleton-per-
-process behavior, just via an explicit call instead of a shared module import. The existing
-`reset()` export (already a de facto "reset for testing" escape hatch on the old singleton) is
-kept as an instance method — it's testing-only same as before, just now scoped to one constructed
-server instance instead of the whole module.
+**`healthHandler.ts`** — left as the existing module singleton, not converted. It has no
+test-isolation bug (its own test file already uses the module's `reset()` export between tests,
+which works fine — the cache-busting problem never applied here), and it's a genuine one-per-OS-port
+singleton by nature (`process.env.HEALTH_CHECK_PORT || 8080`), shared by both `app/index.ts` and
+`fleet/runFleet.ts`. Converting it would add a constructor parameter to `createQueueHandler` and a
+wiring change in `fleet/runFleet.ts` with no bug fixed and no test gaining real coverage it didn't
+already have — flagged as unjustified scope by ponytail-review and cut. `app/`'s handler layer ends
+up with one deliberate exception (`healthHandler` stays a singleton) alongside four constructible
+factories, which matches its actual shape: `healthHandler` binds a real OS resource with exactly one
+legitimate instance per process, unlike the other four which just accumulate in-memory state.
 
 ### Wiring
 
 `app/index.ts` builds the real chain explicitly, replacing today's independent top-level imports of
-`bsky`/`reader`/`queue`/`health`:
+`bsky`/`reader`/`queue` (its existing `import health from './utils/healthHandler.ts'` is unchanged):
 
 ```ts
 const db = createDbHandler(join(import.meta.dirname, '../data'));
-const health = createHealthHandler();
 const bsky = createBskyHandler(db);
-const queue = createQueueHandler(bsky, db, health);
+const queue = createQueueHandler(bsky, db);
 const reader = createRssHandler(queue, db);
 ```
 
@@ -121,13 +125,11 @@ const reader = createRssHandler(queue, db);
 `dbHandler.ts`'s hardcoded paths point at today (`app/utils/../../data` = `<project-root>/data`) —
 no behavior change for real deployments.
 
-`fleet/runFleet.ts` replaces `import health from '../app/utils/healthHandler.ts'` with its own
-`const health = createHealthHandler();` constructed once in `main()`, alongside its other
-per-process singletons. No other part of `fleet/` changes.
+`fleet/runFleet.ts` is unaffected — `healthHandler` is out of scope for this design (see above).
 
 ### Test isolation
 
-Each of the 5 `.test.ts` files' `beforeEach` (or equivalent per-test setup) creates a fresh
+Each of the 4 affected `.test.ts` files' `beforeEach` (or equivalent per-test setup) creates a fresh
 directory via `fs.mkdtempSync(path.join(os.tmpdir(), 'bsky-rss-test-'))` and constructs that test's
 handler(s) with `createDbHandler(testDataDir)` (and whatever else needs a fresh instance for that
 test). `afterEach`/`after` removes it with `fs.rmSync(testDataDir, {recursive: true, force: true})`.
@@ -138,28 +140,26 @@ path bug can no longer reach real local state) in one change.
 All 27 `crypto.randomUUID()`-cache-busting `import('./x.ts?t=' + ...)` call sites across
 `bskyHandler.test.ts`, `queueHandler.test.ts`, `rssHandler.test.ts`, `dbHandler.test.ts` are deleted
 — a fresh handler instance is now `createXHandler(...)`, a plain function call, not a forced module
-re-evaluation. `healthHandler.test.ts` did not use the cache-busting pattern (it already used
-`reset()` on the shared singleton) and needs a smaller edit: construct one `createHealthHandler()`
-instance in `before()`, same as today's one-server-for-the-whole-suite shape, just via the factory
-instead of the shared default export.
+re-evaluation. `healthHandler.test.ts` is unchanged (`healthHandler` is out of scope — see above).
 
 ### CLAUDE.md
 
 The "Conventions already in the code" section's line — `` `module-level `let` variables hold state
-(e.g. `bskyAgent`, `queue`, `appConfig`)` `` — needs a one-line correction once this lands: state
-moves from module scope to per-instance closure scope, constructed once in `app/index.ts` (and once
-more in `fleet/runFleet.ts` for `healthHandler` specifically). The "plain objects, not classes" part
-of the convention is unchanged and still holds.
+(e.g. `bskyAgent`, `queue`, `appConfig`)` `` — needs a one-line correction once this lands: for
+`dbHandler`/`bskyHandler`/`queueHandler`/`rssHandler`, state moves from module scope to
+per-instance closure scope, constructed once in `app/index.ts`. `healthHandler` keeps its existing
+module-level state (unchanged, out of scope). The "plain objects, not classes" part of the
+convention is unchanged and still holds.
 
 ## Testing
 
 - Every existing test in all 5 files continues to assert the same behavior; only construction
   changes (`createXHandler(...)` instead of cache-busted `import()`, `testDataDir` instead of the
   real `./data`).
-- `yarn typecheck`, `yarn test:app`, `yarn test:fleet` (for the `runFleet.ts` wiring change), and
-  targeted `npx eslint <touched files>` (full-repo `yarn lint`/`eslint .` is known to hang in this
-  sandbox, unrelated to this change — lint touched files individually, per the ESM migration's
-  established workaround).
+- `yarn typecheck`, `yarn test:app`, and targeted `npx eslint <touched files>` (full-repo
+  `yarn lint`/`eslint .` is known to hang in this sandbox, unrelated to this change — lint touched
+  files individually, per the ESM migration's established workaround). `yarn test:fleet` is not
+  required — `fleet/` is untouched by this design.
 - Manual verification that `yarn test` run repeatedly (5+ times) no longer shows any variance in
   pass/fail results, confirming the race is gone, not just less likely.
 - Manual smoke check that the real `./data` directory is untouched (`git status`/`ls -la data/`
