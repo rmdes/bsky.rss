@@ -3,6 +3,8 @@ import assert from 'node:assert';
 import fs from 'fs';
 import path from 'path';
 import {createServer} from 'node:http';
+import {decode} from 'html-entities';
+import queueHandler from './queueHandler.ts';
 
 /**
  * Tests for rssHandler module
@@ -13,9 +15,10 @@ import {createServer} from 'node:http';
  */
 
 describe('rssHandler', () => {
-  const TEST_DATA_DIR = path.join(__dirname, '../../data');
+  const TEST_DATA_DIR = path.join(import.meta.dirname, '../../data');
+  let rssHandler: typeof import('./rssHandler.ts').default;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Create minimal config for tests
     const testConfig = {
       string: '$title - $link',
@@ -45,14 +48,11 @@ describe('rssHandler', () => {
 
     fs.writeFileSync(path.join(TEST_DATA_DIR, 'config.json'), JSON.stringify(testConfig), 'utf8');
 
-    // Clear module cache to reset state
-    delete require.cache[require.resolve('./rssHandler')];
+    rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
   });
 
   describe('Module exports', () => {
     it('should export init, start, and launch functions', () => {
-      const rssHandler = require('./rssHandler').default;
-
       assert(typeof rssHandler.init === 'function');
       assert(typeof rssHandler.start === 'function');
       assert(typeof rssHandler.launch === 'function');
@@ -163,7 +163,6 @@ describe('rssHandler', () => {
 
   describe('Markdown link syntax in parseString', () => {
     test('parseString throws when [$title](...) is used but the item has no title, matching bare $title', () => {
-      const rssHandler = require('./rssHandler').default;
       const {parseString} = rssHandler;
 
       const item = {
@@ -184,7 +183,6 @@ describe('rssHandler', () => {
     });
 
     test('parseString resolves [text]($georss) to plain text with no facet when the item has no geo data', () => {
-      const rssHandler = require('./rssHandler').default;
       const {parseString} = rssHandler;
 
       const item = {
@@ -204,7 +202,6 @@ describe('rssHandler', () => {
     });
 
     test('parseString resolves [$title]($link) to a real facet with correct byte offsets', () => {
-      const rssHandler = require('./rssHandler').default;
       const {parseString} = rssHandler;
 
       const item = {
@@ -224,7 +221,6 @@ describe('rssHandler', () => {
     });
 
     test('parseString leaves bracket-free templates and their facets array empty, unchanged from today', () => {
-      const rssHandler = require('./rssHandler').default;
       const {parseString} = rssHandler;
 
       const item = {
@@ -244,7 +240,6 @@ describe('rssHandler', () => {
     });
 
     test('parseString drops a facet entirely when truncation cuts into its byte range, instead of emitting a corrupted byteEnd', () => {
-      const rssHandler = require('./rssHandler').default;
       const {parseString} = rssHandler;
 
       const longTitle = 'x'.repeat(320); // resolved display text alone exceeds the 300-char truncate threshold
@@ -265,7 +260,6 @@ describe('rssHandler', () => {
     });
 
     test('parseString keeps a facet that fits entirely within the truncated text', () => {
-      const rssHandler = require('./rssHandler').default;
       const {parseString} = rssHandler;
 
       const item = {
@@ -287,7 +281,6 @@ describe('rssHandler', () => {
     });
 
     test('parseString computes correct facet byte offsets when a bare placeholder precedes a bracket span', () => {
-      const rssHandler = require('./rssHandler').default;
       const {parseString} = rssHandler;
 
       const item = {
@@ -304,9 +297,9 @@ describe('rssHandler', () => {
       const result = parseString('$title - [text]($link)', item, false);
       assert.equal(result.text, 'A much longer title than the placeholder - text');
       const bytes = Buffer.from(result.text, 'utf8');
-      const facetText = bytes
-        .slice(result.facets[0].byteStart, result.facets[0].byteEnd)
-        .toString('utf8');
+      const facet = result.facets[0];
+      assert(facet);
+      const facetText = bytes.slice(facet.byteStart, facet.byteEnd).toString('utf8');
       assert.equal(facetText, 'text');
     });
 
@@ -315,7 +308,6 @@ describe('rssHandler', () => {
       // the string that ALREADY has '...' appended let a facet whose byteEnd fell 1-3
       // bytes past the real 277-byte cutoff survive, ending up covering the appended
       // ellipsis. Facet here spans bytes [270, 279) - 2 bytes past the cutoff.
-      const rssHandler = require('./rssHandler').default;
       const {parseString} = rssHandler;
 
       const item = {
@@ -341,7 +333,6 @@ describe('rssHandler', () => {
       // for $georss with no geo data, so resolve(token) ?? token left the literal text
       // "$georss" behind. The bare substitution path already correctly used '' for this
       // same case.
-      const rssHandler = require('./rssHandler').default;
       const {parseString} = rssHandler;
 
       const item = {
@@ -361,7 +352,6 @@ describe('rssHandler', () => {
     });
 
     test('parseString does not throw or corrupt when resolved feed content inside a bracket happens to contain a $-shaped substring', () => {
-      const rssHandler = require('./rssHandler').default;
       const {parseString} = rssHandler;
 
       const item = {
@@ -464,8 +454,6 @@ describe('rssHandler', () => {
   describe('HTML entity decoding', () => {
     it('should handle encoded HTML entities', () => {
       // html-entities library tests
-      const {decode} = require('html-entities');
-
       const testCases = [
         {input: '&lt;', expected: '<'},
         {input: '&gt;', expected: '>'},
@@ -482,8 +470,6 @@ describe('rssHandler', () => {
     });
 
     it('should handle double-encoded entities', () => {
-      const {decode} = require('html-entities');
-
       // &amp;#233; -> &#233; -> é
       const doubleEncoded = '&amp;#233;';
       const firstDecode = decode(doubleEncoded); // &#233;
@@ -493,8 +479,6 @@ describe('rssHandler', () => {
     });
 
     it('should handle mixed text and entities', () => {
-      const {decode} = require('html-entities');
-
       const input = 'Tom &amp; Jerry: A&nbsp;Classic';
       // &nbsp; decodes to U+00A0 (non-breaking space), not a regular space
       const expected = 'Tom & Jerry: A Classic';
@@ -505,8 +489,6 @@ describe('rssHandler', () => {
     });
 
     it('should handle numeric character references', () => {
-      const {decode} = require('html-entities');
-
       const input = '&#8220;Hello&#8221;'; // Smart quotes (char codes 8220 and 8221)
       const result = decode(input);
 
@@ -878,17 +860,18 @@ describe('rssHandler', () => {
       const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
       fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
 
-      // Patch the shared queueHandler singleton before requiring rssHandler, so
-      // rssHandler's own `import queue from './queueHandler'` resolves to this object.
-      const queueHandler = require('./queueHandler').default;
+      // Patch the shared queueHandler singleton before loading a fresh rssHandler, so
+      // rssHandler's own `import queue from './queueHandler.ts'` (no cache-busting query
+      // string, unlike the freshly-imported rssHandler below) resolves to this same,
+      // already-patched instance.
       const realWriteQueue = queueHandler.writeQueue;
-      const queued: {title: string}[] = [];
-      queueHandler.writeQueue = async (item: {title: string}) => {
+      const queued: QueueItems[] = [];
+      queueHandler.writeQueue = async (item: QueueItems) => {
         queued.push(item);
+        return queued;
       };
 
-      delete require.cache[require.resolve('./rssHandler')];
-      const rssHandler = require('./rssHandler').default;
+      const rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       try {
         // 0.002 minutes = 120ms, so several polls fire inside the wait below.
@@ -962,15 +945,14 @@ describe('rssHandler', () => {
       const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
       fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
 
-      const queueHandler = require('./queueHandler').default;
       const realWriteQueue = queueHandler.writeQueue;
-      const queued: {title: string}[] = [];
-      queueHandler.writeQueue = async (item: {title: string}) => {
+      const queued: QueueItems[] = [];
+      queueHandler.writeQueue = async (item: QueueItems) => {
         queued.push(item);
+        return queued;
       };
 
-      delete require.cache[require.resolve('./rssHandler')];
-      const rssHandler = require('./rssHandler').default;
+      const rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       try {
         // 0.002 minutes = 120ms, so several polls fire inside the wait below - proving
@@ -1035,15 +1017,14 @@ describe('rssHandler', () => {
       const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
       fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
 
-      const queueHandler = require('./queueHandler').default;
       const realWriteQueue = queueHandler.writeQueue;
-      const queued: {content: string}[] = [];
-      queueHandler.writeQueue = async (item: {content: string}) => {
+      const queued: QueueItems[] = [];
+      queueHandler.writeQueue = async (item: QueueItems) => {
         queued.push(item);
+        return queued;
       };
 
-      delete require.cache[require.resolve('./rssHandler')];
-      const rssHandler = require('./rssHandler').default;
+      const rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       try {
         const reader = await rssHandler.init({
@@ -1106,15 +1087,14 @@ describe('rssHandler', () => {
       const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
       fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
 
-      const queueHandler = require('./queueHandler').default;
       const realWriteQueue = queueHandler.writeQueue;
-      const queued: {content: string}[] = [];
-      queueHandler.writeQueue = async (item: {content: string}) => {
+      const queued: QueueItems[] = [];
+      queueHandler.writeQueue = async (item: QueueItems) => {
         queued.push(item);
+        return queued;
       };
 
-      delete require.cache[require.resolve('./rssHandler')];
-      const rssHandler = require('./rssHandler').default;
+      const rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       try {
         const reader = await rssHandler.init({
@@ -1183,15 +1163,14 @@ describe('rssHandler', () => {
       const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
       fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
 
-      const queueHandler = require('./queueHandler').default;
       const realWriteQueue = queueHandler.writeQueue;
-      const queued: {content: string}[] = [];
-      queueHandler.writeQueue = async (item: {content: string}) => {
+      const queued: QueueItems[] = [];
+      queueHandler.writeQueue = async (item: QueueItems) => {
         queued.push(item);
+        return queued;
       };
 
-      delete require.cache[require.resolve('./rssHandler')];
-      const rssHandler = require('./rssHandler').default;
+      const rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       try {
         const reader = await rssHandler.init({
@@ -1261,15 +1240,14 @@ describe('rssHandler', () => {
       const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
       fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
 
-      const queueHandler = require('./queueHandler').default;
       const realWriteQueue = queueHandler.writeQueue;
-      const queued: {content: string}[] = [];
-      queueHandler.writeQueue = async (item: {content: string}) => {
+      const queued: QueueItems[] = [];
+      queueHandler.writeQueue = async (item: QueueItems) => {
         queued.push(item);
+        return queued;
       };
 
-      delete require.cache[require.resolve('./rssHandler')];
-      const rssHandler = require('./rssHandler').default;
+      const rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       try {
         const reader = await rssHandler.init({
