@@ -7,8 +7,8 @@ import path from 'path';
 import dbHandler from './dbHandler.ts';
 
 describe('dbHandler', () => {
-  const TEST_DATA_DIR = path.join(__dirname, '../../data-test');
-  const ORIGINAL_DATA_DIR = path.join(__dirname, '../../data');
+  const TEST_DATA_DIR = path.join(import.meta.dirname, '../../data-test');
+  const ORIGINAL_DATA_DIR = path.join(import.meta.dirname, '../../data');
 
   // Create a temporary test data directory
   before(() => {
@@ -46,10 +46,6 @@ describe('dbHandler', () => {
         fs.unlinkSync(filePath);
       }
     });
-
-    // Reset module state by reimporting
-    // This clears the cached appConfig
-    delete require.cache[require.resolve('./dbHandler')];
   });
 
   describe('readLast()', () => {
@@ -225,9 +221,10 @@ describe('dbHandler', () => {
 
   describe('readConfig()', () => {
     it('should throw error if config not initialized', async () => {
-      // Reload module to clear cached config
-      delete require.cache[require.resolve('./dbHandler')];
-      const freshDbHandler = require('./dbHandler').default;
+      // Load a fresh instance to get an unset appConfig - the shared top-level
+      // `dbHandler` import may already have config cached from earlier tests in
+      // this file (initConfig() caches it in module-level state).
+      const freshDbHandler = (await import(`./dbHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       await assert.rejects(
         async () => {
