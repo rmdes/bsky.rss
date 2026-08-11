@@ -1,8 +1,12 @@
-import {describe, it, before, after, beforeEach} from 'node:test';
+import {describe, it, beforeEach, afterEach} from 'node:test';
 import assert from 'node:assert';
-import fs from 'fs';
+import fs, {mkdtempSync, rmSync} from 'fs';
+import {tmpdir} from 'os';
 import path from 'path';
 import healthHandler from './healthHandler.ts';
+import {createDbHandler} from './dbHandler.ts';
+import {createBskyHandler} from './bskyHandler.ts';
+import {createQueueHandler, type QueueHandler} from './queueHandler.ts';
 
 /**
  * Tests for queueHandler module
@@ -13,17 +17,12 @@ import healthHandler from './healthHandler.ts';
  */
 
 describe('queueHandler', () => {
-  const TEST_DATA_DIR = path.join(import.meta.dirname, '../../data');
-  let queueHandler: typeof import('./queueHandler.ts').default;
+  let testDataDir: string;
+  let queueHandler: QueueHandler;
 
-  before(() => {
-    // Ensure data directory exists
-    if (!fs.existsSync(TEST_DATA_DIR)) {
-      fs.mkdirSync(TEST_DATA_DIR, {recursive: true});
-    }
-  });
+  beforeEach(() => {
+    testDataDir = mkdtempSync(path.join(tmpdir(), 'bsky-rss-test-'));
 
-  beforeEach(async () => {
     // Create minimal config for tests
     const testConfig = {
       string: '$title - $link',
@@ -47,17 +46,15 @@ describe('queueHandler', () => {
       maxSpacing: 60,
     };
 
-    fs.writeFileSync(path.join(TEST_DATA_DIR, 'config.json'), JSON.stringify(testConfig), 'utf8');
+    fs.writeFileSync(path.join(testDataDir, 'config.json'), JSON.stringify(testConfig), 'utf8');
 
-    queueHandler = (await import(`./queueHandler.ts?t=${crypto.randomUUID()}`)).default;
+    const db = createDbHandler(testDataDir);
+    const bsky = createBskyHandler(db);
+    queueHandler = createQueueHandler(bsky, db);
   });
 
-  after(() => {
-    // Clean up test config
-    const configPath = path.join(TEST_DATA_DIR, 'config.json');
-    if (fs.existsSync(configPath)) {
-      fs.unlinkSync(configPath);
-    }
+  afterEach(() => {
+    rmSync(testDataDir, {recursive: true, force: true});
   });
 
   describe('Module exports', () => {
@@ -254,16 +251,13 @@ describe('queueHandler', () => {
 
   describe('Adaptive spacing calculations', () => {
     it('should compute delay for queue with multiple items', () => {
-      // Test the adaptive spacing algorithm logic
       const config = {
         adaptiveSpacing: true,
-        spacingWindow: 600, // 10 minutes
+        spacingWindow: 600,
         minSpacing: 1,
         maxSpacing: 60,
       };
 
-      // With 10 items in queue and 600 second window:
-      // delay = 600 / 10 = 60 seconds
       const queueSize = 10;
       const expectedDelay = config.spacingWindow / queueSize;
 
@@ -278,8 +272,6 @@ describe('queueHandler', () => {
         maxSpacing: 60,
       };
 
-      // With 5 items: 600 / 5 = 120 seconds
-      // Should be clamped to maxSpacing (60)
       const queueSize = 5;
       const calculatedDelay = config.spacingWindow / queueSize;
       const clampedDelay = Math.max(
@@ -298,8 +290,6 @@ describe('queueHandler', () => {
         maxSpacing: 60,
       };
 
-      // With 1000 items: 600 / 1000 = 0.6 seconds
-      // Should be clamped to minSpacing (1)
       const queueSize = 1000;
       const calculatedDelay = config.spacingWindow / queueSize;
       const clampedDelay = Math.max(
@@ -318,7 +308,6 @@ describe('queueHandler', () => {
         maxSpacing: 60,
       };
 
-      // When disabled, delay should be 0 regardless of queue size
       const queueSize = 10;
       const delay = config.adaptiveSpacing ? config.spacingWindow / queueSize : 0;
 
@@ -326,7 +315,6 @@ describe('queueHandler', () => {
     });
 
     it('should return 0 delay for single item queue', () => {
-      // With only 1 item, no delay needed
       const queueSize = 1;
       const delay = queueSize <= 1 ? 0 : 600 / queueSize;
 
@@ -341,11 +329,11 @@ describe('queueHandler', () => {
       };
 
       const testCases = [
-        {queueSize: 2, expected: 60}, // 600/2 = 300, clamped to 60
-        {queueSize: 10, expected: 60}, // 600/10 = 60
-        {queueSize: 20, expected: 30}, // 600/20 = 30
-        {queueSize: 100, expected: 6}, // 600/100 = 6
-        {queueSize: 600, expected: 1}, // 600/600 = 1
+        {queueSize: 2, expected: 60},
+        {queueSize: 10, expected: 60},
+        {queueSize: 20, expected: 30},
+        {queueSize: 100, expected: 6},
+        {queueSize: 600, expected: 1},
       ];
 
       testCases.forEach(tc => {
@@ -386,7 +374,6 @@ describe('queueHandler', () => {
         maxSpacing: 30,
       };
 
-      // Verify all fields are valid types
       assert.strictEqual(typeof fullConfig.string, 'string');
       assert.strictEqual(typeof fullConfig.publishEmbed, 'boolean');
       assert(Array.isArray(fullConfig.languages));
@@ -418,7 +405,6 @@ describe('queueHandler', () => {
         maxSpacing: 60,
       };
 
-      // Verify defaults
       assert.strictEqual(minimalConfig.adaptiveSpacing, false);
       assert.strictEqual(minimalConfig.spacingWindow, 600);
       assert.strictEqual(minimalConfig.minSpacing, 1);
