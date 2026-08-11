@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.0] - 2026-08-11
+
+### Changed
+- Migrated the entire codebase from CommonJS to native ES modules (`"type": "module"`,
+  `moduleResolution: "nodenext"`). No config, environment variable, or runtime behavior
+  changes for anyone running the published Docker image - this unblocks dependency updates
+  that require ESM-only packages.
+- Bumped `@atproto/api` to `0.20.38` and `@atproto/xrpc` to `0.8.10` (previously blocked by
+  a transitive ESM-only dependency under CommonJS).
+- Refactored `app/`'s (single-bot mode) internal handlers from module-level singleton state
+  to constructible factory functions, improving internal test isolation. No external
+  behavior change.
+
+---
+
 ## [2.8.1] - 2026-08-10
 
 ### Fixed
