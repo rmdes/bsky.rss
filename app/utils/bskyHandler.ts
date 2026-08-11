@@ -46,7 +46,12 @@ export function createBskyHandler(db: DbHandler) {
       } else {
         throw new Error('Login failed (auth via persisted session)');
       }
-    } catch {
+    } catch (error) {
+      console.log(
+        `[${new Date().toUTCString()}] - [bsky.rss LOGIN] Session resume failed: ${
+          error instanceof Error ? error.message : String(error)
+        }, falling back to login/password`,
+      );
       const loginData = await bskyAgent.login({identifier, password});
       if (!loginData.success) throw new Error('Login failed (auth via login/password)');
       return loginData;
@@ -86,7 +91,14 @@ export function createBskyHandler(db: DbHandler) {
         embedImage = await bskyAgent.uploadBlob(embed.image, {
           encoding: 'image/jpeg',
         });
-      } catch {
+      } catch (error) {
+        // Log the actual error - could be rate limit, network failure, size limit, etc.
+        console.error(
+          `[${new Date().toUTCString()}] - [bsky.rss POST] Image upload failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        // Treat as rate limit to trigger retry logic downstream
         embedImage = {ratelimit: true};
       }
     }

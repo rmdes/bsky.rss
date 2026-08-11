@@ -366,8 +366,13 @@ export function createRssHandler(queue: QueueHandler, db: DbHandler) {
         responseType: 'arraybuffer',
       });
       image = await resizeImageToBuffer(fetchBuffer.data);
-    } catch {
-      // image fetch/resize failures are non-fatal; caller falls back to no image
+    } catch (error) {
+      // Image fetch/resize failures are non-fatal; caller falls back to no image
+      console.log(
+        `[${new Date().toUTCString()}] - [bsky.rss FETCH] Failed to fetch/resize image from ${imageUrl}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
 
     return image;
