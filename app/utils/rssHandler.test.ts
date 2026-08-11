@@ -1,10 +1,14 @@
-import {describe, it, test, beforeEach} from 'node:test';
+import {describe, it, test, beforeEach, afterEach} from 'node:test';
 import assert from 'node:assert';
-import fs from 'fs';
+import fs, {mkdtempSync, rmSync} from 'fs';
 import path from 'path';
+import {tmpdir} from 'os';
 import {createServer} from 'node:http';
 import {decode} from 'html-entities';
-import queueHandler from './queueHandler.ts';
+import {createDbHandler, type DbHandler} from './dbHandler.ts';
+import {createBskyHandler} from './bskyHandler.ts';
+import {createQueueHandler, type QueueHandler} from './queueHandler.ts';
+import {createRssHandler, type RssHandler} from './rssHandler.ts';
 
 /**
  * Tests for rssHandler module
@@ -15,10 +19,14 @@ import queueHandler from './queueHandler.ts';
  */
 
 describe('rssHandler', () => {
-  const TEST_DATA_DIR = path.join(import.meta.dirname, '../../data');
-  let rssHandler: typeof import('./rssHandler.ts').default;
+  let testDataDir: string;
+  let db: DbHandler;
+  let rssHandler: RssHandler;
 
   beforeEach(async () => {
+    testDataDir = mkdtempSync(path.join(tmpdir(), 'bsky-rss-test-'));
+    db = createDbHandler(testDataDir);
+
     // Create minimal config for tests
     const testConfig = {
       string: '$title - $link',
@@ -42,13 +50,15 @@ describe('rssHandler', () => {
       maxSpacing: 60,
     };
 
-    if (!fs.existsSync(TEST_DATA_DIR)) {
-      fs.mkdirSync(TEST_DATA_DIR, {recursive: true});
-    }
+    fs.writeFileSync(path.join(testDataDir, 'config.json'), JSON.stringify(testConfig), 'utf8');
 
-    fs.writeFileSync(path.join(TEST_DATA_DIR, 'config.json'), JSON.stringify(testConfig), 'utf8');
+    const bsky = createBskyHandler(db);
+    const queue = createQueueHandler(bsky, db);
+    rssHandler = createRssHandler(queue, db);
+  });
 
-    rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
+  afterEach(() => {
+    rmSync(testDataDir, {recursive: true, force: true});
   });
 
   describe('Module exports', () => {
@@ -841,7 +851,7 @@ describe('rssHandler', () => {
       // publishEmbed:false keeps handleItem entirely offline (no Open Graph/image
       // fetch) while still exercising both staleness guards and the queue handoff.
       fs.writeFileSync(
-        path.join(TEST_DATA_DIR, 'config.json'),
+        path.join(testDataDir, 'config.json'),
         JSON.stringify({
           string: '$title',
           publishEmbed: false,
@@ -856,36 +866,32 @@ describe('rssHandler', () => {
         'utf8',
       );
 
-      const lastPath = path.join(TEST_DATA_DIR, 'last.txt');
-      const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
-      fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
+      fs.writeFileSync(path.join(testDataDir, 'last.txt'), '2026-08-01T00:00:00.000Z', 'utf8');
 
-      // Patch the shared queueHandler singleton before loading a fresh rssHandler, so
-      // rssHandler's own `import queue from './queueHandler.ts'` (no cache-busting query
-      // string, unlike the freshly-imported rssHandler below) resolves to this same,
-      // already-patched instance.
-      const realWriteQueue = queueHandler.writeQueue;
+      // rssHandler now takes its queue dependency directly - no need to monkey-patch a
+      // shared singleton anymore, and testDataDir is removed whole in this file's afterEach,
+      // so there's no real last.txt to save/restore around this test.
       const queued: QueueItems[] = [];
-      queueHandler.writeQueue = async (item: QueueItems) => {
-        queued.push(item);
-        return queued;
+      const fakeQueue: QueueHandler = {
+        writeQueue: async (item: QueueItems) => {
+          queued.push(item);
+          return queued;
+        },
+        start: async () => {},
+        runQueue: async (): Promise<QueueItems[]> => queued,
       };
-
-      const rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const testRssHandler = createRssHandler(fakeQueue, db);
 
       try {
         // 0.002 minutes = 120ms, so several polls fire inside the wait below.
-        const reader = await rssHandler.init({
+        const reader = await testRssHandler.init({
           fetch_interval: 0.002,
           fetch_url: new URL(`http://127.0.0.1:${port}/feed.xml`),
         });
-        await rssHandler.start();
+        await testRssHandler.start();
         await new Promise(resolve => setTimeout(resolve, 500));
         reader.stop();
       } finally {
-        queueHandler.writeQueue = realWriteQueue;
-        if (savedLast === null) fs.rmSync(lastPath, {force: true});
-        else fs.writeFileSync(lastPath, savedLast, 'utf8');
         server.close();
       }
 
@@ -926,7 +932,7 @@ describe('rssHandler', () => {
       const port = (server.address() as {port: number}).port;
 
       fs.writeFileSync(
-        path.join(TEST_DATA_DIR, 'config.json'),
+        path.join(testDataDir, 'config.json'),
         JSON.stringify({
           string: '$title',
           publishEmbed: false,
@@ -941,33 +947,33 @@ describe('rssHandler', () => {
         'utf8',
       );
 
-      const lastPath = path.join(TEST_DATA_DIR, 'last.txt');
-      const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
-      fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
+      fs.writeFileSync(path.join(testDataDir, 'last.txt'), '2026-08-01T00:00:00.000Z', 'utf8');
 
-      const realWriteQueue = queueHandler.writeQueue;
+      // rssHandler now takes its queue dependency directly - no need to monkey-patch a
+      // shared singleton anymore, and testDataDir is removed whole in this file's afterEach,
+      // so there's no real last.txt to save/restore around this test.
       const queued: QueueItems[] = [];
-      queueHandler.writeQueue = async (item: QueueItems) => {
-        queued.push(item);
-        return queued;
+      const fakeQueue: QueueHandler = {
+        writeQueue: async (item: QueueItems) => {
+          queued.push(item);
+          return queued;
+        },
+        start: async () => {},
+        runQueue: async (): Promise<QueueItems[]> => queued,
       };
-
-      const rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const testRssHandler = createRssHandler(fakeQueue, db);
 
       try {
         // 0.002 minutes = 120ms, so several polls fire inside the wait below - proving
         // both "no item lost within one batch" and "no item re-queued across polls".
-        const reader = await rssHandler.init({
+        const reader = await testRssHandler.init({
           fetch_interval: 0.002,
           fetch_url: new URL(`http://127.0.0.1:${port}/feed.xml`),
         });
-        await rssHandler.start();
+        await testRssHandler.start();
         await new Promise(resolve => setTimeout(resolve, 500));
         reader.stop();
       } finally {
-        queueHandler.writeQueue = realWriteQueue;
-        if (savedLast === null) fs.rmSync(lastPath, {force: true});
-        else fs.writeFileSync(lastPath, savedLast, 'utf8');
         server.close();
       }
 
@@ -998,7 +1004,7 @@ describe('rssHandler', () => {
       const port = (server.address() as {port: number}).port;
 
       fs.writeFileSync(
-        path.join(TEST_DATA_DIR, 'config.json'),
+        path.join(testDataDir, 'config.json'),
         JSON.stringify({
           string: '$title $georss',
           publishEmbed: false,
@@ -1013,31 +1019,31 @@ describe('rssHandler', () => {
         'utf8',
       );
 
-      const lastPath = path.join(TEST_DATA_DIR, 'last.txt');
-      const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
-      fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
+      fs.writeFileSync(path.join(testDataDir, 'last.txt'), '2026-08-01T00:00:00.000Z', 'utf8');
 
-      const realWriteQueue = queueHandler.writeQueue;
+      // rssHandler now takes its queue dependency directly - no need to monkey-patch a
+      // shared singleton anymore, and testDataDir is removed whole in this file's afterEach,
+      // so there's no real last.txt to save/restore around this test.
       const queued: QueueItems[] = [];
-      queueHandler.writeQueue = async (item: QueueItems) => {
-        queued.push(item);
-        return queued;
+      const fakeQueue: QueueHandler = {
+        writeQueue: async (item: QueueItems) => {
+          queued.push(item);
+          return queued;
+        },
+        start: async () => {},
+        runQueue: async (): Promise<QueueItems[]> => queued,
       };
-
-      const rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const testRssHandler = createRssHandler(fakeQueue, db);
 
       try {
-        const reader = await rssHandler.init({
+        const reader = await testRssHandler.init({
           fetch_interval: 60,
           fetch_url: new URL(`http://127.0.0.1:${port}/feed.xml`),
         });
-        await rssHandler.start();
+        await testRssHandler.start();
         await new Promise(resolve => setTimeout(resolve, 300));
         reader.stop();
       } finally {
-        queueHandler.writeQueue = realWriteQueue;
-        if (savedLast === null) fs.rmSync(lastPath, {force: true});
-        else fs.writeFileSync(lastPath, savedLast, 'utf8');
         server.close();
       }
 
@@ -1067,7 +1073,7 @@ describe('rssHandler', () => {
       const port = (server.address() as {port: number}).port;
 
       fs.writeFileSync(
-        path.join(TEST_DATA_DIR, 'config.json'),
+        path.join(testDataDir, 'config.json'),
         JSON.stringify({
           string: '$title by $author',
           publishEmbed: false,
@@ -1083,31 +1089,31 @@ describe('rssHandler', () => {
         'utf8',
       );
 
-      const lastPath = path.join(TEST_DATA_DIR, 'last.txt');
-      const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
-      fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
+      fs.writeFileSync(path.join(testDataDir, 'last.txt'), '2026-08-01T00:00:00.000Z', 'utf8');
 
-      const realWriteQueue = queueHandler.writeQueue;
+      // rssHandler now takes its queue dependency directly - no need to monkey-patch a
+      // shared singleton anymore, and testDataDir is removed whole in this file's afterEach,
+      // so there's no real last.txt to save/restore around this test.
       const queued: QueueItems[] = [];
-      queueHandler.writeQueue = async (item: QueueItems) => {
-        queued.push(item);
-        return queued;
+      const fakeQueue: QueueHandler = {
+        writeQueue: async (item: QueueItems) => {
+          queued.push(item);
+          return queued;
+        },
+        start: async () => {},
+        runQueue: async (): Promise<QueueItems[]> => queued,
       };
-
-      const rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const testRssHandler = createRssHandler(fakeQueue, db);
 
       try {
-        const reader = await rssHandler.init({
+        const reader = await testRssHandler.init({
           fetch_interval: 60,
           fetch_url: new URL(`http://127.0.0.1:${port}/feed.xml`),
         });
-        await rssHandler.start();
+        await testRssHandler.start();
         await new Promise(resolve => setTimeout(resolve, 300));
         reader.stop();
       } finally {
-        queueHandler.writeQueue = realWriteQueue;
-        if (savedLast === null) fs.rmSync(lastPath, {force: true});
-        else fs.writeFileSync(lastPath, savedLast, 'utf8');
         server.close();
       }
 
@@ -1140,7 +1146,7 @@ describe('rssHandler', () => {
       const port = (server.address() as {port: number}).port;
 
       fs.writeFileSync(
-        path.join(TEST_DATA_DIR, 'config.json'),
+        path.join(testDataDir, 'config.json'),
         JSON.stringify({
           string: 'By $authorName',
           publishEmbed: false,
@@ -1159,31 +1165,31 @@ describe('rssHandler', () => {
         'utf8',
       );
 
-      const lastPath = path.join(TEST_DATA_DIR, 'last.txt');
-      const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
-      fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
+      fs.writeFileSync(path.join(testDataDir, 'last.txt'), '2026-08-01T00:00:00.000Z', 'utf8');
 
-      const realWriteQueue = queueHandler.writeQueue;
+      // rssHandler now takes its queue dependency directly - no need to monkey-patch a
+      // shared singleton anymore, and testDataDir is removed whole in this file's afterEach,
+      // so there's no real last.txt to save/restore around this test.
       const queued: QueueItems[] = [];
-      queueHandler.writeQueue = async (item: QueueItems) => {
-        queued.push(item);
-        return queued;
+      const fakeQueue: QueueHandler = {
+        writeQueue: async (item: QueueItems) => {
+          queued.push(item);
+          return queued;
+        },
+        start: async () => {},
+        runQueue: async (): Promise<QueueItems[]> => queued,
       };
-
-      const rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const testRssHandler = createRssHandler(fakeQueue, db);
 
       try {
-        const reader = await rssHandler.init({
+        const reader = await testRssHandler.init({
           fetch_interval: 60,
           fetch_url: new URL(`http://127.0.0.1:${port}/feed.xml`),
         });
-        await rssHandler.start();
+        await testRssHandler.start();
         await new Promise(resolve => setTimeout(resolve, 300));
         reader.stop();
       } finally {
-        queueHandler.writeQueue = realWriteQueue;
-        if (savedLast === null) fs.rmSync(lastPath, {force: true});
-        else fs.writeFileSync(lastPath, savedLast, 'utf8');
         server.close();
       }
 
@@ -1219,7 +1225,7 @@ describe('rssHandler', () => {
       const port = (server.address() as {port: number}).port;
 
       fs.writeFileSync(
-        path.join(TEST_DATA_DIR, 'config.json'),
+        path.join(testDataDir, 'config.json'),
         JSON.stringify({
           string: '$description | $author',
           publishEmbed: false,
@@ -1236,31 +1242,31 @@ describe('rssHandler', () => {
         'utf8',
       );
 
-      const lastPath = path.join(TEST_DATA_DIR, 'last.txt');
-      const savedLast = fs.existsSync(lastPath) ? fs.readFileSync(lastPath, 'utf8') : null;
-      fs.writeFileSync(lastPath, '2026-08-01T00:00:00.000Z', 'utf8');
+      fs.writeFileSync(path.join(testDataDir, 'last.txt'), '2026-08-01T00:00:00.000Z', 'utf8');
 
-      const realWriteQueue = queueHandler.writeQueue;
+      // rssHandler now takes its queue dependency directly - no need to monkey-patch a
+      // shared singleton anymore, and testDataDir is removed whole in this file's afterEach,
+      // so there's no real last.txt to save/restore around this test.
       const queued: QueueItems[] = [];
-      queueHandler.writeQueue = async (item: QueueItems) => {
-        queued.push(item);
-        return queued;
+      const fakeQueue: QueueHandler = {
+        writeQueue: async (item: QueueItems) => {
+          queued.push(item);
+          return queued;
+        },
+        start: async () => {},
+        runQueue: async (): Promise<QueueItems[]> => queued,
       };
-
-      const rssHandler = (await import(`./rssHandler.ts?t=${crypto.randomUUID()}`)).default;
+      const testRssHandler = createRssHandler(fakeQueue, db);
 
       try {
-        const reader = await rssHandler.init({
+        const reader = await testRssHandler.init({
           fetch_interval: 60,
           fetch_url: new URL(`http://127.0.0.1:${port}/feed.xml`),
         });
-        await rssHandler.start();
+        await testRssHandler.start();
         await new Promise(resolve => setTimeout(resolve, 300));
         reader.stop();
       } finally {
-        queueHandler.writeQueue = realWriteQueue;
-        if (savedLast === null) fs.rmSync(lastPath, {force: true});
-        else fs.writeFileSync(lastPath, savedLast, 'utf8');
         server.close();
       }
 
