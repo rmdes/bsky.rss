@@ -1,5 +1,6 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert';
+import {RichText} from '@atproto/api';
 
 /**
  * Tests for bskyHandler module
@@ -11,8 +12,8 @@ import assert from 'node:assert';
 
 describe('bskyHandler', () => {
   describe('Module exports', () => {
-    it('should export init, login, and post functions', () => {
-      const bskyHandler = require('./bskyHandler').default;
+    it('should export init, login, and post functions', async () => {
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       assert(typeof bskyHandler.init === 'function');
       assert(typeof bskyHandler.login === 'function');
@@ -23,8 +24,7 @@ describe('bskyHandler', () => {
   describe('init()', () => {
     it('should require service URL parameter', async () => {
       // Reload module to reset state
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler = require('./bskyHandler').default;
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       const agent = await bskyHandler.init('https://bsky.social');
       assert(agent, 'Agent should be returned');
@@ -32,8 +32,7 @@ describe('bskyHandler', () => {
     });
 
     it('should throw error if initialized twice', async () => {
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler = require('./bskyHandler').default;
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       await bskyHandler.init('https://bsky.social');
 
@@ -48,13 +47,11 @@ describe('bskyHandler', () => {
     });
 
     it('should create agent with different service URLs', async () => {
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler1 = require('./bskyHandler').default;
+      const bskyHandler1 = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
       const agent1 = await bskyHandler1.init('https://bsky.social');
       assert(agent1);
 
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler2 = require('./bskyHandler').default;
+      const bskyHandler2 = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
       const agent2 = await bskyHandler2.init('https://custom.bsky.host');
       assert(agent2);
     });
@@ -62,8 +59,7 @@ describe('bskyHandler', () => {
 
   describe('login()', () => {
     it('should throw error if agent not initialized', async () => {
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler = require('./bskyHandler').default;
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       await assert.rejects(
         async () => {
@@ -79,8 +75,7 @@ describe('bskyHandler', () => {
     });
 
     it('should require identifier and password parameters', async () => {
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler = require('./bskyHandler').default;
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
       await bskyHandler.init('https://bsky.social');
 
       // Should accept object with identifier and password
@@ -113,8 +108,7 @@ describe('bskyHandler', () => {
 
   describe('post()', () => {
     it('should throw error if agent not initialized', async () => {
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler = require('./bskyHandler').default;
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       await assert.rejects(
         async () => {
@@ -127,8 +121,7 @@ describe('bskyHandler', () => {
     });
 
     it('should require content parameter', async () => {
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler = require('./bskyHandler').default;
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
       await bskyHandler.init('https://bsky.social');
 
       // Should accept object with content
@@ -155,8 +148,7 @@ describe('bskyHandler', () => {
     });
 
     it('should accept optional parameters', async () => {
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler = require('./bskyHandler').default;
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
       await bskyHandler.init('https://bsky.social');
 
       const postData = {
@@ -238,8 +230,7 @@ describe('bskyHandler', () => {
     });
 
     it('should validate initialization state before operations', async () => {
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler = require('./bskyHandler').default;
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       // Should throw before init
       await assert.rejects(
@@ -259,8 +250,7 @@ describe('bskyHandler', () => {
 
   describe('Module state management', () => {
     it('should maintain singleton agent across function calls', async () => {
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler = require('./bskyHandler').default;
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       await bskyHandler.init('https://bsky.social');
 
@@ -269,13 +259,11 @@ describe('bskyHandler', () => {
     });
 
     it('should reset state when module is reloaded', async () => {
-      delete require.cache[require.resolve('./bskyHandler')];
-      let bskyHandler = require('./bskyHandler').default;
+      let bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
       await bskyHandler.init('https://bsky.social');
 
       // Reload module
-      delete require.cache[require.resolve('./bskyHandler')];
-      bskyHandler = require('./bskyHandler').default;
+      bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       // Should be able to init again
       const agent = await bskyHandler.init('https://bsky.social');
@@ -284,8 +272,8 @@ describe('bskyHandler', () => {
   });
 
   describe('Integration contract', () => {
-    it('should export functions that match expected signatures', () => {
-      const bskyHandler = require('./bskyHandler').default;
+    it('should export functions that match expected signatures', async () => {
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       // Check function signatures
       assert.strictEqual(bskyHandler.init.length, 1); // service parameter
@@ -294,8 +282,7 @@ describe('bskyHandler', () => {
     });
 
     it('should return expected types', async () => {
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler = require('./bskyHandler').default;
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
 
       const agent = await bskyHandler.init('https://bsky.social');
       assert.strictEqual(typeof agent, 'object');
@@ -310,7 +297,6 @@ describe('bskyHandler', () => {
       // call detectFacets() on a RichText that already carries hand-built markdown-link
       // facets. This test exercises the real RichText constructor's documented contract
       // (pass facets in, they're kept) without needing a live agent.
-      const {RichText} = require('@atproto/api');
       const markdownFacets = [
         {
           index: {byteStart: 0, byteEnd: 6},
@@ -338,8 +324,7 @@ describe('bskyHandler', () => {
       // Proves post() actually calls buildFacets and produces the deduped result, not just
       // that RichText's constructor can hold both - mocks agent.post to capture the real
       // record without a live network call, following this file's established pattern.
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler = require('./bskyHandler').default;
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
       const agent = await bskyHandler.init('https://bsky.social');
 
       let capturedRecord:
@@ -379,8 +364,7 @@ describe('bskyHandler', () => {
       // Regression test for Finding 3: a [text](url) span's display text that happens to
       // contain a bare URL (e.g. [$title]($link) where the title itself has a raw link) was
       // independently rediscovered by detectFacets() as a second, overlapping facet.
-      delete require.cache[require.resolve('./bskyHandler')];
-      const bskyHandler = require('./bskyHandler').default;
+      const bskyHandler = (await import(`./bskyHandler.ts?t=${crypto.randomUUID()}`)).default;
       const agent = await bskyHandler.init('https://bsky.social');
 
       let capturedRecord:
