@@ -1,7 +1,9 @@
 import process from 'process';
-import bsky from './utils/bskyHandler.ts';
-import reader from './utils/rssHandler.ts';
-import queue from './utils/queueHandler.ts';
+import {join} from 'path';
+import {createDbHandler} from './utils/dbHandler.ts';
+import {createBskyHandler} from './utils/bskyHandler.ts';
+import {createQueueHandler} from './utils/queueHandler.ts';
+import {createRssHandler} from './utils/rssHandler.ts';
 import health from './utils/healthHandler.ts';
 import 'dotenv/config';
 
@@ -13,6 +15,11 @@ if (!process.env.INSTANCE_URL) throw new Error('No instance URL provided.');
 let fetch_interval: number;
 if (!process.env.FETCH_INTERVAL) fetch_interval = 5;
 else fetch_interval = parseFloat(process.env.FETCH_INTERVAL);
+
+const db = createDbHandler(join(import.meta.dirname, '../data'));
+const bsky = createBskyHandler(db);
+const queue = createQueueHandler(bsky, db);
+const reader = createRssHandler(queue, db);
 
 void main();
 async function main() {

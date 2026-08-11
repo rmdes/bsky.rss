@@ -325,7 +325,9 @@ describe('bskyHandler', () => {
       let capturedRecord:
         | (Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>)
         | undefined;
-      agent.post = async (record: Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>) => {
+      agent.post = async (
+        record: Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>,
+      ) => {
         capturedRecord = record;
         return {uri: 'at://did:plc:test/app.bsky.feed.post/abc', cid: 'bafycid'};
       };
@@ -349,7 +351,10 @@ describe('bskyHandler', () => {
       );
       assert(tagFacet, 'tagFacet should be found');
       const tagFeature = tagFacet.features[0];
-      assert(tagFeature && tagFeature.$type === 'app.bsky.richtext.facet#tag', 'tagFeature should be a Tag');
+      assert(
+        tagFeature && tagFeature.$type === 'app.bsky.richtext.facet#tag',
+        'tagFeature should be a Tag',
+      );
       assert.strictEqual((tagFeature as AppBskyRichtextFacet.Tag).tag, 'news');
     });
 
@@ -360,7 +365,9 @@ describe('bskyHandler', () => {
       let capturedRecord:
         | (Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>)
         | undefined;
-      agent.post = async (record: Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>) => {
+      agent.post = async (
+        record: Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>,
+      ) => {
         capturedRecord = record;
         return {uri: 'at://did:plc:test/app.bsky.feed.post/xyz', cid: 'bafycid'};
       };
@@ -381,8 +388,14 @@ describe('bskyHandler', () => {
       const facet = capturedRecord!.facets![0];
       assert(facet, 'facet should be found');
       const linkFeature = facet.features[0];
-      assert(linkFeature && linkFeature.$type === 'app.bsky.richtext.facet#link', 'linkFeature should be a Link');
-      assert.strictEqual((linkFeature as AppBskyRichtextFacet.Link).uri, 'https://example.com/whole');
+      assert(
+        linkFeature && linkFeature.$type === 'app.bsky.richtext.facet#link',
+        'linkFeature should be a Link',
+      );
+      assert.strictEqual(
+        (linkFeature as AppBskyRichtextFacet.Link).uri,
+        'https://example.com/whole',
+      );
     });
   });
 });
