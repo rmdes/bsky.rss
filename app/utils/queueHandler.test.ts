@@ -258,6 +258,8 @@ describe('queueHandler', () => {
         maxSpacing: 60,
       };
 
+      // With 10 items in queue and 600 second window:
+      // delay = 600 / 10 = 60 seconds
       const queueSize = 10;
       const expectedDelay = config.spacingWindow / queueSize;
 
@@ -272,6 +274,8 @@ describe('queueHandler', () => {
         maxSpacing: 60,
       };
 
+      // With 5 items: 600 / 5 = 120 seconds
+      // Should be clamped to maxSpacing (60)
       const queueSize = 5;
       const calculatedDelay = config.spacingWindow / queueSize;
       const clampedDelay = Math.max(
@@ -290,6 +294,8 @@ describe('queueHandler', () => {
         maxSpacing: 60,
       };
 
+      // With 1000 items: 600 / 1000 = 0.6 seconds
+      // Should be clamped to minSpacing (1)
       const queueSize = 1000;
       const calculatedDelay = config.spacingWindow / queueSize;
       const clampedDelay = Math.max(
@@ -308,6 +314,7 @@ describe('queueHandler', () => {
         maxSpacing: 60,
       };
 
+      // When disabled, delay should be 0 regardless of queue size
       const queueSize = 10;
       const delay = config.adaptiveSpacing ? config.spacingWindow / queueSize : 0;
 
@@ -315,6 +322,7 @@ describe('queueHandler', () => {
     });
 
     it('should return 0 delay for single item queue', () => {
+      // With only 1 item, no delay needed
       const queueSize = 1;
       const delay = queueSize <= 1 ? 0 : 600 / queueSize;
 
@@ -329,11 +337,11 @@ describe('queueHandler', () => {
       };
 
       const testCases = [
-        {queueSize: 2, expected: 60},
-        {queueSize: 10, expected: 60},
-        {queueSize: 20, expected: 30},
-        {queueSize: 100, expected: 6},
-        {queueSize: 600, expected: 1},
+        {queueSize: 2, expected: 60}, // 600/2 = 300, clamped to 60
+        {queueSize: 10, expected: 60}, // 600/10 = 60
+        {queueSize: 20, expected: 30}, // 600/20 = 30
+        {queueSize: 100, expected: 6}, // 600/100 = 6
+        {queueSize: 600, expected: 1}, // 600/600 = 1
       ];
 
       testCases.forEach(tc => {

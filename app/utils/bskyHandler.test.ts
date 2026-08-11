@@ -351,11 +351,8 @@ describe('bskyHandler', () => {
       );
       assert(tagFacet, 'tagFacet should be found');
       const tagFeature = tagFacet.features[0];
-      assert(
-        tagFeature && tagFeature.$type === 'app.bsky.richtext.facet#tag',
-        'tagFeature should be a Tag',
-      );
-      assert.strictEqual((tagFeature as AppBskyRichtextFacet.Tag).tag, 'news');
+      assert(tagFeature && AppBskyRichtextFacet.isTag(tagFeature), 'tagFeature should be a Tag');
+      assert.strictEqual(tagFeature.tag, 'news');
     });
 
     it('post() drops an auto-detected facet that overlaps a hand-built markdown-link facet, end-to-end', async () => {
@@ -389,13 +386,10 @@ describe('bskyHandler', () => {
       assert(facet, 'facet should be found');
       const linkFeature = facet.features[0];
       assert(
-        linkFeature && linkFeature.$type === 'app.bsky.richtext.facet#link',
+        linkFeature && AppBskyRichtextFacet.isLink(linkFeature),
         'linkFeature should be a Link',
       );
-      assert.strictEqual(
-        (linkFeature as AppBskyRichtextFacet.Link).uri,
-        'https://example.com/whole',
-      );
+      assert.strictEqual(linkFeature.uri, 'https://example.com/whole');
     });
   });
 });
