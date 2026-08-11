@@ -47,11 +47,19 @@ async function login({
     } else {
       throw new Error("Login failed (auth via persisted session)");
     }
-  } catch (e: any) {
-    let loginData = await bskyAgent.login({ identifier, password });
-    if (!loginData.success)
-      throw new Error("Login failed (auth via login/password)");
-    return loginData;
+  } catch (error: any) {
+    // Persisted session failed, try login/password
+    try {
+      let loginData = await bskyAgent.login({ identifier, password });
+      if (!loginData.success)
+        throw new Error("Login failed (auth via login/password)");
+      return loginData;
+    } catch (loginError: any) {
+      if (loginError instanceof Error && loginError.message.includes('InvalidRequest')) {
+        throw new Error(`Authentication failed: Invalid credentials for ${identifier}`);
+      }
+      throw new Error(`Authentication failed: ${loginError instanceof Error ? loginError.message : String(loginError)}`);
+    }
   }
 }
 
@@ -77,7 +85,9 @@ async function post({
       embedImage = await bskyAgent.uploadBlob(embed.image, {
         encoding: "image/jpeg",
       });
-    } catch (e: any) {
+    } catch (error: any) {
+      // Treat upload failures as rate limit to retry later
+      console.error(`[${new Date().toUTCString()}] - [bsky.rss ERROR] Image upload failed: ${error instanceof Error ? error.message : String(error)}`);
       embedImage = { ratelimit: true };
     }
   }

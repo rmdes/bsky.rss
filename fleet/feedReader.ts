@@ -1,11 +1,26 @@
 import FeedSub from "feedsub";
 import jimp from "jimp";
 import axios from "axios";
+import http from "node:http";
+import https from "node:https";
 import og from "open-graph-scraper";
 import { decode } from "html-entities";
 import { BotStore } from "./botStore.ts";
 import { computeDedupeKey } from "./dedupeKey.ts";
 import { SharedLimiters } from "./sharedLimiters.ts";
+
+// HTTP agent pools to limit concurrent connections
+const httpAgent = new http.Agent({
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 60000,
+});
+
+const httpsAgent = new https.Agent({
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 60000,
+});
 
 export interface FeedItem {
   title: string;
@@ -116,11 +131,6 @@ export function parseString(
   return result;
 }
 
-async function resizeImageToBuffer(bufferData: Buffer): Promise<Buffer> {
-  const image = await jimp.read(bufferData);
-  return image.resize(800, jimp.AUTO).quality(80).getBufferAsync(jimp.MIME_JPEG);
-}
-
 export class FeedReader {
   private reader: any;
   private itemHandler: ((parsed: ParsedItem) => void) | null = null;
@@ -184,10 +194,37 @@ export class FeedReader {
           responseType: "arraybuffer",
           maxContentLength: this.sharedLimiters.maxImageDownloadBytes,
           timeout: this.sharedLimiters.httpTimeoutMs,
+          httpAgent,
+          httpsAgent,
         });
-        return resizeImageToBuffer(response.data);
+
+        // Validate buffer size before processing to prevent OOM
+        const buffer = Buffer.from(response.data);
+        const MAX_RAW_BUFFER_SIZE = 5_000_000; // 5MB raw limit
+        if (buffer.length > MAX_RAW_BUFFER_SIZE) {
+          console.error(
+            `[${new Date().toUTCString()}] - [bsky.rss FEED] [${this.botId}] Image buffer too large: ${buffer.length} bytes`
+          );
+          return undefined;
+        }
+
+        // Check estimated decompressed size to prevent OOM
+        const image = await jimp.read(buffer);
+        const estimatedSize = image.bitmap.width * image.bitmap.height * 4; // RGBA
+        const MAX_DECOMPRESSED_SIZE = 100_000_000; // 100MB decompressed limit
+        if (estimatedSize > MAX_DECOMPRESSED_SIZE) {
+          console.error(
+            `[${new Date().toUTCString()}] - [bsky.rss FEED] [${this.botId}] Image too large when decompressed: ${estimatedSize} bytes (${image.bitmap.width}x${image.bitmap.height})`
+          );
+          return undefined;
+        }
+
+        return image.resize(800, jimp.AUTO).quality(80).getBufferAsync(jimp.MIME_JPEG);
       });
-    } catch {
+    } catch (error) {
+      console.error(
+        `[${new Date().toUTCString()}] - [bsky.rss FEED] [${this.botId}] Failed to resolve embed image: ${error instanceof Error ? error.message : String(error)}`
+      );
       return undefined;
     }
   }

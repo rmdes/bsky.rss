@@ -1,19 +1,25 @@
-import fs from "fs";
+import { access, readFile, writeFile, appendFile } from "fs/promises";
+import { constants } from "fs";
 
 let appConfig: any = null;
 
 async function readLast() {
-  if (!fs.existsSync(__dirname + "/../../data/last.txt")) {
-    fs.writeFileSync(__dirname + "/../../data/last.txt", "", "utf8");
-    return "";
-  } else {
-    let data = fs.readFileSync(__dirname + "/../../data/last.txt", "utf8");
+  const filePath = __dirname + "/../../data/last.txt";
+  try {
+    await access(filePath, constants.F_OK);
+    const data = await readFile(filePath, "utf8");
     return data;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      await writeFile(filePath, "", "utf8");
+      return "";
+    }
+    throw error;
   }
 }
 
 async function writeDate(date: Date) {
-  fs.writeFileSync(
+  await writeFile(
     __dirname + "/../../data/last.txt",
     date.toISOString(),
     "utf8"
@@ -22,21 +28,22 @@ async function writeDate(date: Date) {
 }
 
 async function readPersistData() {
-  if (!fs.existsSync(__dirname + "/../../data/persist.json")) {
-    fs.writeFileSync(
-      __dirname + "/../../data/persist.json",
-      JSON.stringify({}),
-      "utf8"
-    );
-    return {};
-  } else {
-    let data = fs.readFileSync(__dirname + "/../../data/persist.json", "utf8");
+  const filePath = __dirname + "/../../data/persist.json";
+  try {
+    await access(filePath, constants.F_OK);
+    const data = await readFile(filePath, "utf8");
     return JSON.parse(data);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      await writeFile(filePath, JSON.stringify({}), "utf8");
+      return {};
+    }
+    throw error;
   }
 }
 
 async function writePersistDate(persistData: any) {
-  fs.writeFileSync(
+  await writeFile(
     __dirname + "/../../data/persist.json",
     JSON.stringify(persistData),
     "utf8"
@@ -46,16 +53,15 @@ async function writePersistDate(persistData: any) {
 
 async function initConfig() {
   try {
-    let data = fs.readFileSync(__dirname + "/../../data/config.json", "utf8");
+    const data = await readFile(__dirname + "/../../data/config.json", "utf8");
     appConfig = JSON.parse(data);
     return JSON.parse(data);
-  } catch (e: any) {
-    if (e.toString().startsWith("Error: ENOENT: no such file or directory")) {
+  } catch (error: any) {
+    if (error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new Error("Config file not found.");
     }
+    throw new Error(`Failed to read config: ${error instanceof Error ? error.message : String(error)}`);
   }
-
-  return "";
 }
 
 async function readConfig() {
@@ -64,18 +70,23 @@ async function readConfig() {
 }
 
 async function valueExists(value: string) {
-  if (!fs.existsSync(__dirname + "/../../data/db.txt")) {
-    fs.writeFileSync(__dirname + "/../../data/db.txt", "", "utf8");
-    return false;
-  } else {
-    let fileContent = fs.readFileSync(__dirname + "/../../data/db.txt", "utf8");
+  const filePath = __dirname + "/../../data/db.txt";
+  try {
+    await access(filePath, constants.F_OK);
+    const fileContent = await readFile(filePath, "utf8");
     return fileContent.includes(value);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      await writeFile(filePath, "", "utf8");
+      return false;
+    }
+    throw error;
   }
 }
 
 async function writeValue(value: string) {
-  let currentDate = new Date();
-  fs.appendFileSync(
+  const currentDate = new Date();
+  await appendFile(
     __dirname + "/../../data/db.txt",
     currentDate.toISOString() + "|" + value + "\n",
     "utf8"
@@ -85,34 +96,38 @@ async function writeValue(value: string) {
 
 // Automatically cleanup old values from the file after 96 hours
 async function cleanupOldValues() {
-  if (!fs.existsSync(__dirname + "/../../data/db.txt")) {
-    fs.writeFileSync(__dirname + "/../../data/db.txt", "", "utf8");
-    return false;
+  const filePath = __dirname + "/../../data/db.txt";
+
+  try {
+    await access(filePath, constants.F_OK);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      await writeFile(filePath, "", "utf8");
+      return false;
+    }
+    throw error;
   }
 
-  let currentDate = new Date();
-  let oldFileContent = fs.readFileSync(
-    __dirname + "/../../data/db.txt",
-    "utf8"
-  );
-  let newFileContent = "";
+  const currentDate = new Date();
+  const oldFileContent = await readFile(filePath, "utf8");
+  const newLines: string[] = [];
 
-  let fcLines: string[] = oldFileContent.split("\n");
-  if (fcLines != undefined) {
-    for (var i in fcLines) {
-      let lineItems: string[] = (fcLines[i] || "").split("|");
-      if (lineItems != undefined) {
-        let lineDate = new Date((lineItems[0] || "").toString());
-        let diffHours = getHoursDiffBetweenDates(lineDate, currentDate);
+  const fcLines: string[] = oldFileContent.split("\n");
+  for (const line of fcLines) {
+    if (!line) continue;
 
-        if (diffHours <= 96) {
-          newFileContent = newFileContent + (fcLines[i] || "") + "\n";
-        }
+    const lineItems: string[] = line.split("|");
+    if (lineItems.length >= 2 && lineItems[0]) {
+      const lineDate = new Date(lineItems[0]);
+      const diffHours = getHoursDiffBetweenDates(lineDate, currentDate);
+
+      if (diffHours <= 96) {
+        newLines.push(line);
       }
     }
   }
 
-  fs.writeFileSync(__dirname + "/../../data/db.txt", newFileContent, "utf8");
+  await writeFile(filePath, newLines.join("\n") + (newLines.length > 0 ? "\n" : ""), "utf8");
   return true;
 }
 

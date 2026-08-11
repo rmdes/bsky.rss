@@ -47,13 +47,14 @@ async function main() {
     console.log(
       `[${new Date().toUTCString()}] - [bsky.rss APP] Application is ready and healthy`
     );
-  } catch (e) {
-    if (e == "Error: Rate Limit Exceeded") {
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Rate Limit')) {
       console.log(
         `[${new Date().toUTCString()}] - [bsky.rss APP] Authentication rate limit exceeded`
       );
       return;
     }
-    console.log(`[${new Date().toUTCString()}] - [bsky.rss APP] ${e}`);
+    console.error(`[${new Date().toUTCString()}] - [bsky.rss APP] Fatal error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
   }
 }

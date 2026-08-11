@@ -24,6 +24,12 @@ export class BotStore {
     // doesn't fail with "unable to open database file".
     mkdirSync(dirname(dbPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
+
+    // Enable WAL mode for better concurrency with shared identity stores
+    this.db.exec('PRAGMA journal_mode = WAL');
+    // NORMAL synchronous mode is safe with WAL and faster than FULL
+    this.db.exec('PRAGMA synchronous = NORMAL');
+
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS session (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -51,6 +57,44 @@ export class BotStore {
         published_at TEXT
       );
     `);
+  }
+
+  /**
+   * Execute a function within a transaction. Automatically commits on success
+   * and rolls back on error.
+   */
+  transaction<T>(fn: () => T): T {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = fn();
+      this.db.exec('COMMIT');
+      return result;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  /**
+   * Atomically enqueue an item and mark it as seen. Both operations succeed
+   * or both fail together.
+   */
+  enqueueAndMarkSeen(item: {
+    title: string;
+    content: string;
+    embedJson: string | null;
+    languagesJson: string | null;
+    itemDate: string;
+    dedupeKey: string;
+  }): { enqueued: boolean; itemId: number } {
+    return this.transaction(() => {
+      const itemId = this.enqueue(item);
+      const enqueued = itemId > 0;
+      if (enqueued) {
+        this.writeSeenValue(item.dedupeKey);
+      }
+      return { enqueued, itemId };
+    });
   }
 
   writeSession(data: unknown): void {
