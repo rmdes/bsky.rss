@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import {mkdtempSync, rmSync} from 'fs';
 import {tmpdir} from 'os';
 import path from 'path';
-import {RichText, AppBskyFeedPost} from '@atproto/api';
+import {RichText, AppBskyFeedPost, AppBskyRichtextFacet} from '@atproto/api';
 import {createDbHandler} from './dbHandler.ts';
 import {createBskyHandler, type BskyHandler} from './bskyHandler.ts';
 
@@ -347,7 +347,10 @@ describe('bskyHandler', () => {
       const tagFacet = capturedRecord!.facets!.find(
         f => f.features[0]?.$type === 'app.bsky.richtext.facet#tag',
       );
-      assert.strictEqual((tagFacet?.features[0] as any)?.tag, 'news');
+      assert(tagFacet, 'tagFacet should be found');
+      const tagFeature = tagFacet.features[0];
+      assert(tagFeature && tagFeature.$type === 'app.bsky.richtext.facet#tag', 'tagFeature should be a Tag');
+      assert.strictEqual((tagFeature as AppBskyRichtextFacet.Tag).tag, 'news');
     });
 
     it('post() drops an auto-detected facet that overlaps a hand-built markdown-link facet, end-to-end', async () => {
@@ -375,7 +378,11 @@ describe('bskyHandler', () => {
         byteStart: 0,
         byteEnd: facetByteEnd,
       });
-      assert.strictEqual((capturedRecord!.facets![0]?.features[0] as any)?.uri, 'https://example.com/whole');
+      const facet = capturedRecord!.facets![0];
+      assert(facet, 'facet should be found');
+      const linkFeature = facet.features[0];
+      assert(linkFeature && linkFeature.$type === 'app.bsky.richtext.facet#link', 'linkFeature should be a Link');
+      assert.strictEqual((linkFeature as AppBskyRichtextFacet.Link).uri, 'https://example.com/whole');
     });
   });
 });
