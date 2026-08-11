@@ -1,9 +1,9 @@
 import {describe, it, before, after, beforeEach} from 'node:test';
 import assert from 'node:assert';
-import {sleep} from './test-helpers';
+import {sleep} from './test-helpers.ts';
 
 // Import the module to test
-import healthHandler from './healthHandler';
+import healthHandler from './healthHandler.ts';
 
 describe('healthHandler', () => {
   const TEST_PORT = 8080; // Use default port

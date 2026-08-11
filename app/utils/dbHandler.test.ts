@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 
 // Import the module to test
-import dbHandler from './dbHandler';
+import dbHandler from './dbHandler.ts';
 
 describe('dbHandler', () => {
   const TEST_DATA_DIR = path.join(__dirname, '../../data-test');

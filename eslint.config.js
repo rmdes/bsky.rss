@@ -1,6 +1,14 @@
-module.exports = [
+import gtsConfig from 'gts';
+
+export default [
   {ignores: ['.remember/']},
-  ...require('gts'),
+  ...gtsConfig,
+  {
+    // gts hardcodes sourceType: 'commonjs' for files matching '**/eslint.config.js' (it expects
+    // require()/module.exports); this project's config is now native ESM, so override it back.
+    files: ['eslint.config.js'],
+    languageOptions: {sourceType: 'module'},
+  },
   {
     files: ['**/*.ts', '**/*.tsx'],
     rules: {

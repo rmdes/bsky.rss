@@ -8,7 +8,7 @@ import {createFeedSource} from './index.ts';
 import type {NormalizedItem} from './types.ts';
 
 function fixture(path: string): string {
-  return readFileSync(join(__dirname, '../../test-fixtures', path), 'utf-8');
+  return readFileSync(join(import.meta.dirname, '../../test-fixtures', path), 'utf-8');
 }
 
 function startFeedServer(body: string): Promise<{server: Server; port: number}> {

@@ -1,7 +1,7 @@
 import {Jimp, JimpMime} from 'jimp';
 import axios from 'axios';
-import queue from './queueHandler';
-import db from './dbHandler';
+import queue from './queueHandler.ts';
+import db from './dbHandler.ts';
 import og from 'open-graph-scraper';
 import {decode} from 'html-entities';
 import {createFeedSource} from '../../shared/feedSource/index.ts';

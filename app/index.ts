@@ -1,10 +1,9 @@
 import process from 'process';
-import bsky from './utils/bskyHandler';
-import reader from './utils/rssHandler';
-import queue from './utils/queueHandler';
-import health from './utils/healthHandler';
-
-require('dotenv').config();
+import bsky from './utils/bskyHandler.ts';
+import reader from './utils/rssHandler.ts';
+import queue from './utils/queueHandler.ts';
+import health from './utils/healthHandler.ts';
+import 'dotenv/config';
 
 if (!process.env.IDENTIFIER) throw new Error('No identifier provided.');
 if (!process.env.APP_PASSWORD) throw new Error('No app password provided.');

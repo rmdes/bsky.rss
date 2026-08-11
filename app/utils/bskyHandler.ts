@@ -9,7 +9,7 @@ import {
 } from '@atproto/api';
 let bskyAgent: BskyAgent | null;
 import {XRPCError, ResponseType} from '@atproto/xrpc';
-import db from './dbHandler';
+import db from './dbHandler.ts';
 import {buildFacets, type MarkdownFacet} from '../../shared/feedSource/markdownLinks.ts';
 
 async function init(service: string) {

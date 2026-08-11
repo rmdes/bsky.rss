@@ -102,4 +102,4 @@ function main(): void {
   }
 }
 
-if (require.main === module) main();
+if (import.meta.main) main();

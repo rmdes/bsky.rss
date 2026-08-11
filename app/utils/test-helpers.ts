@@ -9,7 +9,7 @@ import {join} from 'path';
  * Load test fixtures
  */
 export function loadFixture(path: string): string {
-  return readFileSync(join(__dirname, '../../test-fixtures', path), 'utf-8');
+  return readFileSync(join(import.meta.dirname, '../../test-fixtures', path), 'utf-8');
 }
 
 export function loadJSONFixture(path: string): unknown {

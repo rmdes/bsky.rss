@@ -1,4 +1,11 @@
 import http from 'http';
+import {readFileSync} from 'fs';
+import {fileURLToPath} from 'url';
+import {join, dirname} from 'path';
+
+const packageJson = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../package.json'), 'utf-8'),
+) as {version: string};
 
 const PORT = process.env.HEALTH_CHECK_PORT || 8080;
 
@@ -37,7 +44,7 @@ export function start() {
           lastActivity: new Date(lastActivityTime).toISOString(),
           timeSinceActivity: `${Math.round(timeSinceActivity / 1000)}s`,
           uptime: process.uptime(),
-          version: require('../../package.json').version,
+          version: packageJson.version,
         }),
       );
     } else {

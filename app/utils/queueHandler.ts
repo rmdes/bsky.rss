@@ -1,6 +1,6 @@
-import bsky from './bskyHandler';
-import db from './dbHandler';
-import health from './healthHandler';
+import bsky from './bskyHandler.ts';
+import db from './dbHandler.ts';
+import health from './healthHandler.ts';
 
 const queue: QueueItems[] = [];
 let rateLimited: boolean = false;

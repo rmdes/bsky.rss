@@ -6,7 +6,7 @@ import {parseRawFeed} from './parse.ts';
 import {normalizeFeed} from './normalize.ts';
 
 function fixture(path: string): string {
-  return readFileSync(join(__dirname, '../../test-fixtures', path), 'utf-8');
+  return readFileSync(join(import.meta.dirname, '../../test-fixtures', path), 'utf-8');
 }
 
 test('normalizeFeed maps RSS items to NormalizedItem', () => {

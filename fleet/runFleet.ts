@@ -214,7 +214,7 @@ async function main(): Promise<void> {
   }
 }
 
-if (require.main === module) {
+if (import.meta.main) {
   main().catch(error => {
     startupLogger.summary('FATAL', 'Fleet startup failed');
     startupLogger.debug('FATAL', formatDebugError(error));
