@@ -1,5 +1,5 @@
 {
-  "staggerSeconds": 30,
+  "staggerSeconds": 15,
   "runIntervalSeconds": 60,
   "freshness": { "maxCatchupItems": 5, "maxItemAgeMinutes": 120 },
   "sharedLimiters": {

@@ -58,6 +58,93 @@ that `CLAUDE.md` is gitignored and machine-local; if you don't have one, run
 Claude Code's `/init` or write your own rather than assuming this document
 duplicates it.
 
+## Fleet Configuration
+
+Fleet-wide configuration lives at `<configRoot>/fleet.json` (see
+`config.example/fleet.json` for the complete structure).
+
+### `staggerSeconds`
+
+**Type:** `number`  
+**Default:** `15`  
+**Range:** `0.002` (7.2 seconds) to any positive value
+
+Seconds to wait between activating each bot during fleet startup. Bots are
+activated sequentially, one at a time, with this delay between each login
+attempt.
+
+**Why stagger is needed:** Bluesky enforces authentication rate limits from the
+same IP address. Attempting to log in too many bots simultaneously will trigger
+rate limiting and cause activation failures.
+
+**Choosing a value:**
+- **Too fast** (< 10s): Risk hitting Bluesky's auth rate limit, especially with
+  large fleets (50+ bots)
+- **Recommended** (15s): Safe for most fleet sizes, balances startup time with
+  rate limit safety
+- **Conservative** (30s+): Safest for very large fleets or shared IP environments
+
+**Startup time examples:**
+- 10 bots at 15s stagger = 2.5 minutes
+- 59 bots at 15s stagger = 14.75 minutes
+- 100 bots at 15s stagger = 24.75 minutes
+
+A bot that fails to activate is logged and skipped - it does not block the rest
+of the fleet from starting.
+
+### `runIntervalSeconds`
+
+**Type:** `number`  
+**Default:** `60`
+
+How often (in seconds) each bot's polling and queue-processing operations run.
+
+### `freshness`
+
+Controls how the fleet handles catching up on missed items.
+
+- `maxCatchupItems`: Maximum number of items to process when a feed has many
+  new items after downtime
+- `maxItemAgeMinutes`: Ignore feed items older than this (in minutes)
+
+### `sharedLimiters`
+
+Fleet-wide concurrency limits to prevent resource exhaustion when many bots are
+active simultaneously.
+
+- `maxConcurrentOpenGraphFetches`: Max concurrent Open Graph scrapes across all bots
+- `maxConcurrentImageJobs`: Max concurrent image download/processing jobs across all bots
+- `maxImageDownloadBytes`: Maximum size (in bytes) for image downloads (default: 10MB)
+- `httpTimeoutMs`: HTTP request timeout in milliseconds for feed fetches
+
+### `perBotQueueMaxLength`
+
+**Type:** `number`  
+**Default:** `500`
+
+Maximum number of items that can be queued per bot. When this limit is reached,
+older queued items may be dropped.
+
+**Example `fleet.json`:**
+
+```json
+{
+  "staggerSeconds": 15,
+  "runIntervalSeconds": 60,
+  "freshness": {
+    "maxCatchupItems": 5,
+    "maxItemAgeMinutes": 120
+  },
+  "sharedLimiters": {
+    "maxConcurrentOpenGraphFetches": 6,
+    "maxConcurrentImageJobs": 2,
+    "maxImageDownloadBytes": 10000000,
+    "httpTimeoutMs": 10000
+  },
+  "perBotQueueMaxLength": 500
+}
+```
+
 ## Operations visibility
 
 Set `FLEET_LOG_LEVEL` to `summary`, `verbose`, or `debug` to choose the

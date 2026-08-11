@@ -10,6 +10,9 @@ export function createFeedSource(
   return createPoller(feedUrl, intervalMinutes, config, options);
 }
 
+// Re-export markdown link functions for convenience
+export {extractMarkdownLinks, finalizeMarkdownLinks, buildFacets} from './markdownLinks.ts';
+
 export type {
   FeedSource,
   FeedSourceCallbacks,
@@ -17,3 +20,10 @@ export type {
   FeedSourceError,
   NormalizedItem,
 } from './types.ts';
+
+// Re-export markdown types for convenience
+export type {
+  MarkdownFacet,
+  ExtractedMarkdownLinks,
+  MarkdownLinkResult,
+} from './markdownLinks.ts';
