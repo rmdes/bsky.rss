@@ -1,6 +1,9 @@
 import bsky from "./bskyHandler";
 import db from "./dbHandler";
 import health from "./healthHandler";
+import { createLogger } from "../../shared/logging/logger";
+
+const logger = createLogger('app');
 
 let queue: QueueItems[] = [];
 let rateLimited: boolean = false;
@@ -32,10 +35,9 @@ let config: Config = {
 
 async function start() {
   config = await db.initConfig();
-  console.log(
-    `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Starting queue handler. Running every ${
-      config.runInterval
-    } seconds`
+  logger.info(
+    { runInterval: config.runInterval },
+    'Starting queue handler'
   );
   setInterval(function () {
     runQueue();
@@ -48,9 +50,7 @@ async function createLimitTimer(timeoutSeconds: number = 30) {
   setTimeout(() => {
     rateLimited = false;
     runQueue();
-    console.log(
-      `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Post rate limit expired - resuming queue`
-    );
+    logger.info('Post rate limit expired - resuming queue');
   }, timeoutSeconds * 1000);
   return "";
 }
@@ -59,11 +59,7 @@ async function runQueue() {
   if (queueRunning) return;
   queueSnapshot = [...queue];
   if (queueSnapshot.length === 0) return queueSnapshot;
-  console.log(
-    `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Running queue with ${
-      queueSnapshot.length
-    } items`
-  );
+  logger.debug({ queueSize: queueSnapshot.length }, 'Running queue');
   health.updateActivity();
   if (rateLimited) return { ratelimit: true };
   if (queueSnapshot.length > 0) {
@@ -78,9 +74,7 @@ async function runQueue() {
         const waitMs = config.minSpacing * 1000 - elapsed;
         if (waitMs > 0) {
           const waitSec = Math.ceil(waitMs / 1000);
-          console.log(
-            `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Waiting ${waitSec} seconds before next post`
-          );
+          logger.debug({ waitSec }, 'Waiting before next post');
           await sleep(waitMs);
         }
       }
@@ -96,16 +90,10 @@ async function runQueue() {
         let timeoutSeconds: number = post.retryAfter ? post.retryAfter : 30;
         await createLimitTimer(timeoutSeconds);
         queueRunning = false;
-        console.log(
-          `[${new Date().toUTCString()}] - [bsky.rss POST] Post rate limit exceeded - process will resume after ${timeoutSeconds} seconds`
-        );
+        logger.warn({ retryAfter: timeoutSeconds }, 'Post rate limit exceeded');
         break;
       } else {
-        console.log(
-          `[${new Date().toUTCString()}] - [bsky.rss POST] Posting new item (${
-            item.title
-          })`
-        );
+        logger.info({ title: item.title }, 'Posting new item');
         db.writeDate(new Date(item.date));
         lastPostTimestamp = Date.now();
         if (config.adaptiveSpacing && queueSnapshot.length > 0) {
@@ -113,20 +101,14 @@ async function runQueue() {
           const delaySec = computeDelay(remaining + 1);
 
           if (delaySec > 0) {
-            console.log(
-              `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Waiting ${delaySec} seconds before next post`
-            );
+            logger.debug({ delaySec }, 'Adaptive spacing - waiting before next post');
             await sleep(delaySec * 1000);
           }
         }
         if (i === queueSnapshot.length - 1) {
           queueRunning = false;
           queueSnapshot = [];
-          console.log(
-            `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Finished running queue. Next run in ${
-              config.runInterval
-            } seconds`
-          );
+          logger.info({ nextRunIn: config.runInterval }, 'Finished running queue');
           if (config.removeDuplicate) db.cleanupOldValues();
         }
       }
@@ -144,9 +126,7 @@ async function writeQueue({
   title,
   date,
 }: QueueItems) {
-  console.log(
-    `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Queuing item (${title})`
-  );
+  logger.debug({ title }, 'Queuing item');
   queue.push({ content, embed, languages, title, date });
   return queue;
 }

@@ -7,6 +7,9 @@ import {
 let bskyAgent: BskyAgent | null;
 import { XRPCError, ResponseType } from "@atproto/xrpc";
 import db from "./dbHandler";
+import { createLogger } from "../../shared/logging/logger";
+
+const logger = createLogger('app');
 
 async function init(service: string) {
   if (bskyAgent) throw new Error("Bluesky agent already initialized.");
@@ -38,11 +41,7 @@ async function login({
     let sessionData: AtpSessionData = persistedSessionData;
     let session = await bskyAgent.resumeSession(sessionData);
     if (session.success) {
-      console.log(
-        `[${new Date().toUTCString()}] - [bsky.rss LOGIN] Resumed session for ${
-          session.data.handle
-        }`
-      );
+      logger.info({ handle: session.data.handle }, 'Resumed session');
       return session;
     } else {
       throw new Error("Login failed (auth via persisted session)");
@@ -87,7 +86,7 @@ async function post({
       });
     } catch (error: any) {
       // Treat upload failures as rate limit to retry later
-      console.error(`[${new Date().toUTCString()}] - [bsky.rss ERROR] Image upload failed: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error({ error }, 'Image upload failed');
       embedImage = { ratelimit: true };
     }
   }

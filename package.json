@@ -29,6 +29,8 @@
     "html-entities": "2.6.0",
     "jimp": "^0.22.12",
     "open-graph-scraper": "6.11.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0",
     "tsx": "4.22.2"
   },
   "devDependencies": {

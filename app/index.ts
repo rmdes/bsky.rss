@@ -3,8 +3,11 @@ import bsky from "./utils/bskyHandler";
 import reader from "./utils/rssHandler";
 import queue from "./utils/queueHandler";
 import health from "./utils/healthHandler";
+import { createLogger } from "../shared/logging/logger";
 
 require("dotenv").config();
+
+const logger = createLogger('app');
 
 function validateEnv() {
   const required = ['IDENTIFIER', 'APP_PASSWORD', 'FETCH_URL', 'INSTANCE_URL'];
@@ -59,10 +62,9 @@ async function main() {
     });
 
     /* Initialize RSS reader */
-    console.log(
-      `[${new Date().toUTCString()}] - [bsky.rss APP] Started RSS reader. Fetching from ${
-        process.env.FETCH_URL
-      } every ${fetch_interval} minutes.`
+    logger.info(
+      { fetchUrl: process.env.FETCH_URL, interval: fetch_interval },
+      'Started RSS reader'
     );
     await reader.init({
       fetch_interval,
@@ -74,17 +76,13 @@ async function main() {
 
     /* Mark application as ready */
     health.markReady();
-    console.log(
-      `[${new Date().toUTCString()}] - [bsky.rss APP] Application is ready and healthy`
-    );
+    logger.info('Application is ready and healthy');
   } catch (error) {
     if (error instanceof Error && error.message.includes('Rate Limit')) {
-      console.log(
-        `[${new Date().toUTCString()}] - [bsky.rss APP] Authentication rate limit exceeded`
-      );
+      logger.warn('Authentication rate limit exceeded');
       return;
     }
-    console.error(`[${new Date().toUTCString()}] - [bsky.rss APP] Fatal error: ${error instanceof Error ? error.message : String(error)}`);
+    logger.fatal({ error }, 'Fatal error during startup');
     process.exit(1);
   }
 }
