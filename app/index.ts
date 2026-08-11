@@ -7,14 +7,71 @@ import {createRssHandler} from './utils/rssHandler.ts';
 import health from './utils/healthHandler.ts';
 import 'dotenv/config';
 
-if (!process.env.IDENTIFIER) throw new Error('No identifier provided.');
-if (!process.env.APP_PASSWORD) throw new Error('No app password provided.');
-if (!process.env.FETCH_URL) throw new Error('No fetch URL provided.');
-if (!process.env.INSTANCE_URL) throw new Error('No instance URL provided.');
+interface ValidatedEnv {
+  identifier: string;
+  appPassword: string;
+  fetchUrl: URL;
+  instanceUrl: URL;
+  fetchInterval: number;
+}
 
-let fetch_interval: number;
-if (!process.env.FETCH_INTERVAL) fetch_interval = 5;
-else fetch_interval = parseFloat(process.env.FETCH_INTERVAL);
+function validateEnvironment(): ValidatedEnv {
+  // Check required variables exist
+  const required = ['IDENTIFIER', 'APP_PASSWORD', 'FETCH_URL', 'INSTANCE_URL'] as const;
+  const missing = required.filter(key => !process.env[key]);
+
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+
+  // Validate and parse FETCH_URL
+  let fetchUrl: URL;
+  try {
+    fetchUrl = new URL(process.env.FETCH_URL!);
+  } catch (error) {
+    throw new Error(
+      `Invalid FETCH_URL: "${process.env.FETCH_URL}" - must be a valid URL (e.g., https://example.com/feed.xml)`,
+    );
+  }
+
+  // Validate and parse INSTANCE_URL
+  let instanceUrl: URL;
+  try {
+    instanceUrl = new URL(process.env.INSTANCE_URL!);
+  } catch (error) {
+    throw new Error(
+      `Invalid INSTANCE_URL: "${process.env.INSTANCE_URL}" - must be a valid URL (e.g., https://bsky.social)`,
+    );
+  }
+
+  // Validate and parse FETCH_INTERVAL
+  let fetchInterval = 5; // Default
+  if (process.env.FETCH_INTERVAL) {
+    fetchInterval = parseFloat(process.env.FETCH_INTERVAL);
+
+    if (isNaN(fetchInterval)) {
+      throw new Error(
+        `Invalid FETCH_INTERVAL: "${process.env.FETCH_INTERVAL}" - must be a number`,
+      );
+    }
+
+    if (fetchInterval < 0.002) {
+      throw new Error(
+        `Invalid FETCH_INTERVAL: ${fetchInterval} - must be >= 0.002 minutes (7.2 seconds)`,
+      );
+    }
+  }
+
+  return {
+    identifier: process.env.IDENTIFIER!,
+    appPassword: process.env.APP_PASSWORD!,
+    fetchUrl,
+    instanceUrl,
+    fetchInterval,
+  };
+}
+
+const env = validateEnvironment();
 
 const db = createDbHandler(join(import.meta.dirname, '../data'));
 const bsky = createBskyHandler(db);
@@ -28,21 +85,21 @@ async function main() {
     health.start();
 
     /* Initialize Bluesky/Atproto API */
-    await bsky.init(String(process.env.INSTANCE_URL));
+    await bsky.init(env.instanceUrl.toString());
     await bsky.login({
-      identifier: String(process.env.IDENTIFIER),
-      password: String(process.env.APP_PASSWORD),
+      identifier: env.identifier,
+      password: env.appPassword,
     });
 
     /* Initialize RSS reader */
     console.log(
       `[${new Date().toUTCString()}] - [bsky.rss APP] Started RSS reader. Fetching from ${
-        process.env.FETCH_URL
-      } every ${fetch_interval} minutes.`,
+        env.fetchUrl
+      } every ${env.fetchInterval} minutes.`,
     );
     await reader.init({
-      fetch_interval,
-      fetch_url: new URL(String(process.env.FETCH_URL)),
+      fetch_interval: env.fetchInterval,
+      fetch_url: env.fetchUrl,
     });
     await reader.start();
     await reader.launch();

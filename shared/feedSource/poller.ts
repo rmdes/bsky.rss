@@ -36,6 +36,17 @@ export function createPoller(
   config: FeedSourceConfig,
   options: PollerOptions = {},
 ): FeedSource {
+  // Validate parameters
+  if (intervalMinutes < 0.002) {
+    throw new TypeError(
+      `intervalMinutes must be >= 0.002 (7.2 seconds), got ${intervalMinutes}`,
+    );
+  }
+
+  if (options.fetchTimeoutMs !== undefined && options.fetchTimeoutMs <= 0) {
+    throw new TypeError(`fetchTimeoutMs must be positive, got ${options.fetchTimeoutMs}`);
+  }
+
   const fetchBody = options.fetchBody ?? defaultFetch;
   const fetchTimeoutMs = options.fetchTimeoutMs ?? 10_000;
   let timer: NodeJS.Timeout | null = null;
