@@ -10,9 +10,11 @@ export interface LimiterDebugContext {
 export class ConcurrencyLimiter {
   private active = 0;
   private readonly queue: Array<() => void> = [];
+  private readonly maxQueueSize: number;
 
-  constructor(private readonly max: number) {
+  constructor(private readonly max: number, maxQueueSize: number = 1000) {
     if (max < 1) throw new Error(`ConcurrencyLimiter max must be >= 1, got ${max}`);
+    this.maxQueueSize = maxQueueSize;
   }
 
   async run<T>(fn: () => Promise<T>, observe?: (event: LimiterEvent) => void): Promise<T> {
@@ -40,6 +42,11 @@ export class ConcurrencyLimiter {
       this.active++;
       return Promise.resolve();
     }
+
+    if (this.queue.length >= this.maxQueueSize) {
+      throw new Error(`ConcurrencyLimiter queue full (${this.maxQueueSize})`);
+    }
+
     return new Promise(resolve => {
       this.queue.push(() => {
         this.active++;
@@ -52,6 +59,20 @@ export class ConcurrencyLimiter {
     this.active--;
     const next = this.queue.shift();
     if (next) next();
+  }
+
+  /**
+   * Get current queue depth for monitoring.
+   */
+  getQueueDepth(): number {
+    return this.queue.length;
+  }
+
+  /**
+   * Get current number of active operations.
+   */
+  getActive(): number {
+    return this.active;
   }
 }
 
@@ -81,6 +102,16 @@ export class SharedLimiters {
 
   withImageLimit<T>(fn: () => Promise<T>, debug?: LimiterDebugContext): Promise<T> {
     return this.imageLimiter.run(fn, limiterObserver('Image', debug));
+  }
+
+  /**
+   * Get queue depths for monitoring.
+   */
+  getQueueDepths(): {ogQueue: number; imageQueue: number} {
+    return {
+      ogQueue: this.ogLimiter.getQueueDepth(),
+      imageQueue: this.imageLimiter.getQueueDepth(),
+    };
   }
 }
 

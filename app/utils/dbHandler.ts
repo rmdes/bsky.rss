@@ -38,10 +38,13 @@ export function createDbHandler(dataRoot: string) {
       const data = fs.readFileSync(`${dataRoot}/config.json`, 'utf8');
       appConfig = JSON.parse(data);
       return JSON.parse(data);
-    } catch (e) {
-      if (String(e).startsWith('Error: ENOENT: no such file or directory')) {
+    } catch (error) {
+      if (error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
         throw new Error('Config file not found.');
       }
+      throw new Error(
+        `Failed to read config: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     return '';

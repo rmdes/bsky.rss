@@ -1,5 +1,7 @@
 import {Jimp, JimpMime} from 'jimp';
 import axios from 'axios';
+import http from 'node:http';
+import https from 'node:https';
 import og from 'open-graph-scraper';
 import {decode} from 'html-entities';
 import {BotStore} from './botStore.ts';
@@ -14,6 +16,19 @@ import {
   finalizeMarkdownLinks,
   type MarkdownFacet,
 } from '../shared/feedSource/markdownLinks.ts';
+
+// HTTP agent pools to limit concurrent connections
+const httpAgent = new http.Agent({
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 60000,
+});
+
+const httpsAgent = new https.Agent({
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 60000,
+});
 
 export interface FeedReaderConfig {
   string: string;
@@ -264,8 +279,37 @@ export class FeedReader {
             responseType: 'arraybuffer',
             maxContentLength: this.sharedLimiters.maxImageDownloadBytes,
             timeout: this.sharedLimiters.httpTimeoutMs,
+            httpAgent,
+            httpsAgent,
           });
-          return resizeImageToBuffer(response.data);
+
+          // Validate buffer size before processing to prevent OOM
+          const buffer = Buffer.from(response.data);
+          const MAX_RAW_BUFFER_SIZE = 5_000_000; // 5MB raw limit
+          if (buffer.length > MAX_RAW_BUFFER_SIZE) {
+            this.runtime.logger.debug(
+              'FETCH',
+              `Image buffer too large: ${buffer.length} bytes, skipping`,
+              this.botId,
+            );
+            return undefined;
+          }
+
+          // Check estimated decompressed size to prevent OOM
+          const image = await Jimp.read(buffer);
+          const estimatedSize = image.bitmap.width * image.bitmap.height * 4; // RGBA
+          const MAX_DECOMPRESSED_SIZE = 100_000_000; // 100MB decompressed limit
+          if (estimatedSize > MAX_DECOMPRESSED_SIZE) {
+            this.runtime.logger.debug(
+              'FETCH',
+              `Image too large when decompressed: ${estimatedSize} bytes (${image.bitmap.width}x${image.bitmap.height}), skipping`,
+              this.botId,
+            );
+            return undefined;
+          }
+
+          // Resize if valid
+          return image.resize({w: 800}).getBuffer(JimpMime.jpeg, {quality: 80});
         },
         {logger: this.runtime.logger, botId: this.botId},
       );

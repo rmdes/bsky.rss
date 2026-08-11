@@ -25,6 +25,12 @@ export class BotStore {
     // doesn't fail with "unable to open database file".
     mkdirSync(dirname(dbPath), {recursive: true});
     this.db = new DatabaseSync(dbPath);
+
+    // Enable WAL mode for better concurrency with shared identity stores
+    this.db.exec('PRAGMA journal_mode = WAL');
+    // NORMAL synchronous mode is safe with WAL and faster than FULL
+    this.db.exec('PRAGMA synchronous = NORMAL');
+
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS session (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -68,6 +74,22 @@ export class BotStore {
     const hasFacetsColumn = columns.some(col => col.name === 'facets_json');
     if (!hasFacetsColumn) {
       this.db.exec('ALTER TABLE queue_items ADD COLUMN facets_json TEXT');
+    }
+  }
+
+  /**
+   * Execute a function within a transaction. Automatically commits on success
+   * and rolls back on error.
+   */
+  transaction<T>(fn: () => T): T {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = fn();
+      this.db.exec('COMMIT');
+      return result;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
     }
   }
 
