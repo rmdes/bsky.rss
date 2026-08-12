@@ -90,6 +90,10 @@ export function fixMalformedUrl(urlString: string): string {
   return urlString.replace(/^https\/\//i, 'https://').replace(/^http\/\//i, 'http://');
 }
 
+export function isPastCursor(useDate: string, lastCursor: string): boolean {
+  return new Date(useDate) <= new Date(lastCursor);
+}
+
 export function parseString(
   template: string,
   item: NormalizedItem,
@@ -393,7 +397,7 @@ export class FeedReader {
         }
         this.store.writeSeenValue(url);
       } else {
-        if (new Date(useDate) <= new Date(lastCursor)) {
+        if (isPastCursor(useDate, lastCursor)) {
           this.runtime.logger.verbose(
             'FEED',
             `Skipping stale item: ${item.title} (${url})`,
@@ -480,7 +484,7 @@ export class FeedReader {
       }
     }
 
-    if (new Date(useDate) <= new Date(lastCursor)) {
+    if (isPastCursor(useDate, lastCursor)) {
       this.runtime.logger.verbose(
         'FEED',
         `Skipping stale item: ${item.title} (${itemUrl ?? 'no URL'})`,

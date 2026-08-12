@@ -113,6 +113,11 @@ async function main() {
   } catch (error) {
     if (error instanceof Error && error.message.includes('Rate Limit')) {
       logger.summary('APP', 'Authentication rate limit exceeded');
+      // Deliberately leave health.markReady() uncalled: /health stays 503, which is the
+      // signal for an external process manager/orchestrator to restart the container.
+      // There's no in-process retry-after-rate-limit mechanism for this startup login
+      // path, so staying unready (rather than exiting or looping) hands recovery to
+      // whatever's supervising the process.
       return;
     }
     logger.summary('APP', `Fatal error: ${error instanceof Error ? error.message : String(error)}`);
