@@ -22,8 +22,4 @@ export type {
 } from './types.ts';
 
 // Re-export markdown types for convenience
-export type {
-  MarkdownFacet,
-  ExtractedMarkdownLinks,
-  MarkdownLinkResult,
-} from './markdownLinks.ts';
+export type {MarkdownFacet, ExtractedMarkdownLinks, MarkdownLinkResult} from './markdownLinks.ts';

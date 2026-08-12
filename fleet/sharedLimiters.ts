@@ -12,7 +12,10 @@ export class ConcurrencyLimiter {
   private readonly queue: Array<() => void> = [];
   private readonly maxQueueSize: number;
 
-  constructor(private readonly max: number, maxQueueSize: number = 1000) {
+  constructor(
+    private readonly max: number,
+    maxQueueSize: number = 1000,
+  ) {
     if (max < 1) throw new Error(`ConcurrencyLimiter max must be >= 1, got ${max}`);
     this.maxQueueSize = maxQueueSize;
   }
