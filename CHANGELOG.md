@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Rate-limit misclassification on non-rate-limit failures**: both places `bskyHandler.post()`
+  (single-bot mode) could report a failure - record creation and image upload - had the same root
+  bug: any failure, not just a real 429/504, was reported as `{ratelimit: true}`, which
+  `queueHandler.ts` retries forever via `unshift` + a 30s timer. The record-creation path now
+  classifies the actual error (429 `RateLimitExceeded`/504 `UpstreamTimeout` only) and returns
+  `{ratelimit: false}` for anything else - a genuinely uncertain outcome (validation failure,
+  expired auth, malformed record, etc.) is now dropped (logged, skipped) instead of retried
+  forever. **Behavior change**: a post that fails for a non-rate-limit reason is no longer retried
+  - it's skipped. This is deliberate: an uncertain outcome might already have succeeded
+  server-side, so blind retry risked either wedging the whole queue behind a permanently-broken
+  item, or a duplicate post. If you run with `removeDuplicate: true`, note that the item's URL is
+  already written to the dedupe file at queue time, so a dropped item is now permanently skipped,
+  not just delayed - it will not be retried on a later run. The image-upload path is intentionally
+  left retrying on failure (matching `fleet/bskyClient.ts`'s own `uploadBlob` catch): no record has
+  been created yet at that point, so retrying can never produce a duplicate post, unlike the
+  record-creation case.
+- `yarn fleet:status`/`yarn fleet:log` no longer fail with "malformed snapshot" against a
+  `status.json` written by a fleet still running the previous release (i.e. right after `git pull`,
+  before the fleet container restarts) - a missing `limiters` field is now defaulted to
+  `{ogQueueDepth: 0, imageQueueDepth: 0}` instead of being rejected. Self-heals automatically once
+  the fleet restarts and starts writing the field again.
+
+### Changed
+- Internal structured logging module renamed from `FleetLogger` to `Logger` (`shared/logging/`) -
+  no user-facing effect.
+- `yarn fleet:status` output gained a `Limiters` line (shared OpenGraph/image queue depths),
+  alongside various internal dead-code and duplication cleanup.
+
+### Removed
+- `BotStore.transaction()` - added in `2.10.0` below but never called from anywhere in the
+  codebase; removed as unused dead code (confirmed zero callers, zero tests) rather than left as
+  an untested, unexercised code path.
+
 ---
 
 ## [2.10.0] - 2026-08-12
