@@ -119,6 +119,25 @@ test('readFleetStatus returns a current schema snapshot', t => {
   assert.deepEqual(readFleetStatus(path), expected);
 });
 
+test('readFleetStatus accepts an older snapshot with no limiters field and defaults it to zero', t => {
+  const path = join(tempDirectory(t), 'status.json');
+  const fixture = statusFixture();
+  const {limiters: _limiters, ...withoutLimiters} = fixture;
+  writeFileSync(path, JSON.stringify(withoutLimiters));
+
+  const result = readFleetStatus(path);
+
+  assert.deepEqual(result, {...fixture, limiters: {ogQueueDepth: 0, imageQueueDepth: 0}});
+});
+
+test('readFleetStatus still rejects a limiters field that is present but malformed', t => {
+  const path = join(tempDirectory(t), 'status.json');
+  const fixture = statusFixture();
+  writeFileSync(path, JSON.stringify({...fixture, limiters: {ogQueueDepth: 'nope'}}));
+
+  assert.throws(() => readFleetStatus(path), /malformed snapshot/);
+});
+
 test('a feed failure classified from a non-integer or negative HTTP status still round-trips through the snapshot validator', t => {
   const path = join(tempDirectory(t), 'status.json');
 

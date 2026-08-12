@@ -43,6 +43,15 @@ export function readFleetStatus(path: string): FleetStatusSnapshot {
   if (!isFleetStatusSnapshot(parsed)) {
     throw new Error(`Fleet status at ${path} is a malformed snapshot`);
   }
+  // Snapshots written before the `limiters` field existed (the real, currently-running
+  // production fleet at the time this tolerance was added) lack it entirely. Default
+  // rather than reject, so `yarn fleet:status`/`yarn fleet:log` still work against an
+  // older snapshot right after a `git pull`, before the fleet has restarted onto code
+  // that writes `limiters` - it otherwise self-heals within one heartbeat of a restart,
+  // but until then the alternative is a confusing "malformed snapshot" error.
+  if (!parsed.limiters) {
+    parsed.limiters = {ogQueueDepth: 0, imageQueueDepth: 0};
+  }
   return parsed;
 }
 
@@ -269,7 +278,11 @@ function isFleetStatusSnapshot(value: unknown): value is FleetStatusSnapshot {
     ]) ||
     !hasNumericProperties(value.totals, [...counterNames, 'queueDepth']) ||
     !hasNumericProperties(value.memory, ['rssBytes', 'heapUsedBytes']) ||
-    !hasNumericProperties(value.limiters, ['ogQueueDepth', 'imageQueueDepth']) ||
+    // `limiters` was added after the currently-running production fleet's release, so an
+    // older snapshot may not have it at all - tolerate absence, but still reject a
+    // `limiters` field that IS present but malformed.
+    (value.limiters !== undefined &&
+      !hasNumericProperties(value.limiters, ['ogQueueDepth', 'imageQueueDepth'])) ||
     !Array.isArray(value.botStates)
   ) {
     return false;
