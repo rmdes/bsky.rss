@@ -66,7 +66,9 @@ export function createBskyHandler(db: DbHandler, logger: FleetLogger) {
     languages?: string[];
     date?: Date;
     facets?: MarkdownFacet[];
-  }): Promise<{uri: string; cid: string} | {ratelimit: true; retryAfter?: number}> {
+  }): Promise<
+    {uri: string; cid: string} | {ratelimit: true; retryAfter?: number} | {ratelimit: false}
+  > {
     if (!bskyAgent) throw new Error('Bluesky agent not initialized.');
 
     const autoDetect = new RichText({text: content});
@@ -136,24 +138,38 @@ export function createBskyHandler(db: DbHandler, logger: FleetLogger) {
       createdAt: date ? date.toISOString() : new Date().toISOString(),
     };
 
-    let post: {uri: string; cid: string} | {ratelimit: true; retryAfter?: number} | undefined;
+    let post:
+      | {uri: string; cid: string}
+      | {ratelimit: true; retryAfter?: number}
+      | {ratelimit: false}
+      | undefined;
     try {
       post = await bskyAgent.post(record as unknown as AppBskyFeedPost.Record);
     } catch (error) {
+      // Ported from fleet/bskyClient.ts's classifyPostError - that version diagnosed and
+      // fixed the same two bugs this catch block used to have: it only recognized a 504
+      // (UpstreamTimeout), never the actual 429 (RateLimitExceeded); and it read headers
+      // with a case-sensitive 'Retry-After' key, but the Fetch API spec always lowercases
+      // header names (Object.fromEntries(response.headers.entries()) in @atproto/xrpc's
+      // own source), so the real key is always 'retry-after'. Any other error (a plain
+      // Error, an XRPCError with an unrelated status) is a genuinely uncertain outcome,
+      // not a rate limit - it must not be retried forever.
       if (error instanceof Object && error.constructor.name === XRPCError.name) {
         const xrpc_error = error as XRPCError;
+        const isRateLimitStatus =
+          xrpc_error.status === ResponseType.RateLimitExceeded ||
+          xrpc_error.status === ResponseType.UpstreamTimeout;
 
-        if (xrpc_error.status === ResponseType.UpstreamTimeout) {
+        if (isRateLimitStatus) {
           const headers = xrpc_error.headers;
-
-          if (headers && Object.hasOwn(headers, 'Retry-After') && headers['Retry-After']) {
-            const retryAfter: number = +headers['Retry-After'];
-            post = {ratelimit: true, retryAfter: retryAfter};
-          }
+          const raw = headers ? headers['retry-after'] : undefined;
+          const parsed = raw ? Number(raw) : NaN;
+          const retryAfter = !Number.isNaN(parsed) && parsed > 0 ? parsed : 30;
+          post = {ratelimit: true, retryAfter};
         }
       }
 
-      if (!post) post = {ratelimit: true, retryAfter: 30};
+      if (!post) post = {ratelimit: false};
     }
     return post!;
   }

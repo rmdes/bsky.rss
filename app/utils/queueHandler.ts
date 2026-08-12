@@ -84,7 +84,7 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler, logger: Fle
           date: config.publishDate ? new Date(item.date) : undefined,
           facets: item.facets,
         });
-        if ('ratelimit' in post) {
+        if ('ratelimit' in post && post.ratelimit) {
           queue.unshift(item);
           const timeoutSeconds: number = post.retryAfter ? post.retryAfter : 30;
           await createLimitTimer(timeoutSeconds);
@@ -95,24 +95,39 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler, logger: Fle
           );
           break;
         } else {
-          logger.verbose('POST', `Posting new item (${item.title})`);
-          void db.writeDate(new Date(item.date));
-          lastPostTimestamp = Date.now();
-          // A large backlog drains inside this same runQueue() call, holding
-          // queueRunning true for the whole drain - later setInterval ticks
-          // bail out immediately (see the guard above) without ever reaching
-          // the top-of-function updateActivity() call, so a long drain must
-          // refresh activity here too or it goes stale mid-drain despite
-          // actively posting.
-          health.updateActivity();
-          if (config.adaptiveSpacing && queueSnapshot.length > 0) {
-            const remaining = queueSnapshot.length;
-            const delaySec = computeDelay(remaining + 1);
+          // post.ratelimit === false ('ratelimit' in post but false) is a genuinely
+          // uncertain, non-rate-limit outcome (validation failure, expired auth, etc.).
+          // The item was already spliced out of queue/queueSnapshot above, so leaving it
+          // out here means "skip, don't retry" - unshifting it back would wedge the queue
+          // on a permanently-broken item forever, retried every createLimitTimer interval.
+          // A real post success ('ratelimit' not in post) runs the same finalization plus
+          // its own bookkeeping below.
+          const succeeded = !('ratelimit' in post);
+          if (succeeded) {
+            logger.verbose('POST', `Posting new item (${item.title})`);
+            void db.writeDate(new Date(item.date));
+            lastPostTimestamp = Date.now();
+            // A large backlog drains inside this same runQueue() call, holding
+            // queueRunning true for the whole drain - later setInterval ticks
+            // bail out immediately (see the guard above) without ever reaching
+            // the top-of-function updateActivity() call, so a long drain must
+            // refresh activity here too or it goes stale mid-drain despite
+            // actively posting.
+            health.updateActivity();
+            if (config.adaptiveSpacing && queueSnapshot.length > 0) {
+              const remaining = queueSnapshot.length;
+              const delaySec = computeDelay(remaining + 1);
 
-            if (delaySec > 0) {
-              logger.debug('QUEUE', `Waiting ${delaySec} seconds before next post`);
-              await sleep(delaySec * 1000);
+              if (delaySec > 0) {
+                logger.debug('QUEUE', `Waiting ${delaySec} seconds before next post`);
+                await sleep(delaySec * 1000);
+              }
             }
+          } else {
+            logger.summary(
+              'POST',
+              `Uncertain result for item; skipped without retry (${item.title})`,
+            );
           }
           if (i === queueSnapshot.length - 1) {
             queueRunning = false;

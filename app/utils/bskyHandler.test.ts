@@ -4,9 +4,18 @@ import {mkdtempSync, rmSync} from 'fs';
 import {tmpdir} from 'os';
 import path from 'path';
 import {RichText, AppBskyFeedPost, AppBskyRichtextFacet} from '@atproto/api';
+import {XRPCError, ResponseType} from '@atproto/xrpc';
 import {FleetLogger} from '../../shared/logging/logger.ts';
 import {createDbHandler} from './dbHandler.ts';
 import {createBskyHandler, type BskyHandler} from './bskyHandler.ts';
+
+// Mirrors fleet/bskyClient.test.ts's makeXRPCError helper - headers on a real XRPCError
+// instance, exactly as @atproto/xrpc constructs them from a live response.
+function makeXRPCError(status: number, headers?: Record<string, string>): XRPCError {
+  const err = new XRPCError(status, 'TestError', 'test error');
+  err.headers = headers;
+  return err;
+}
 
 const testLogger = new FleetLogger({defaultLevel: 'summary', sink: () => undefined});
 
@@ -393,6 +402,53 @@ describe('bskyHandler', () => {
         'linkFeature should be a Link',
       );
       assert.strictEqual(linkFeature.uri, 'https://example.com/whole');
+    });
+  });
+
+  describe('post() rate-limit classification', () => {
+    // Ports fleet/bskyClient.ts's classifyPostError tests to bskyHandler's own
+    // union-return shape. Two real bugs this proves against the current code:
+    // (1) only a 504 (UpstreamTimeout) is recognized, never the actual 429
+    // (RateLimitExceeded); (2) the 'Retry-After' header lookup can never match
+    // because @atproto/xrpc always lowercases header names to 'retry-after'.
+    async function postWithAgentError(error: unknown) {
+      const bskyHandler = freshBskyHandler();
+      const agent = await bskyHandler.init('https://bsky.social');
+      agent.post = async () => {
+        throw error;
+      };
+      return bskyHandler.post({content: 'Test post'});
+    }
+
+    it('classifies a 429 with a lowercase retry-after header as a rate limit', async () => {
+      const result = await postWithAgentError(
+        makeXRPCError(ResponseType.RateLimitExceeded, {'retry-after': '45'}),
+      );
+      assert.deepStrictEqual(result, {ratelimit: true, retryAfter: 45});
+    });
+
+    it('classifies a 504 the same way as a 429', async () => {
+      const result = await postWithAgentError(
+        makeXRPCError(ResponseType.UpstreamTimeout, {'retry-after': '12'}),
+      );
+      assert.deepStrictEqual(result, {ratelimit: true, retryAfter: 12});
+    });
+
+    it('falls back to 30s when a rate-limit status has no retry-after header', async () => {
+      const result = await postWithAgentError(makeXRPCError(ResponseType.RateLimitExceeded, {}));
+      assert.deepStrictEqual(result, {ratelimit: true, retryAfter: 30});
+    });
+
+    it('a non-rate-limit XRPCError is not classified as a rate limit', async () => {
+      const result = await postWithAgentError(
+        makeXRPCError(ResponseType.InvalidRequest, {'retry-after': '999'}),
+      );
+      assert.deepStrictEqual(result, {ratelimit: false});
+    });
+
+    it('a non-XRPCError exception (network error, etc.) is not classified as a rate limit', async () => {
+      const result = await postWithAgentError(new Error('ECONNRESET'));
+      assert.deepStrictEqual(result, {ratelimit: false});
     });
   });
 });

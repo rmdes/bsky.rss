@@ -22,6 +22,7 @@ const testLogger = new FleetLogger({defaultLevel: 'summary', sink: () => undefin
 describe('queueHandler', () => {
   let testDataDir: string;
   let queueHandler: QueueHandler;
+  let bsky: ReturnType<typeof createBskyHandler>;
 
   beforeEach(() => {
     testDataDir = mkdtempSync(path.join(tmpdir(), 'bsky-rss-test-'));
@@ -52,7 +53,7 @@ describe('queueHandler', () => {
     fs.writeFileSync(path.join(testDataDir, 'config.json'), JSON.stringify(testConfig), 'utf8');
 
     const db = createDbHandler(testDataDir);
-    const bsky = createBskyHandler(db, testLogger);
+    bsky = createBskyHandler(db, testLogger);
     queueHandler = createQueueHandler(bsky, db, testLogger);
   });
 
@@ -248,6 +249,53 @@ describe('queueHandler', () => {
         updateActivityCalled,
         true,
         'runQueue() with an empty queue should still call health.updateActivity()',
+      );
+    });
+  });
+
+  describe('runQueue() ratelimit classification', () => {
+    it('does not unshift a {ratelimit: false} item and does not block subsequent items', async () => {
+      // Proves the bug: today's runQueue() checks `'ratelimit' in post`, which is true
+      // for both {ratelimit: true} and {ratelimit: false} - so a permanently-broken item
+      // (validation failure, expired auth, etc.) gets unshifted back to the front and
+      // retried forever via createLimitTimer, wedging every other queued item behind it.
+      const badItem = {
+        content: 'Bad item',
+        title: 'Bad',
+        date: new Date().toString(),
+        languages: ['en'],
+        embed: undefined,
+        facets: [],
+      };
+      const goodItem = {
+        content: 'Good item',
+        title: 'Good',
+        date: new Date().toString(),
+        languages: ['en'],
+        embed: undefined,
+        facets: [],
+      };
+      await queueHandler.writeQueue(badItem);
+      await queueHandler.writeQueue(goodItem);
+
+      const calls: string[] = [];
+      bsky.post = (async ({content}: {content: string}) => {
+        calls.push(content);
+        if (content === badItem.content) return {ratelimit: false};
+        return {uri: 'at://did:plc:test/app.bsky.feed.post/abc', cid: 'bafycid'};
+      }) as typeof bsky.post;
+
+      const result = await queueHandler.runQueue();
+
+      assert.deepStrictEqual(
+        calls,
+        [badItem.content, goodItem.content],
+        'both items should have been attempted - a {ratelimit: false} result must not block the rest of the queue',
+      );
+      assert.strictEqual(
+        (result as QueueItems[]).length,
+        0,
+        'neither item should remain queued - the bad one was skipped, not requeued',
       );
     });
   });
