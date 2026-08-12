@@ -1,5 +1,5 @@
 import {basename} from 'node:path';
-import type {FleetLogLevel, FleetLogOverride} from './logging.ts';
+import type {FleetLogLevel, FleetLogOverride} from '../shared/logging/logger.ts';
 import {overridesPath, parseDuration, readValidOverrides, writeOverrides} from './logOverrides.ts';
 import {readFleetStatus, statusPath} from './status.ts';
 

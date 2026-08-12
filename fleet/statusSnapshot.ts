@@ -5,7 +5,7 @@ import {
   type BotOperations,
 } from './botOperations.ts';
 import type {BotWorker} from './botWorker.ts';
-import type {FleetLogger, FleetLogLevel} from './logging.ts';
+import type {FleetLogger, FleetLogLevel} from '../shared/logging/logger.ts';
 
 export type FleetPhase = 'starting' | 'running' | 'stopping';
 export type ActivationState = 'pending' | 'active' | 'failed';

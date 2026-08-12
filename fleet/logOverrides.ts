@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {writePrivateJsonAtomic} from './atomicJson.ts';
-import {type FleetLogLevel, type FleetLogOverride, FleetLogger} from './logging.ts';
+import {type FleetLogLevel, type FleetLogOverride, FleetLogger} from '../shared/logging/logger.ts';
 
 export type LogOverrideDocument = Record<string, FleetLogOverride>;
 

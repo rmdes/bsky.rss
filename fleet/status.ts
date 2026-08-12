@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
 import type {BotCounters, FeedFailureCategory, FeedState} from './botOperations.ts';
-import type {FleetLogLevel} from './logging.ts';
+import type {FleetLogLevel} from '../shared/logging/logger.ts';
 import type {
   ActivationState,
   FleetBotStatus,

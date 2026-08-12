@@ -5,7 +5,7 @@ import {BotStore} from './botStore.ts';
 import {selectEligibleItems, isStillFresh, FreshnessConfig} from './freshnessPolicy.ts';
 import type {QueueItemRow} from './botStore.ts';
 import {BotOperations, type BotOperationalSnapshot} from './botOperations.ts';
-import {FleetLogger, formatDebugError} from './logging.ts';
+import {FleetLogger, formatDebugError} from '../shared/logging/logger.ts';
 import type {MarkdownFacet} from '../shared/feedSource/markdownLinks.ts';
 
 export interface BotWorkerOptions {

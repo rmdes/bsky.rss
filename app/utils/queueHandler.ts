@@ -1,8 +1,9 @@
 import type {BskyHandler} from './bskyHandler.ts';
 import type {DbHandler} from './dbHandler.ts';
 import health from './healthHandler.ts';
+import type {FleetLogger} from '../../shared/logging/index.ts';
 
-export function createQueueHandler(bsky: BskyHandler, db: DbHandler) {
+export function createQueueHandler(bsky: BskyHandler, db: DbHandler, logger: FleetLogger) {
   const queue: QueueItems[] = [];
   let rateLimited: boolean = false;
   let queueRunning: boolean = false;
@@ -33,11 +34,7 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler) {
 
   async function start() {
     config = await db.initConfig();
-    console.log(
-      `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Starting queue handler. Running every ${
-        config.runInterval
-      } seconds`,
-    );
+    logger.summary('QUEUE', `Starting queue handler. Running every ${config.runInterval} seconds`);
     setInterval(() => {
       void runQueue();
     }, config.runInterval * 1000);
@@ -49,9 +46,7 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler) {
     setTimeout(() => {
       rateLimited = false;
       void runQueue();
-      console.log(
-        `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Post rate limit expired - resuming queue`,
-      );
+      logger.summary('QUEUE', 'Post rate limit expired - resuming queue');
     }, timeoutSeconds * 1000);
     return '';
   }
@@ -64,11 +59,7 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler) {
     health.updateActivity();
     queueSnapshot = [...queue];
     if (queueSnapshot.length === 0) return queueSnapshot;
-    console.log(
-      `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Running queue with ${
-        queueSnapshot.length
-      } items`,
-    );
+    logger.verbose('QUEUE', `Running queue with ${queueSnapshot.length} items`);
     if (rateLimited) return {ratelimit: true};
     if (queueSnapshot.length > 0) {
       queueRunning = true;
@@ -82,9 +73,7 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler) {
           const waitMs = config.minSpacing * 1000 - elapsed;
           if (waitMs > 0) {
             const waitSec = Math.ceil(waitMs / 1000);
-            console.log(
-              `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Waiting ${waitSec} seconds before next post`,
-            );
+            logger.debug('QUEUE', `Waiting ${waitSec} seconds before next post`);
             await sleep(waitMs);
           }
         }
@@ -100,14 +89,13 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler) {
           const timeoutSeconds: number = post.retryAfter ? post.retryAfter : 30;
           await createLimitTimer(timeoutSeconds);
           queueRunning = false;
-          console.log(
-            `[${new Date().toUTCString()}] - [bsky.rss POST] Post rate limit exceeded - process will resume after ${timeoutSeconds} seconds`,
+          logger.summary(
+            'POST',
+            `Post rate limit exceeded - process will resume after ${timeoutSeconds} seconds`,
           );
           break;
         } else {
-          console.log(
-            `[${new Date().toUTCString()}] - [bsky.rss POST] Posting new item (${item.title})`,
-          );
+          logger.verbose('POST', `Posting new item (${item.title})`);
           void db.writeDate(new Date(item.date));
           lastPostTimestamp = Date.now();
           // A large backlog drains inside this same runQueue() call, holding
@@ -122,19 +110,16 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler) {
             const delaySec = computeDelay(remaining + 1);
 
             if (delaySec > 0) {
-              console.log(
-                `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Waiting ${delaySec} seconds before next post`,
-              );
+              logger.debug('QUEUE', `Waiting ${delaySec} seconds before next post`);
               await sleep(delaySec * 1000);
             }
           }
           if (i === queueSnapshot.length - 1) {
             queueRunning = false;
             queueSnapshot = [];
-            console.log(
-              `[${new Date().toUTCString()}] - [bsky.rss QUEUE] Finished running queue. Next run in ${
-                config.runInterval
-              } seconds`,
+            logger.verbose(
+              'QUEUE',
+              `Finished running queue. Next run in ${config.runInterval} seconds`,
             );
             if (config.removeDuplicate) void db.cleanupOldValues();
           }
@@ -147,7 +132,7 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler) {
   }
 
   async function writeQueue({content, embed, languages, title, date, facets}: QueueItems) {
-    console.log(`[${new Date().toUTCString()}] - [bsky.rss QUEUE] Queuing item (${title})`);
+    logger.verbose('QUEUE', `Queuing item (${title})`);
     queue.push({content, embed, languages, title, date, facets});
     return queue;
   }

@@ -13,7 +13,7 @@ import {AuthCoordinator} from './authCoordinator.ts';
 import {acquireLock, releaseLock} from './pidLock.ts';
 import {BotOperations} from './botOperations.ts';
 import {FleetOperationsRuntime} from './fleetOperationsRuntime.ts';
-import {FleetLogger, formatDebugError, parseFleetLogLevel} from './logging.ts';
+import {FleetLogger, formatDebugError, parseFleetLogLevel} from '../shared/logging/logger.ts';
 import {overridesPath} from './logOverrides.ts';
 import {statusPath} from './status.ts';
 import health from '../app/utils/healthHandler.ts';

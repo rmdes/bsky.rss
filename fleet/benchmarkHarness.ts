@@ -11,7 +11,7 @@ import {FeedReader} from './feedReader.ts';
 import {BotWorker} from './botWorker.ts';
 import {SharedLimiters} from './sharedLimiters.ts';
 import {BotOperations} from './botOperations.ts';
-import {FleetLogger} from './logging.ts';
+import {FleetLogger} from '../shared/logging/logger.ts';
 
 export interface BenchmarkOptions {
   botCount: number;

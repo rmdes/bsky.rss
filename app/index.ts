@@ -5,6 +5,7 @@ import {createBskyHandler} from './utils/bskyHandler.ts';
 import {createQueueHandler} from './utils/queueHandler.ts';
 import {createRssHandler} from './utils/rssHandler.ts';
 import health from './utils/healthHandler.ts';
+import {FleetLogger, parseFleetLogLevel} from '../shared/logging/index.ts';
 import 'dotenv/config';
 
 interface ValidatedEnv {
@@ -73,10 +74,14 @@ function validateEnvironment(): ValidatedEnv {
 
 const env = validateEnvironment();
 
+const logger = new FleetLogger({
+  defaultLevel: parseFleetLogLevel(process.env.LOG_LEVEL),
+});
+
 const db = createDbHandler(join(import.meta.dirname, '../data'));
-const bsky = createBskyHandler(db);
-const queue = createQueueHandler(bsky, db);
-const reader = createRssHandler(queue, db);
+const bsky = createBskyHandler(db, logger);
+const queue = createQueueHandler(bsky, db, logger);
+const reader = createRssHandler(queue, db, logger);
 
 void main();
 async function main() {
@@ -92,10 +97,9 @@ async function main() {
     });
 
     /* Initialize RSS reader */
-    console.log(
-      `[${new Date().toUTCString()}] - [bsky.rss APP] Started RSS reader. Fetching from ${
-        env.fetchUrl
-      } every ${env.fetchInterval} minutes.`,
+    logger.summary(
+      'APP',
+      `Started RSS reader. Fetching from ${env.fetchUrl} every ${env.fetchInterval} minutes.`,
     );
     await reader.init({
       fetch_interval: env.fetchInterval,
@@ -107,16 +111,15 @@ async function main() {
 
     /* Mark application as ready */
     health.markReady();
-    console.log(`[${new Date().toUTCString()}] - [bsky.rss APP] Application is ready and healthy`);
+    logger.summary('APP', 'Application is ready and healthy');
   } catch (error) {
     if (error instanceof Error && error.message.includes('Rate Limit')) {
-      console.log(
-        `[${new Date().toUTCString()}] - [bsky.rss APP] Authentication rate limit exceeded`,
-      );
+      logger.summary('APP', 'Authentication rate limit exceeded');
       return;
     }
-    console.error(
-      `[${new Date().toUTCString()}] - [bsky.rss APP] Fatal error: ${error instanceof Error ? error.message : String(error)}`,
+    logger.summary(
+      'APP',
+      `Fatal error: ${error instanceof Error ? error.message : String(error)}`,
     );
     process.exit(1);
   }

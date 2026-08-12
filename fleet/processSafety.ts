@@ -1,4 +1,4 @@
-import {FleetLogger, formatDebugError} from './logging.ts';
+import {FleetLogger, formatDebugError} from '../shared/logging/logger.ts';
 
 let installed = false;
 let unhandledRejectionCount = 0;

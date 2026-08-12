@@ -1,4 +1,4 @@
-import type {FleetLogger} from './logging.ts';
+import type {FleetLogger} from '../shared/logging/logger.ts';
 
 type LimiterEvent = 'waiting' | 'acquired' | 'released';
 

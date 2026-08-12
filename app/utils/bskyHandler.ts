@@ -10,8 +10,9 @@ import {
 import {XRPCError, ResponseType} from '@atproto/xrpc';
 import type {DbHandler} from './dbHandler.ts';
 import {buildFacets, type MarkdownFacet} from '../../shared/feedSource/markdownLinks.ts';
+import type {FleetLogger} from '../../shared/logging/index.ts';
 
-export function createBskyHandler(db: DbHandler) {
+export function createBskyHandler(db: DbHandler, logger: FleetLogger) {
   let bskyAgent: BskyAgent | null = null;
 
   async function init(service: string) {
@@ -37,20 +38,15 @@ export function createBskyHandler(db: DbHandler) {
       const sessionData = persistedSessionData as AtpSessionData;
       const session = await bskyAgent.resumeSession(sessionData);
       if (session.success) {
-        console.log(
-          `[${new Date().toUTCString()}] - [bsky.rss LOGIN] Resumed session for ${
-            session.data.handle
-          }`,
-        );
+        logger.summary('LOGIN', `Resumed session for ${session.data.handle}`);
         return session;
       } else {
         throw new Error('Login failed (auth via persisted session)');
       }
     } catch (error) {
-      console.log(
-        `[${new Date().toUTCString()}] - [bsky.rss LOGIN] Session resume failed: ${
-          error instanceof Error ? error.message : String(error)
-        }, falling back to login/password`,
+      logger.verbose(
+        'LOGIN',
+        `Session resume failed: ${error instanceof Error ? error.message : String(error)}, falling back to login/password`,
       );
       const loginData = await bskyAgent.login({identifier, password});
       if (!loginData.success) throw new Error('Login failed (auth via login/password)');
@@ -93,10 +89,9 @@ export function createBskyHandler(db: DbHandler) {
         });
       } catch (error) {
         // Log the actual error - could be rate limit, network failure, size limit, etc.
-        console.error(
-          `[${new Date().toUTCString()}] - [bsky.rss POST] Image upload failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+        logger.debug(
+          'POST',
+          `Image upload failed: ${error instanceof Error ? error.message : String(error)}`,
         );
         // Treat as rate limit to trigger retry logic downstream
         embedImage = {ratelimit: true};

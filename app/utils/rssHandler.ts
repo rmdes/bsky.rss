@@ -10,8 +10,9 @@ import {
   extractMarkdownLinks,
   finalizeMarkdownLinks,
 } from '../../shared/feedSource/markdownLinks.ts';
+import type {FleetLogger} from '../../shared/logging/index.ts';
 
-export function createRssHandler(queue: QueueHandler, db: DbHandler) {
+export function createRssHandler(queue: QueueHandler, db: DbHandler, logger: FleetLogger) {
   let reader: FeedSource | null = null;
   let lastDate: string = '';
   // Tracks the newest date seen *within the batch currently being processed*, committed
@@ -54,10 +55,9 @@ export function createRssHandler(queue: QueueHandler, db: DbHandler) {
       },
       onItem: handleItem,
       onError: err => {
-        console.log(
-          `[${new Date().toUTCString()}] - [bsky.rss FETCH] Feed error: ${err.message}${
-            err.cause ? ` (${String(err.cause)})` : ''
-          }`,
+        logger.summary(
+          'FETCH',
+          `Feed error: ${err.message}${err.cause ? ` (${String(err.cause)})` : ''}`,
         );
       },
     });
@@ -73,7 +73,10 @@ export function createRssHandler(queue: QueueHandler, db: DbHandler) {
     const useDate = config.dateField
       ? (item as unknown as Record<string, string | undefined>)[config.dateField]
       : item.date;
-    if (!useDate) return console.log('No date provided by RSS reader for post.');
+    if (!useDate) {
+      logger.debug('RSS', 'No date provided by RSS reader for post.');
+      return;
+    }
 
     const parsed = parseString(config.string, item, config.truncate === true);
     let embed: Embed | undefined = undefined;
@@ -95,11 +98,7 @@ export function createRssHandler(queue: QueueHandler, db: DbHandler) {
       let imageAlt: string | undefined = undefined;
 
       if (image === undefined && item.imageUrl) {
-        console.log(
-          `[${new Date().toUTCString()}] - [bsky.rss FETCH] Error fetching image for ${
-            item.title
-          } (${item.imageUrl})`,
-        );
+        logger.debug('FETCH', `Error fetching image for ${item.title} (${item.imageUrl})`);
       }
 
       if (config.forceDescriptionEmbed) {
@@ -143,11 +142,7 @@ export function createRssHandler(queue: QueueHandler, db: DbHandler) {
             image = await fetchImage(imageUrl);
 
             if (image === undefined) {
-              console.log(
-                `[${new Date().toUTCString()}] - [bsky.rss FETCH] Error fetching image for ${
-                  item.title
-                } (${imageUrl})`,
-              );
+              logger.debug('FETCH', `Error fetching image for ${item.title} (${imageUrl})`);
             }
           }
 
@@ -189,11 +184,7 @@ export function createRssHandler(queue: QueueHandler, db: DbHandler) {
           };
         }
       } else {
-        console.log(
-          `[${new Date().toUTCString()}] - [bsky.rss FETCH] Error fetching Open Graph data for ${
-            item.title
-          } (${url})`,
-        );
+        logger.debug('FETCH', `Error fetching Open Graph data for ${item.title} (${url})`);
 
         description = item.description || item.content;
         if (description && config.descriptionClearHTML) {
@@ -368,10 +359,9 @@ export function createRssHandler(queue: QueueHandler, db: DbHandler) {
       image = await resizeImageToBuffer(fetchBuffer.data);
     } catch (error) {
       // Image fetch/resize failures are non-fatal; caller falls back to no image
-      console.log(
-        `[${new Date().toUTCString()}] - [bsky.rss FETCH] Failed to fetch/resize image from ${imageUrl}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      logger.debug(
+        'FETCH',
+        `Failed to fetch/resize image from ${imageUrl}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
