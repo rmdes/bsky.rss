@@ -104,30 +104,33 @@ describe('bskyHandler', () => {
       );
     });
 
-    it('should require identifier and password parameters', async () => {
+    it('passes identifier and password through to agent.login when no persisted session exists, and returns its result', async () => {
       const bskyHandler = freshBskyHandler();
-      await bskyHandler.init('https://bsky.social');
+      const agent = await bskyHandler.init('https://bsky.social');
 
-      const credentials = {
-        identifier: 'test.bsky.social',
-        password: 'test-password',
-      };
+      let capturedCredentials: {identifier: string; password: string} | undefined;
+      agent.login = (async (params: {identifier: string; password: string}) => {
+        capturedCredentials = params;
+        return {success: true, data: {handle: 'test.bsky.social'}};
+      }) as typeof agent.login;
 
-      try {
-        await bskyHandler.login(credentials);
-      } catch (error) {
-        assert(error instanceof Error, 'Expected an Error instance');
-        assert(
-          error.message.includes('Login failed') ||
-            error.message.includes('Invalid') ||
-            error.message.includes('fetch') ||
-            error.message.includes('ENOTFOUND') ||
-            error.message.includes('Forbidden') ||
-            error.message.includes('Unauthorized') ||
-            error.message.includes('Rate Limit'),
-          `Error should be related to authentication or network: ${error.message}`,
-        );
-      }
+      const credentials = {identifier: 'test.bsky.social', password: 'test-password'};
+      const result = await bskyHandler.login(credentials);
+
+      assert.deepStrictEqual(capturedCredentials, credentials);
+      assert.deepStrictEqual(result, {success: true, data: {handle: 'test.bsky.social'}});
+    });
+
+    it('throws when agent.login reports failure (no persisted session, bad credentials)', async () => {
+      const bskyHandler = freshBskyHandler();
+      const agent = await bskyHandler.init('https://bsky.social');
+
+      agent.login = (async () => ({success: false})) as unknown as typeof agent.login;
+
+      await assert.rejects(
+        () => bskyHandler.login({identifier: 'test.bsky.social', password: 'wrong-password'}),
+        {message: 'Login failed (auth via login/password)'},
+      );
     });
   });
 
@@ -145,32 +148,42 @@ describe('bskyHandler', () => {
       );
     });
 
-    it('should require content parameter', async () => {
+    it('passes the content parameter through into the real post record', async () => {
       const bskyHandler = freshBskyHandler();
-      await bskyHandler.init('https://bsky.social');
+      const agent = await bskyHandler.init('https://bsky.social');
 
-      const postData = {
-        content: 'Test post content',
+      let capturedRecord:
+        | (Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>)
+        | undefined;
+      agent.post = async (
+        record: Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>,
+      ) => {
+        capturedRecord = record;
+        return {uri: 'at://did:plc:test/app.bsky.feed.post/content', cid: 'bafycid'};
       };
 
-      try {
-        await bskyHandler.post(postData);
-      } catch (error) {
-        assert(error instanceof Error, 'Expected an Error instance');
-        assert(
-          error.message.includes('not initialized') ||
-            error.message.includes('authenticated') ||
-            error.message.includes('session') ||
-            error.message.includes('Invalid token') ||
-            typeof error === 'object',
-          `Error should be related to authentication: ${error.message}`,
-        );
-      }
+      const result = await bskyHandler.post({content: 'Test post content'});
+
+      assert.strictEqual(capturedRecord!.text, 'Test post content');
+      assert.deepStrictEqual(result, {
+        uri: 'at://did:plc:test/app.bsky.feed.post/content',
+        cid: 'bafycid',
+      });
     });
 
-    it('should accept optional parameters', async () => {
+    it('threads optional parameters (languages, date, embed) into the real post record', async () => {
       const bskyHandler = freshBskyHandler();
-      await bskyHandler.init('https://bsky.social');
+      const agent = await bskyHandler.init('https://bsky.social');
+
+      let capturedRecord:
+        | (Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>)
+        | undefined;
+      agent.post = async (
+        record: Partial<AppBskyFeedPost.Record> & Omit<AppBskyFeedPost.Record, 'createdAt'>,
+      ) => {
+        capturedRecord = record;
+        return {uri: 'at://did:plc:test/app.bsky.feed.post/opts', cid: 'bafycid'};
+      };
 
       const postData = {
         content: 'Test post',
@@ -184,15 +197,23 @@ describe('bskyHandler', () => {
         },
       };
 
-      try {
-        await bskyHandler.post(postData);
-      } catch (error) {
-        assert(error instanceof Error, 'Expected an Error instance');
-        assert(
-          error.constructor.name !== 'TypeError' || !error.message.includes('undefined'),
-          'Should not throw TypeError for valid parameters',
-        );
-      }
+      const result = await bskyHandler.post(postData);
+
+      assert.deepStrictEqual(capturedRecord!.langs, ['en', 'fr']);
+      assert.strictEqual(capturedRecord!.createdAt, '2026-08-05T10:00:00.000Z');
+      assert.deepStrictEqual(capturedRecord!.embed, {
+        $type: 'app.bsky.embed.external',
+        external: {
+          uri: 'https://example.com',
+          title: 'Example',
+          description: 'Description',
+          thumb: undefined,
+        },
+      });
+      assert.deepStrictEqual(result, {
+        uri: 'at://did:plc:test/app.bsky.feed.post/opts',
+        cid: 'bafycid',
+      });
     });
   });
 

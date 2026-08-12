@@ -152,16 +152,19 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler, logger: Fle
     return queue;
   }
 
-  function computeDelay(q: number) {
-    if (!config.adaptiveSpacing) return 0;
+  function computeDelay(
+    q: number,
+    cfg: Pick<Config, 'adaptiveSpacing' | 'spacingWindow' | 'minSpacing' | 'maxSpacing'> = config,
+  ) {
+    if (!cfg.adaptiveSpacing) return 0;
     if (q <= 1) return 0;
-    const window = config.spacingWindow || 600;
-    const min = config.minSpacing || 1;
-    const max = config.maxSpacing || 60;
+    const window = cfg.spacingWindow || 600;
+    const min = cfg.minSpacing || 1;
+    const max = cfg.maxSpacing || 60;
     return clamp(window / q, min, max);
   }
 
-  return {writeQueue, start, runQueue};
+  return {writeQueue, start, runQueue, computeDelay};
 }
 
 export type QueueHandler = ReturnType<typeof createQueueHandler>;

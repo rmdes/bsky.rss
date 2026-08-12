@@ -301,91 +301,44 @@ describe('queueHandler', () => {
   });
 
   describe('Adaptive spacing calculations', () => {
+    // computeDelay is exported from the handler specifically for these tests, same
+    // reasoning as rssHandler.parseString - it reads config through a closure, so
+    // callers here pass an explicit config override rather than reimplementing its math.
     it('should compute delay for queue with multiple items', () => {
-      const config = {
-        adaptiveSpacing: true,
-        spacingWindow: 600,
-        minSpacing: 1,
-        maxSpacing: 60,
-      };
+      const config = {adaptiveSpacing: true, spacingWindow: 600, minSpacing: 1, maxSpacing: 60};
 
-      // With 10 items in queue and 600 second window:
-      // delay = 600 / 10 = 60 seconds
-      const queueSize = 10;
-      const expectedDelay = config.spacingWindow / queueSize;
-
-      assert.strictEqual(expectedDelay, 60);
+      // With 10 items in queue and 600 second window: delay = 600 / 10 = 60 seconds
+      assert.strictEqual(queueHandler.computeDelay(10, config), 60);
     });
 
     it('should clamp delay to maxSpacing', () => {
-      const config = {
-        adaptiveSpacing: true,
-        spacingWindow: 600,
-        minSpacing: 1,
-        maxSpacing: 60,
-      };
+      const config = {adaptiveSpacing: true, spacingWindow: 600, minSpacing: 1, maxSpacing: 60};
 
-      // With 5 items: 600 / 5 = 120 seconds
-      // Should be clamped to maxSpacing (60)
-      const queueSize = 5;
-      const calculatedDelay = config.spacingWindow / queueSize;
-      const clampedDelay = Math.max(
-        config.minSpacing,
-        Math.min(config.maxSpacing, calculatedDelay),
-      );
-
-      assert.strictEqual(clampedDelay, 60);
+      // With 5 items: 600 / 5 = 120 seconds, clamped to maxSpacing (60)
+      assert.strictEqual(queueHandler.computeDelay(5, config), 60);
     });
 
     it('should clamp delay to minSpacing', () => {
-      const config = {
-        adaptiveSpacing: true,
-        spacingWindow: 600,
-        minSpacing: 1,
-        maxSpacing: 60,
-      };
+      const config = {adaptiveSpacing: true, spacingWindow: 600, minSpacing: 1, maxSpacing: 60};
 
-      // With 1000 items: 600 / 1000 = 0.6 seconds
-      // Should be clamped to minSpacing (1)
-      const queueSize = 1000;
-      const calculatedDelay = config.spacingWindow / queueSize;
-      const clampedDelay = Math.max(
-        config.minSpacing,
-        Math.min(config.maxSpacing, calculatedDelay),
-      );
-
-      assert.strictEqual(clampedDelay, 1);
+      // With 1000 items: 600 / 1000 = 0.6 seconds, clamped to minSpacing (1)
+      assert.strictEqual(queueHandler.computeDelay(1000, config), 1);
     });
 
     it('should return 0 delay when adaptiveSpacing is disabled', () => {
-      const config = {
-        adaptiveSpacing: false,
-        spacingWindow: 600,
-        minSpacing: 1,
-        maxSpacing: 60,
-      };
+      const config = {adaptiveSpacing: false, spacingWindow: 600, minSpacing: 1, maxSpacing: 60};
 
-      // When disabled, delay should be 0 regardless of queue size
-      const queueSize = 10;
-      const delay = config.adaptiveSpacing ? config.spacingWindow / queueSize : 0;
-
-      assert.strictEqual(delay, 0);
+      assert.strictEqual(queueHandler.computeDelay(10, config), 0);
     });
 
     it('should return 0 delay for single item queue', () => {
-      // With only 1 item, no delay needed
-      const queueSize = 1;
-      const delay = queueSize <= 1 ? 0 : 600 / queueSize;
+      const config = {adaptiveSpacing: true, spacingWindow: 600, minSpacing: 1, maxSpacing: 60};
 
-      assert.strictEqual(delay, 0);
+      assert.strictEqual(queueHandler.computeDelay(1, config), 0);
     });
 
     it('should compute correct delay for various queue sizes', () => {
-      const config = {
-        spacingWindow: 600,
-        minSpacing: 1,
-        maxSpacing: 60,
-      };
+      const config = {adaptiveSpacing: true, spacingWindow: 600, minSpacing: 1, maxSpacing: 60};
 
       const testCases = [
         {queueSize: 2, expected: 60}, // 600/2 = 300, clamped to 60
@@ -396,12 +349,8 @@ describe('queueHandler', () => {
       ];
 
       testCases.forEach(tc => {
-        const delay = Math.max(
-          config.minSpacing,
-          Math.min(config.maxSpacing, config.spacingWindow / tc.queueSize),
-        );
         assert.strictEqual(
-          delay,
+          queueHandler.computeDelay(tc.queueSize, config),
           tc.expected,
           `Queue size ${tc.queueSize} should have delay ${tc.expected}`,
         );
@@ -468,70 +417,6 @@ describe('queueHandler', () => {
       assert.strictEqual(minimalConfig.spacingWindow, 600);
       assert.strictEqual(minimalConfig.minSpacing, 1);
       assert.strictEqual(minimalConfig.maxSpacing, 60);
-    });
-  });
-
-  describe('Queue item structure', () => {
-    it('should accept valid queue item', () => {
-      const item = {
-        content: 'Test content',
-        title: 'Test title',
-        date: new Date().toString(),
-        languages: ['en'],
-        embed: {
-          type: 'card',
-          uri: 'https://example.com',
-          title: 'Link title',
-        },
-      };
-
-      assert.strictEqual(typeof item.content, 'string');
-      assert.strictEqual(typeof item.title, 'string');
-      assert(Array.isArray(item.languages));
-      assert(item.embed);
-    });
-
-    it('should handle item without embed', () => {
-      const item = {
-        content: 'Simple post',
-        title: 'Simple title',
-        date: new Date().toString(),
-        languages: ['en'],
-        embed: undefined,
-      };
-
-      assert.strictEqual(item.embed, undefined);
-    });
-
-    it('should handle item with image embed', () => {
-      const item = {
-        content: 'Post with image',
-        title: 'Image post',
-        date: new Date().toString(),
-        languages: ['en'],
-        embed: {
-          type: 'image',
-          image: Buffer.from('fake-data'),
-          imageAlt: 'Description',
-        },
-      };
-
-      assert.strictEqual(item.embed.type, 'image');
-      assert(Buffer.isBuffer(item.embed.image));
-    });
-
-    it('should handle multiple languages', () => {
-      const item = {
-        content: 'Multilingual post',
-        title: 'Title',
-        date: new Date().toString(),
-        languages: ['en', 'fr', 'de'],
-      };
-
-      assert.strictEqual(item.languages.length, 3);
-      assert(item.languages.includes('en'));
-      assert(item.languages.includes('fr'));
-      assert(item.languages.includes('de'));
     });
   });
 });

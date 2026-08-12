@@ -4,7 +4,6 @@ import fs, {mkdtempSync, rmSync} from 'fs';
 import path from 'path';
 import {tmpdir} from 'os';
 import {createServer} from 'node:http';
-import {decode} from 'html-entities';
 import {FleetLogger} from '../../shared/logging/logger.ts';
 import {createDbHandler, type DbHandler} from './dbHandler.ts';
 import {createBskyHandler} from './bskyHandler.ts';
@@ -73,104 +72,145 @@ describe('rssHandler', () => {
   });
 
   describe('String template parsing', () => {
+    // Rewritten to call the real exported parseString instead of reimplementing its
+    // .replace() logic inline - a regression in parseString itself wouldn't have failed
+    // any of the original versions of these tests.
     it('should replace $title placeholder', () => {
-      const mockItem = {
+      const {parseString} = rssHandler;
+      const item = {
+        id: '1',
         title: 'Test Article Title',
         link: 'https://example.com/article',
+        date: '2026-08-08T00:00:00Z',
         description: 'Test description',
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
       };
 
-      const template = '$title';
-      const expected = 'Test Article Title';
-
-      // Test the logic
-      const result = template.replace('$title', mockItem.title);
-      assert.strictEqual(result, expected);
+      const result = parseString('$title', item, false);
+      assert.strictEqual(result.text, 'Test Article Title');
     });
 
     it('should replace $link placeholder', () => {
-      const mockItem = {
+      const {parseString} = rssHandler;
+      const item = {
+        id: '1',
         title: 'Test Article',
         link: 'https://example.com/article',
+        date: '2026-08-08T00:00:00Z',
         description: 'Test description',
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
       };
 
-      const template = 'Read more: $link';
-      const expected = 'Read more: https://example.com/article';
-
-      const result = template.replace('$link', mockItem.link);
-      assert.strictEqual(result, expected);
+      const result = parseString('Read more: $link', item, false);
+      assert.strictEqual(result.text, 'Read more: https://example.com/article');
     });
 
     it('should use link directly as a plain string (NormalizedItem.link is never an object)', () => {
       // feedsub's Item.link could be a plain string or {href: string}, requiring a
       // typeof check to unwrap it. NormalizedItem.link (shared/feedSource) is always
       // string | undefined, so rssHandler.ts no longer has an object-link branch.
-      const mockItem = {
+      const {parseString} = rssHandler;
+      const item = {
+        id: '1',
         title: 'Test Article',
         link: 'https://example.com/article',
+        date: '2026-08-08T00:00:00Z',
         description: 'Test description',
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
       };
 
-      const template = '$link';
-      const result = template.replace('$link', mockItem.link);
-
-      assert.strictEqual(result, 'https://example.com/article');
+      const result = parseString('$link', item, false);
+      assert.strictEqual(result.text, 'https://example.com/article');
     });
 
     it('should replace $description placeholder', () => {
-      const mockItem = {
+      const {parseString} = rssHandler;
+      const item = {
+        id: '1',
         title: 'Test Article',
         link: 'https://example.com/article',
+        date: '2026-08-08T00:00:00Z',
         description: 'This is a test description',
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
       };
 
-      const template = '$title - $description';
-      let result = template.replace('$title', mockItem.title);
-      result = result.replace('$description', mockItem.description);
-
-      assert.strictEqual(result, 'Test Article - This is a test description');
+      const result = parseString('$title - $description', item, false);
+      assert.strictEqual(result.text, 'Test Article - This is a test description');
     });
 
     it('should handle multiple placeholders', () => {
-      const mockItem = {
+      const {parseString} = rssHandler;
+      const item = {
+        id: '1',
         title: 'My Article',
         link: 'https://blog.com/post',
+        date: '2026-08-08T00:00:00Z',
         description: 'Article about testing',
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
       };
 
-      const template = '$title - $link - $description';
-      const result = template
-        .replace('$title', mockItem.title)
-        .replace('$link', mockItem.link)
-        .replace('$description', mockItem.description);
-
-      assert.strictEqual(result, 'My Article - https://blog.com/post - Article about testing');
+      const result = parseString('$title - $link - $description', item, false);
+      assert.strictEqual(result.text, 'My Article - https://blog.com/post - Article about testing');
     });
 
     it('should truncate long strings to 300 characters', () => {
-      const longText =
+      const {parseString} = rssHandler;
+      const longTemplate =
         'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident.';
+      assert(longTemplate.length > 300);
+      const item = {
+        id: '1',
+        title: undefined,
+        link: undefined,
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
 
-      assert(longText.length > 300);
+      const result = parseString(longTemplate, item, true);
 
-      // Truncation logic: slice to 277 + "..."
-      const truncated = longText.slice(0, 277) + '...';
-
-      assert.strictEqual(truncated.length, 280);
-      assert(truncated.endsWith('...'));
+      assert.strictEqual(result.text.length, 280); // 277 + '...'
+      assert(result.text.endsWith('...'));
     });
 
     it('should not truncate strings under 300 characters', () => {
-      const shortText = 'This is a short string';
+      const {parseString} = rssHandler;
+      const shortTemplate = 'This is a short string';
+      assert(shortTemplate.length <= 300);
+      const item = {
+        id: '1',
+        title: undefined,
+        link: undefined,
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
 
-      assert(shortText.length <= 300);
+      const result = parseString(shortTemplate, item, true);
 
-      // No truncation needed
-      const result = shortText;
-
-      assert.strictEqual(result, shortText);
-      assert(!result.endsWith('...'));
+      assert.strictEqual(result.text, shortTemplate);
+      assert(!result.text.endsWith('...'));
     });
   });
 
@@ -385,88 +425,137 @@ describe('rssHandler', () => {
   });
 
   describe('HTML tag removal', () => {
+    // Rewritten to drive real removeHTMLTags through parseString via $description
+    // (descriptionClearHTML defaults to true on a fresh handler, see rssHandler.ts's
+    // default config) instead of reimplementing the stripping regex inline.
+    // removeHTMLTags itself stays unexported, same as fixMalformedUrl - parseString is
+    // the real, exported surface that exercises it.
+    function descItem(description: string) {
+      return {
+        id: '1',
+        title: undefined,
+        link: undefined,
+        date: '2026-08-08T00:00:00Z',
+        description,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+    }
+
     it('should remove simple HTML tags', () => {
-      const htmlString = '<p>Hello world</p>';
-      const expected = 'Hello world';
-
-      const result = htmlString.replace(/<\/?[^>]+(>|$)/g, ' ').trim();
-
-      assert.strictEqual(result, expected);
+      const {parseString} = rssHandler;
+      const result = parseString('$description', descItem('<p>Hello world</p>'), false);
+      assert.strictEqual(result.text, 'Hello world');
     });
 
     it('should remove multiple HTML tags', () => {
-      const htmlString = '<div><p>Paragraph</p><span>Span text</span></div>';
-      const expected = 'Paragraph Span text';
-
-      const result = htmlString
-        .replace(/<\/?[^>]+(>|$)/g, ' ')
-        .trim()
-        .replace(/  +/g, ' ');
-
-      assert.strictEqual(result, expected);
+      const {parseString} = rssHandler;
+      const result = parseString(
+        '$description',
+        descItem('<div><p>Paragraph</p><span>Span text</span></div>'),
+        false,
+      );
+      assert.strictEqual(result.text, 'Paragraph Span text');
     });
 
     it('should replace &nbsp; with space', () => {
-      const htmlString = 'Hello&nbsp;world';
-      const expected = 'Hello world';
-
-      const result = htmlString.replaceAll('&nbsp;', ' ');
-
-      assert.strictEqual(result, expected);
+      const {parseString} = rssHandler;
+      const result = parseString('$description', descItem('Hello&nbsp;world'), false);
+      assert.strictEqual(result.text, 'Hello world');
     });
 
     it('should handle strong/em tags', () => {
-      const htmlString = 'This is <strong>bold</strong> and <em>italic</em> text';
-      const expected = 'This is bold and italic text';
-
-      const result = htmlString
-        .replace(/<\/?[^>]+(>|$)/g, ' ')
-        .trim()
-        .replace(/  +/g, ' ');
-
-      assert.strictEqual(result, expected);
+      const {parseString} = rssHandler;
+      const result = parseString(
+        '$description',
+        descItem('This is <strong>bold</strong> and <em>italic</em> text'),
+        false,
+      );
+      assert.strictEqual(result.text, 'This is bold and italic text');
     });
 
     it('should handle nested tags', () => {
-      const htmlString = '<div><p>Outer <span>inner</span> text</p></div>';
-      const expected = 'Outer inner text';
-
-      const result = htmlString
-        .replace(/<\/?[^>]+(>|$)/g, ' ')
-        .trim()
-        .replace(/  +/g, ' ');
-
-      assert.strictEqual(result, expected);
+      const {parseString} = rssHandler;
+      const result = parseString(
+        '$description',
+        descItem('<div><p>Outer <span>inner</span> text</p></div>'),
+        false,
+      );
+      assert.strictEqual(result.text, 'Outer inner text');
     });
 
     it('should handle self-closing tags', () => {
-      const htmlString = 'Line one<br/>Line two<hr/>Line three';
-      const expected = 'Line one Line two Line three';
-
-      const result = htmlString
-        .replace(/<\/?[^>]+(>|$)/g, ' ')
-        .trim()
-        .replace(/  +/g, ' ');
-
-      assert.strictEqual(result, expected);
+      const {parseString} = rssHandler;
+      const result = parseString(
+        '$description',
+        descItem('Line one<br/>Line two<hr/>Line three'),
+        false,
+      );
+      assert.strictEqual(result.text, 'Line one Line two Line three');
     });
 
     it('should collapse multiple spaces', () => {
-      const htmlString = '<p>Text   with    multiple     spaces</p>';
-      const expected = 'Text with multiple spaces';
-
-      const result = htmlString
-        .replace(/<\/?[^>]+(>|$)/g, ' ')
-        .trim()
-        .replace(/  +/g, ' ');
-
-      assert.strictEqual(result, expected);
+      const {parseString} = rssHandler;
+      const result = parseString(
+        '$description',
+        descItem('<p>Text   with    multiple     spaces</p>'),
+        false,
+      );
+      assert.strictEqual(result.text, 'Text with multiple spaces');
     });
   });
 
   describe('HTML entity decoding', () => {
-    it('should handle encoded HTML entities', () => {
-      // html-entities library tests
+    // decodeHTML (unexported, double-decode: &amp;#233; -> &#233; -> é) only ever runs
+    // on $title, gated behind config.titleClearHTML - unlike descriptionClearHTML this
+    // defaults to false, so these tests write a config with titleClearHTML:true and
+    // call the real init()/parseString rather than reimplementing decode() by hand.
+    // init() only builds the (unstarted) feed reader from config - it never fetches
+    // fetch_url, so this stays fully offline.
+    async function titleClearHTMLHandler() {
+      fs.writeFileSync(
+        path.join(testDataDir, 'config.json'),
+        JSON.stringify({
+          string: '$title',
+          publishEmbed: false,
+          languages: ['en'],
+          truncate: true,
+          runInterval: 60,
+          dateField: '',
+          publishDate: false,
+          imageField: '',
+          ogUserAgent: 'bsky.rss/test',
+          descriptionClearHTML: true,
+          removeDuplicate: false,
+          titleClearHTML: true,
+        }),
+        'utf8',
+      );
+      await rssHandler.init({
+        fetch_interval: 60,
+        fetch_url: new URL('http://127.0.0.1:1/unused'),
+      });
+      return rssHandler;
+    }
+
+    function titleItem(title: string) {
+      return {
+        id: '1',
+        title,
+        link: undefined,
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+    }
+
+    it('should decode encoded HTML entities', async () => {
+      const handler = await titleClearHTMLHandler();
       const testCases = [
         {input: '&lt;', expected: '<'},
         {input: '&gt;', expected: '>'},
@@ -476,354 +565,325 @@ describe('rssHandler', () => {
         {input: '&#8217;', expected: '’'}, // Right single quote
       ];
 
-      testCases.forEach(tc => {
-        const result = decode(tc.input);
-        assert.strictEqual(result, tc.expected, `Failed for ${tc.input}`);
-      });
+      for (const tc of testCases) {
+        const result = handler.parseString('$title', titleItem(tc.input), false);
+        assert.strictEqual(result.text, tc.expected, `Failed for ${tc.input}`);
+      }
     });
 
-    it('should handle double-encoded entities', () => {
+    it('should handle double-encoded entities', async () => {
       // &amp;#233; -> &#233; -> é
-      const doubleEncoded = '&amp;#233;';
-      const firstDecode = decode(doubleEncoded); // &#233;
-      const secondDecode = decode(firstDecode); // é
-
-      assert.strictEqual(secondDecode, 'é');
+      const handler = await titleClearHTMLHandler();
+      const result = handler.parseString('$title', titleItem('&amp;#233;'), false);
+      assert.strictEqual(result.text, 'é');
     });
 
-    it('should handle mixed text and entities', () => {
-      const input = 'Tom &amp; Jerry: A&nbsp;Classic';
-      // &nbsp; decodes to U+00A0 (non-breaking space), not a regular space
-      const expected = 'Tom & Jerry: A Classic';
-
-      const result = decode(input);
-
-      assert.strictEqual(result, expected);
-    });
-
-    it('should handle numeric character references', () => {
-      const input = '&#8220;Hello&#8221;'; // Smart quotes (char codes 8220 and 8221)
-      const result = decode(input);
-
-      // Should decode and contain Hello
-      assert(result.includes('Hello'));
-      // Result should not be the same as input (it was decoded)
-      assert.notStrictEqual(result, input);
-      // Should be longer than just "Hello" (has quotes)
-      assert(result.length > 'Hello'.length);
-    });
-  });
-
-  describe('URL validation and fixing', () => {
-    it('should fix malformed https URL', () => {
-      const malformed = 'https//example.com/path';
-      const expected = 'https://example.com/path';
-
-      const result = malformed.replace(/^https\/\//i, 'https://');
-
-      assert.strictEqual(result, expected);
-    });
-
-    it('should fix malformed http URL', () => {
-      const malformed = 'http//example.com/path';
-      const expected = 'http://example.com/path';
-
-      const result = malformed.replace(/^http\/\//i, 'http://');
-
-      assert.strictEqual(result, expected);
-    });
-
-    it('should not modify well-formed URLs', () => {
-      const wellFormed = 'https://example.com/path';
-
-      const result = wellFormed.replace(/^https\/\//i, 'https://').replace(/^http\/\//i, 'http://');
-
-      assert.strictEqual(result, wellFormed);
-    });
-
-    it('should validate URLs with regex', () => {
-      const urlRegex = new RegExp(
-        '^(h|H)(t|T)(t|T)(p|P)(s|S)?:\\/\\/[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b([-a-zA-Z0-9()@:%_\\+.~#?&//=]*)',
+    it('should handle mixed text and entities', async () => {
+      const handler = await titleClearHTMLHandler();
+      // &nbsp; decodes to U+00A0 (non-breaking space), not a regular space - but
+      // removeHTMLTags runs first and normalizes &nbsp; to a plain space, so the final
+      // text uses a plain space here too.
+      const result = handler.parseString(
+        '$title',
+        titleItem('Tom &amp; Jerry: A&nbsp;Classic'),
+        false,
       );
-
-      const validUrls = [
-        'https://example.com',
-        'http://example.com/path',
-        'https://sub.example.com',
-        'https://example.com/path?query=value',
-        'https://example.com:8080/path',
-      ];
-
-      const invalidUrls = [
-        'not-a-url',
-        'https//example.com', // Missing colon
-        'htp://example.com', // Typo in protocol
-      ];
-
-      validUrls.forEach(url => {
-        assert(urlRegex.test(url), `${url} should be valid`);
-      });
-
-      invalidUrls.forEach(url => {
-        assert(!urlRegex.test(url), `${url} should be invalid`);
-      });
+      assert.strictEqual(result.text, 'Tom & Jerry: A Classic');
     });
 
-    it('should handle case-insensitive protocol fixing', () => {
-      const testCases = [
-        {input: 'HTTPS//example.com', expected: 'https://example.com'},
-        {input: 'HttPs//example.com', expected: 'https://example.com'},
-        {input: 'HTTP//example.com', expected: 'http://example.com'},
-      ];
+    it('should handle numeric character references', async () => {
+      const handler = await titleClearHTMLHandler();
+      const input = '&#8220;Hello&#8221;'; // Smart quotes (char codes 8220 and 8221)
+      const result = handler.parseString('$title', titleItem(input), false);
 
-      testCases.forEach(tc => {
-        const result = tc.input.replace(/^https\/\//i, 'https://').replace(/^http\/\//i, 'http://');
-        assert.strictEqual(result, tc.expected);
-      });
+      assert(result.text.includes('Hello'));
+      assert.notStrictEqual(result.text, input);
+      assert(result.text.length > 'Hello'.length);
     });
   });
+
+  // "URL validation and fixing" (fixMalformedUrl) deleted rather than rewritten:
+  // fixMalformedUrl is unexported and only reachable through handleItem's Open Graph
+  // embed-building path, which requires a real (mocked) og:url response - the og()
+  // call isn't injected into createRssHandler the way db/queue are, so reaching it
+  // would mean intercepting the `open-graph-scraper` module itself. Disproportionate
+  // test infrastructure for a single regex fix-up; deleted per task instructions
+  // rather than forcing a bad test.
 
   describe('Configuration handling', () => {
-    it('should use titleClearHTML config for title processing', () => {
-      const config = {titleClearHTML: true};
-      const title = '<strong>Bold Title</strong>';
+    // Rewritten to drive titleClearHTML/descriptionClearHTML/imageAlt through the real
+    // parseString instead of reimplementing the stripping regex inline (see "HTML tag
+    // removal" above for why $description alone already exercises descriptionClearHTML,
+    // and "HTML entity decoding" for the titleClearHTML config-writing helper).
+    //
+    // The rest of the original block (publishEmbed, embedType, dateField, imageField,
+    // image-type validation) is deleted rather than rewritten:
+    //  - publishEmbed/embedType sub-tests asserted nothing but JS object-literal/array
+    //    equality - no rssHandler.ts logic was under test.
+    //  - the dateField sub-test asserted a pubdate/published fallback chain that no
+    //    longer exists in handleItem (today: `config.dateField ? item[config.dateField]
+    //    : item.date`, no fallback chain - see the comment above handleItem in
+    //    rssHandler.ts). It tested removed behavior, not current behavior, and all 59
+    //    live bot configs leave dateField empty today per that same comment.
+    //  - imageField/image-type-validation sub-tests tested logic that has moved to
+    //    shared/feedSource/imageResolver.ts, which has its own real test coverage in
+    //    shared/feedSource/imageResolver.test.ts - it doesn't belong in rssHandler.ts's
+    //    suite anymore.
+    it('should use titleClearHTML config for title processing', async () => {
+      fs.writeFileSync(
+        path.join(testDataDir, 'config.json'),
+        JSON.stringify({
+          string: '$title',
+          publishEmbed: false,
+          languages: ['en'],
+          truncate: true,
+          runInterval: 60,
+          dateField: '',
+          publishDate: false,
+          imageField: '',
+          ogUserAgent: 'bsky.rss/test',
+          descriptionClearHTML: true,
+          removeDuplicate: false,
+          titleClearHTML: true,
+        }),
+        'utf8',
+      );
+      await rssHandler.init({
+        fetch_interval: 60,
+        fetch_url: new URL('http://127.0.0.1:1/unused'),
+      });
 
-      if (config.titleClearHTML) {
-        const cleaned = title.replace(/<\/?[^>]+(>|$)/g, ' ').trim();
-        assert.strictEqual(cleaned, 'Bold Title');
-      }
+      const item = {
+        id: '1',
+        title: '<strong>Bold Title</strong>',
+        link: undefined,
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+      const result = rssHandler.parseString('$title', item, false);
+      assert.strictEqual(result.text, 'Bold Title');
     });
 
     it('should use descriptionClearHTML config for description', () => {
-      const config = {descriptionClearHTML: true};
-      const description = '<p>Description with <em>tags</em></p>';
-
-      if (config.descriptionClearHTML) {
-        const cleaned = description
-          .replace(/<\/?[^>]+(>|$)/g, ' ')
-          .trim()
-          .replace(/  +/g, ' ');
-        assert.strictEqual(cleaned, 'Description with tags');
-      }
+      // descriptionClearHTML defaults to true on a fresh handler (see rssHandler.ts's
+      // default config), so no init() with a custom config is needed here.
+      const {parseString} = rssHandler;
+      const item = {
+        id: '1',
+        title: undefined,
+        link: undefined,
+        date: '2026-08-08T00:00:00Z',
+        description: '<p>Description with <em>tags</em></p>',
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
+      };
+      const result = parseString('$description', item, false);
+      assert.strictEqual(result.text, 'Description with tags');
     });
 
     it('should handle imageAlt template string', () => {
-      const config = {imageAlt: '$title'};
-      const item = {title: 'Test Image'};
-
-      const imageAlt = config.imageAlt.replace('$title', item.title);
-
-      assert.strictEqual(imageAlt, 'Test Image');
-    });
-
-    it('should respect publishEmbed config', () => {
-      const config1 = {publishEmbed: true};
-      const config2 = {publishEmbed: false};
-
-      assert.strictEqual(config1.publishEmbed, true);
-      assert.strictEqual(config2.publishEmbed, false);
-    });
-
-    it('should support different embed types', () => {
-      const validEmbedTypes = ['card', 'image'];
-
-      validEmbedTypes.forEach(type => {
-        const config = {embedType: type};
-        assert(validEmbedTypes.includes(config.embedType));
-      });
-    });
-
-    it('should handle date field configuration', () => {
+      // config.imageAlt is itself just a parseString template - handleItem resolves it
+      // via `parseString(config.imageAlt, item, false).text` (see rssHandler.ts), so
+      // calling parseString the same way here exercises the real resolution path.
+      const {parseString} = rssHandler;
       const item = {
-        pubdate: '2026-08-05T10:00:00Z',
-        published: '2026-08-05T09:00:00Z',
-        customDate: '2026-08-05T08:00:00Z',
+        id: '1',
+        title: 'Test Image',
+        link: undefined,
+        date: '2026-08-08T00:00:00Z',
+        description: undefined,
+        content: undefined,
+        imageUrl: undefined,
+        geo: undefined,
+        mappedValues: {},
       };
-
-      const config1 = {dateField: ''};
-      const config2 = {dateField: 'customDate'};
-      const fallback = item.pubdate ? item.pubdate : item.published;
-
-      // Without custom dateField, fall back to pubdate or published
-      const date1 = config1.dateField ? item[config1.dateField as keyof typeof item] : fallback;
-
-      // With custom dateField, use that field
-      const date2 = config2.dateField ? item[config2.dateField as keyof typeof item] : fallback;
-
-      assert.strictEqual(date1, '2026-08-05T10:00:00Z');
-      assert.strictEqual(date2, '2026-08-05T08:00:00Z');
-    });
-
-    it('should handle imageField configuration', () => {
-      // config.imageField is a runtime-configured field name, not known statically,
-      // hence the index signature on the local shape here.
-      const item: {enclosure: {url: string; type: string}; [key: string]: unknown} = {
-        enclosure: {
-          url: 'https://example.com/image.jpg',
-          type: 'image/jpeg',
-        },
-      };
-
-      const config = {imageField: 'enclosure'};
-
-      if (config.imageField && Object.keys(item).includes(config.imageField)) {
-        const imageData = item[config.imageField] as {url: string; type: string};
-        if (imageData && Object.keys(imageData).includes('url')) {
-          assert.strictEqual(imageData.url, 'https://example.com/image.jpg');
-        }
-      }
-    });
-
-    it('should validate image type in imageField', () => {
-      const item1 = {
-        enclosure: {
-          url: 'https://example.com/image.jpg',
-          type: 'image/jpeg',
-        },
-      };
-
-      const item2 = {
-        enclosure: {
-          url: 'https://example.com/audio.mp3',
-          type: 'audio/mpeg',
-        },
-      };
-
-      // Should accept image types
-      assert(item1.enclosure.type.startsWith('image'));
-
-      // Should reject non-image types
-      assert(!item2.enclosure.type.startsWith('image'));
+      const result = parseString('$title', item, false);
+      assert.strictEqual(result.text, 'Test Image');
     });
   });
 
   describe('Embed construction', () => {
-    it('should build card embed with all fields', () => {
-      const embed = {
-        type: 'card',
-        uri: 'https://example.com/article',
-        title: 'Article Title',
-        description: 'Article description',
-        image: Buffer.from('fake-image'),
-        imageAlt: 'Image alt text',
-      };
+    // Rewritten to drive real handleItem embed construction end-to-end, following the
+    // "Cross-poll deduplication" tests' pattern below (real feed server + createRssHandler
+    // + a fake queue) - handleItem isn't exported, and its embed-building only runs
+    // inside the Open Graph fetch path (`og()`, imported directly rather than injected,
+    // so it can't be swapped for a mock the way db/queue can). A real local HTTP server
+    // standing in for the target page lets these hit the genuine code path without
+    // reaching the public internet.
+    //
+    // Narrower variants from the original block (the 'image' embedType, and the
+    // "no description"/"no image" cases as isolated concerns) are not each given their
+    // own real end-to-end test: embedType:'image' additionally exercises axios+Jimp
+    // image decoding, and bskyHandler's own embed_data construction from embed.type -
+    // disproportionate infrastructure for what this file is testing. The two tests below
+    // already assert embed.image is undefined as a natural consequence of the OG image
+    // fetch failing, covering that case without a dedicated test.
+    it('queues a card embed built from real Open Graph title/description data, end-to-end', async () => {
+      let ogPort = 0;
+      const ogServer = createServer((req, res) => {
+        if (req.url === '/broken.jpg') {
+          res.writeHead(404);
+          res.end('not an image');
+          return;
+        }
+        res.writeHead(200, {'Content-Type': 'text/html'});
+        res.end(
+          '<!DOCTYPE html><html><head>' +
+            '<meta property="og:title" content="Open Graph Title" />' +
+            '<meta property="og:description" content="Open Graph description" />' +
+            `<meta property="og:image" content="http://127.0.0.1:${ogPort}/broken.jpg" />` +
+            '</head><body></body></html>',
+        );
+      });
+      await new Promise<void>(resolve => ogServer.listen(0, resolve));
+      ogPort = (ogServer.address() as {port: number}).port;
+      const articleUrl = `http://127.0.0.1:${ogPort}/article`;
 
+      const feedBody =
+        '<?xml version="1.0"?><rss version="2.0"><channel>' +
+        '<title>T</title><description>D</description><link>https://example.com</link>' +
+        `<item><title>Fallback Title</title><link>${articleUrl}</link>` +
+        `<guid>${articleUrl}</guid>` +
+        '<pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate></item>' +
+        '</channel></rss>';
+      const feedServer = createServer((_req, res) => {
+        res.writeHead(200, {'Content-Type': 'application/rss+xml'});
+        res.end(feedBody);
+      });
+      await new Promise<void>(resolve => feedServer.listen(0, resolve));
+      const feedPort = (feedServer.address() as {port: number}).port;
+
+      fs.writeFileSync(
+        path.join(testDataDir, 'config.json'),
+        JSON.stringify({
+          string: '$title',
+          publishEmbed: true,
+          embedType: 'card',
+          languages: ['en'],
+          truncate: true,
+          runInterval: 60,
+          dateField: '',
+          imageField: '',
+          ogUserAgent: 'bsky.rss/test',
+          descriptionClearHTML: true,
+          removeDuplicate: false,
+        }),
+        'utf8',
+      );
+      fs.writeFileSync(path.join(testDataDir, 'last.txt'), '2026-08-01T00:00:00.000Z', 'utf8');
+
+      const queued: QueueItems[] = [];
+      const fakeQueue: QueueHandler = {
+        writeQueue: async (item: QueueItems) => {
+          queued.push(item);
+          return queued;
+        },
+        start: async () => {},
+        runQueue: async (): Promise<QueueItems[]> => queued,
+        computeDelay: () => 0,
+      };
+      const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
+
+      try {
+        const reader = await testRssHandler.init({
+          fetch_interval: 60,
+          fetch_url: new URL(`http://127.0.0.1:${feedPort}/feed.xml`),
+        });
+        await testRssHandler.start();
+        await new Promise(resolve => setTimeout(resolve, 500));
+        reader.stop();
+      } finally {
+        feedServer.close();
+        ogServer.close();
+      }
+
+      assert.strictEqual(queued.length, 1);
+      const embed = queued[0]?.embed;
+      assert(embed, 'embed should be built');
       assert.strictEqual(embed.type, 'card');
-      assert.strictEqual(embed.uri, 'https://example.com/article');
-      assert(embed.title);
-      assert(embed.description);
-      assert(Buffer.isBuffer(embed.image));
+      assert.strictEqual(embed.uri, articleUrl);
+      assert.strictEqual(embed.title, 'Open Graph Title');
+      assert.strictEqual(embed.description, 'Open Graph description');
+      assert.strictEqual(embed.image, undefined); // og:image pointed at a 404 - fetch failed, non-fatal
     });
 
-    it('should build image embed', () => {
-      const embed = {
-        type: 'image',
-        uri: 'https://example.com',
-        title: 'Title',
-        image: Buffer.from('fake-image'),
-        imageAlt: 'Image description',
+    it("falls back to the item's own title/description when the Open Graph fetch fails, end-to-end", async () => {
+      // item.link points at a closed local port so og() rejects immediately and
+      // handleItem takes its `.catch(() => ({error: true}))` fallback branch.
+      const closedPortUrl = 'http://127.0.0.1:1/unreachable';
+
+      const feedBody =
+        '<?xml version="1.0"?><rss version="2.0"><channel>' +
+        '<title>T</title><description>D</description><link>https://example.com</link>' +
+        `<item><title>Item Title</title><link>${closedPortUrl}</link>` +
+        `<guid>${closedPortUrl}</guid>` +
+        '<pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate>' +
+        '<description>Item description</description></item>' +
+        '</channel></rss>';
+      const feedServer = createServer((_req, res) => {
+        res.writeHead(200, {'Content-Type': 'application/rss+xml'});
+        res.end(feedBody);
+      });
+      await new Promise<void>(resolve => feedServer.listen(0, resolve));
+      const feedPort = (feedServer.address() as {port: number}).port;
+
+      fs.writeFileSync(
+        path.join(testDataDir, 'config.json'),
+        JSON.stringify({
+          string: '$title',
+          publishEmbed: true,
+          embedType: 'card',
+          languages: ['en'],
+          truncate: true,
+          runInterval: 60,
+          dateField: '',
+          imageField: '',
+          ogUserAgent: 'bsky.rss/test',
+          descriptionClearHTML: true,
+          removeDuplicate: false,
+        }),
+        'utf8',
+      );
+      fs.writeFileSync(path.join(testDataDir, 'last.txt'), '2026-08-01T00:00:00.000Z', 'utf8');
+
+      const queued: QueueItems[] = [];
+      const fakeQueue: QueueHandler = {
+        writeQueue: async (item: QueueItems) => {
+          queued.push(item);
+          return queued;
+        },
+        start: async () => {},
+        runQueue: async (): Promise<QueueItems[]> => queued,
+        computeDelay: () => 0,
       };
+      const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
-      assert.strictEqual(embed.type, 'image');
-      assert(Buffer.isBuffer(embed.image));
-      assert(embed.imageAlt);
-    });
+      try {
+        const reader = await testRssHandler.init({
+          fetch_interval: 60,
+          fetch_url: new URL(`http://127.0.0.1:${feedPort}/feed.xml`),
+        });
+        await testRssHandler.start();
+        await new Promise(resolve => setTimeout(resolve, 500));
+        reader.stop();
+      } finally {
+        feedServer.close();
+      }
 
-    it('should handle embed without description', () => {
-      const embed = {
-        type: 'card',
-        uri: 'https://example.com',
-        title: 'Title',
-        description: undefined,
-        image: undefined,
-        imageAlt: undefined,
-      };
-
-      assert.strictEqual(embed.description, undefined);
-    });
-
-    it('should handle embed without image', () => {
-      const embed = {
-        type: 'card',
-        uri: 'https://example.com',
-        title: 'Title',
-        description: 'Description',
-        image: undefined,
-      };
-
+      assert.strictEqual(queued.length, 1);
+      const embed = queued[0]?.embed;
+      assert(embed, 'embed should be built');
+      assert.strictEqual(embed.type, 'card');
+      assert.strictEqual(embed.uri, closedPortUrl);
+      assert.strictEqual(embed.title, 'Item Title');
+      assert.strictEqual(embed.description, 'Item description');
       assert.strictEqual(embed.image, undefined);
-    });
-
-    it('should fallback to item title if no OG title', () => {
-      const openGraphData: {error: boolean; ogTitle?: string} = {error: false};
-      const item = {title: 'RSS Item Title'};
-
-      const title = openGraphData.ogTitle ? openGraphData.ogTitle : item.title;
-
-      assert.strictEqual(title, 'RSS Item Title');
-    });
-
-    it('should use OG title when available', () => {
-      const openGraphData = {
-        error: false,
-        ogTitle: 'Open Graph Title',
-      };
-      const item = {title: 'RSS Item Title'};
-
-      const title = openGraphData.ogTitle ? openGraphData.ogTitle : item.title;
-
-      assert.strictEqual(title, 'Open Graph Title');
-    });
-
-    it('should fallback to item description', () => {
-      const item = {
-        description: 'Item description',
-        content: 'Item content',
-      };
-
-      const description = item.description ? item.description : item.content;
-
-      assert.strictEqual(description, 'Item description');
-    });
-
-    it('should use content if no description', () => {
-      const item: {content: string; description?: string} = {
-        content: 'Item content',
-      };
-
-      const description = item.description ? item.description : item.content;
-
-      assert.strictEqual(description, 'Item content');
-    });
-  });
-
-  describe('Date handling', () => {
-    it('should compare dates correctly', () => {
-      const date1 = new Date('2026-08-05T10:00:00Z');
-      const date2 = new Date('2026-08-05T09:00:00Z');
-
-      assert(date1 > date2);
-      assert(date2 <= date1);
-    });
-
-    it('should handle date strings', () => {
-      const dateString = '2026-08-05T10:00:00Z';
-      const date = new Date(dateString);
-
-      assert(date instanceof Date);
-      assert.strictEqual(date.toISOString(), '2026-08-05T10:00:00.000Z');
-    });
-
-    it('should skip items older than lastDate', () => {
-      const lastDate = '2026-08-05T10:00:00Z';
-      const oldItem = {date: '2026-08-05T09:00:00Z'};
-      const newItem = {date: '2026-08-05T11:00:00Z'};
-
-      const shouldSkipOld = new Date(oldItem.date) <= new Date(lastDate);
-      const shouldSkipNew = new Date(newItem.date) <= new Date(lastDate);
-
-      assert.strictEqual(shouldSkipOld, true);
-      assert.strictEqual(shouldSkipNew, false);
     });
   });
 
@@ -882,6 +942,7 @@ describe('rssHandler', () => {
         },
         start: async () => {},
         runQueue: async (): Promise<QueueItems[]> => queued,
+        computeDelay: () => 0,
       };
       const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
@@ -963,6 +1024,7 @@ describe('rssHandler', () => {
         },
         start: async () => {},
         runQueue: async (): Promise<QueueItems[]> => queued,
+        computeDelay: () => 0,
       };
       const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
@@ -1035,6 +1097,7 @@ describe('rssHandler', () => {
         },
         start: async () => {},
         runQueue: async (): Promise<QueueItems[]> => queued,
+        computeDelay: () => 0,
       };
       const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
@@ -1105,6 +1168,7 @@ describe('rssHandler', () => {
         },
         start: async () => {},
         runQueue: async (): Promise<QueueItems[]> => queued,
+        computeDelay: () => 0,
       };
       const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
@@ -1181,6 +1245,7 @@ describe('rssHandler', () => {
         },
         start: async () => {},
         runQueue: async (): Promise<QueueItems[]> => queued,
+        computeDelay: () => 0,
       };
       const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
@@ -1258,6 +1323,7 @@ describe('rssHandler', () => {
         },
         start: async () => {},
         runQueue: async (): Promise<QueueItems[]> => queued,
+        computeDelay: () => 0,
       };
       const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
