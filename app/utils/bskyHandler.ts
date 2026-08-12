@@ -95,7 +95,21 @@ export function createBskyHandler(db: DbHandler, logger: Logger) {
           'POST',
           `Image upload failed: ${error instanceof Error ? error.message : String(error)}`,
         );
-        // Treat as rate limit to trigger retry logic downstream
+        // Deliberately kept retryable (not routed through the {ratelimit: false}
+        // classification below) - matches fleet/bskyClient.ts's own uploadBlob catch and
+        // its identical reasoning: no record has been created yet at this point, so
+        // retrying can never produce a duplicate post, unlike a createRecord failure
+        // (which genuinely might have succeeded server-side).
+        //
+        // ponytail: fleet bounds this same forever-retry risk with freshnessPolicy.ts,
+        // which re-checks item age before every retry and eventually drops items that
+        // go stale. queueHandler.ts has no equivalent per-item staleness eviction, so a
+        // deterministically-failing image (corrupt file, oversized blob) will retry here
+        // forever, blocking the whole queue behind it - a real gap, accepted as a
+        // deliberate scope decision for now rather than porting fleet's staleness policy
+        // into single-bot mode. Upgrade path if this bites in practice: either add a
+        // maxItemAgeMinutes-style check to queueHandler's drain loop, or cap this specific
+        // catch's retries after N attempts and drop with a summary log line.
         embedImage = {ratelimit: true};
       }
     }
