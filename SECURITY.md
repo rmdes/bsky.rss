@@ -22,7 +22,7 @@ Instead, report them privately:
    - Fill in the details
 
 2. **Email**
-   - Send to: milan@milanm.org
+   - Send to: work@rmendes.net
    - Include:
      - Description of the vulnerability
      - Steps to reproduce
