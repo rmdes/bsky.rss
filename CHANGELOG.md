@@ -9,12 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.10.0] - 2026-08-12
+
 ### Fixed
 - **Critical error handling gaps**: Empty catch blocks in `bskyHandler.ts` and `rssHandler.ts` that silently swallowed login failures, image upload errors, and image fetch errors now log the actual error before falling back or retrying
 - **Error comparison anti-patterns**: Replaced fragile string comparisons (`if (e === 'Error: Rate Limit Exceeded')`) with proper instanceof Error checks and message inspection
 - **ENOENT error detection**: Fixed string-parsing error detection (`String(e).startsWith('Error: ENOENT')`) to use proper `NodeJS.ErrnoException.code === 'ENOENT'` checks
 - **Unhandled rejection handling**: Fleet mode now implements a circuit breaker pattern - process exits after 3 unhandled rejections in 60 seconds instead of logging and continuing indefinitely (prevents zombie processes)
 - **Identity store race condition**: Fixed SQLite write contention when multiple bots share the same Bluesky identity by moving identity store cleanup from per-bot (59 bots × 60s = 59 cleanups/min) to fleet-level coordination (10 identities × 1 hour = 10 cleanups/hour)
+- **Post-merge repair**: The commit batch above landed on `main` with a broken build (an incomplete `fleet/logging.ts` → `shared/logging/` rename, and `app/`'s handler factories gaining a required `logger` parameter that 3 test files weren't updated for) - fixed, along with 5 further bugs the resulting test failures surfaced: an empty `db.txt` cleanup writing a stray newline, two tests asserting the identity-store cleanup behavior this same release deliberately removed, a feed-poll test interval below this release's own new minimum, a process-safety test asserting wording this release's own circuit breaker made inaccurate, and an error message miscalculating 0.002 minutes as "7.2 seconds" (it's 0.12 seconds) in two places
 
 ### Changed
 - **Event loop performance**: Replaced all 17 blocking `fs.*Sync` calls in `app/utils/dbHandler.ts` with async `fs/promises` operations to eliminate event loop blocking in single-bot mode
@@ -34,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Runtime environment validation**: Added comprehensive startup validation for environment variables:
   - `FETCH_INTERVAL` validated as number >= 0.002 minutes (not NaN)
   - `FETCH_URL` and `INSTANCE_URL` validated as proper URLs with helpful error messages
-  - feedSource `intervalMinutes` parameter validated >= 0.002 (7.2 seconds minimum)
+  - feedSource `intervalMinutes` parameter validated >= 0.002 (0.12 seconds minimum)
   - feedSource `fetchTimeoutMs` validated as positive if provided
   - Type-safe `ValidatedEnv` object replaces raw `process.env` access
 - **Bounded queues**: Added queue size limits to `ConcurrencyLimiter` (max 1000 items) to prevent unbounded memory growth when Open Graph fetches or image jobs slow down
