@@ -11,8 +11,20 @@ import {XRPCError, ResponseType} from '@atproto/xrpc';
 import type {DbHandler} from './dbHandler.ts';
 import {buildFacets, type MarkdownFacet} from '../../shared/feedSource/markdownLinks.ts';
 import type {Logger} from '../../shared/logging/index.ts';
+import {createTimeoutFetch} from '../../shared/http/timeoutFetch.ts';
 
-export function createBskyHandler(db: DbHandler, logger: Logger) {
+// A stalled request to the PDS (no response, connection never closes) would otherwise
+// wedge queueHandler's runQueue() forever - bsky.post() never resolves or rejects, so
+// queueRunning stays true and health.updateActivity() never fires again. 30s is
+// generous for a post (may include an image upload) while staying far under the
+// health endpoint's 10-minute staleness threshold.
+const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
+
+export function createBskyHandler(
+  db: DbHandler,
+  logger: Logger,
+  fetchTimeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS,
+) {
   let bskyAgent: BskyAgent | null = null;
 
   async function init(service: string) {
@@ -24,6 +36,7 @@ export function createBskyHandler(db: DbHandler, logger: Logger) {
         if (!sess) return;
         void db.writePersistDate(sess);
       },
+      fetch: createTimeoutFetch(fetchTimeoutMs),
     });
     return bskyAgent;
   }

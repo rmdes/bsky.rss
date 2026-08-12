@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.1] - 2026-08-12
+
+### Fixed
+- **Unbounded network hang on Bluesky API calls**: neither `app/utils/bskyHandler.ts` (single-bot
+  mode) nor `fleet/bskyClient.ts` (fleet mode) applied any timeout to `BskyAgent`'s network calls
+  (login, session resume, post, image upload) - a stalled connection to the PDS (no response, no
+  error, connection never closes) left the `await` pending indefinitely. In single-bot mode this
+  wedges `queueHandler.ts`'s `runQueue()`: `queueRunning` stays `true` forever, so every subsequent
+  tick returns at the `if (queueRunning) return;` guard before ever reaching
+  `health.updateActivity()` - `/health` keeps reporting `healthy` (the staleness threshold is 10
+  minutes) while the queue is silently wedged. Observed live on the `seismes-fr-test` canary: a
+  post attempt hung for ~10 minutes before an unrelated default eventually unstuck it. Both
+  handlers now pass a wrapped `fetch` (`shared/http/timeoutFetch.ts`, new) that aborts any request
+  exceeding 30 seconds via `AbortController`, matching the timeout `shared/feedSource/poller.ts`
+  already applied to RSS fetches. A timeout is a genuinely uncertain outcome, not a rate limit, so
+  it's classified and handled the same as any other non-rate-limit failure (see 2.11.0's fix
+  above).
+
+---
+
 ## [2.11.0] - 2026-08-12
 
 ### Fixed

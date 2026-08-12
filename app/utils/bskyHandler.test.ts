@@ -76,6 +76,13 @@ describe('bskyHandler', () => {
       );
     });
 
+    it('wires a timeout-wrapped fetch into the agent, not the raw global fetch', async () => {
+      const bskyHandler = freshBskyHandler();
+      const agent = await bskyHandler.init('https://bsky.social');
+
+      assert.notStrictEqual(agent.sessionManager.fetch, globalThis.fetch);
+    });
+
     it('should create agent with different service URLs', async () => {
       const bskyHandler1 = freshBskyHandler();
       const agent1 = await bskyHandler1.init('https://bsky.social');

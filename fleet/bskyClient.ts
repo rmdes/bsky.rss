@@ -11,6 +11,12 @@ import {XRPCError, ResponseType} from '@atproto/xrpc';
 import {BotStore} from './botStore.ts';
 import {Logger, formatDebugError} from '../shared/logging/logger.ts';
 import {buildFacets, type MarkdownFacet} from '../shared/feedSource/markdownLinks.ts';
+import {createTimeoutFetch} from '../shared/http/timeoutFetch.ts';
+
+// A stalled request to a bot's PDS (no response, connection never closes) would
+// otherwise wedge that bot's post/login call forever. 30s is generous for a post
+// (may include an image upload) while staying well under any staleness threshold.
+const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
 
 const TID_CHARSET = '234567abcdefghijklmnopqrstuvwxyz';
 const TID_FIRST_CHAR_CHARSET = '234567abcdefghij';
@@ -129,6 +135,7 @@ export class BskyClient {
         if (!sess) return;
         this.store.writeSession(sess);
       },
+      fetch: createTimeoutFetch(DEFAULT_FETCH_TIMEOUT_MS),
     });
   }
 

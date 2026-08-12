@@ -31,6 +31,12 @@ function makeClient(
   return {client, records};
 }
 
+test('constructor wires a timeout-wrapped fetch into the agent, not the raw global fetch', () => {
+  const {client} = makeClient('summary');
+  const agent = (client as unknown as {agent: {sessionManager: {fetch: typeof fetch}}}).agent;
+  assert.notEqual(agent.sessionManager.fetch, globalThis.fetch);
+});
+
 function makeXRPCError(status: number, headers?: Record<string, string>): XRPCError {
   const err = new XRPCError(status, 'TestError', 'test error');
   err.headers = headers;
