@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {spawn, spawnSync} from 'node:child_process';
 import http from 'node:http';
 import {test, type TestContext} from 'node:test';
-import {FleetLogger, type FleetLogRecord} from './logging.ts';
+import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
 
 function fetchHealth(port: number): Promise<{status: number; ready: boolean}> {
   return new Promise((resolve, reject) => {

@@ -29,7 +29,7 @@ function validateEnvironment(): ValidatedEnv {
   let fetchUrl: URL;
   try {
     fetchUrl = new URL(process.env.FETCH_URL!);
-  } catch (error) {
+  } catch {
     throw new Error(
       `Invalid FETCH_URL: "${process.env.FETCH_URL}" - must be a valid URL (e.g., https://example.com/feed.xml)`,
     );
@@ -39,7 +39,7 @@ function validateEnvironment(): ValidatedEnv {
   let instanceUrl: URL;
   try {
     instanceUrl = new URL(process.env.INSTANCE_URL!);
-  } catch (error) {
+  } catch {
     throw new Error(
       `Invalid INSTANCE_URL: "${process.env.INSTANCE_URL}" - must be a valid URL (e.g., https://bsky.social)`,
     );
@@ -51,14 +51,12 @@ function validateEnvironment(): ValidatedEnv {
     fetchInterval = parseFloat(process.env.FETCH_INTERVAL);
 
     if (isNaN(fetchInterval)) {
-      throw new Error(
-        `Invalid FETCH_INTERVAL: "${process.env.FETCH_INTERVAL}" - must be a number`,
-      );
+      throw new Error(`Invalid FETCH_INTERVAL: "${process.env.FETCH_INTERVAL}" - must be a number`);
     }
 
     if (fetchInterval < 0.002) {
       throw new Error(
-        `Invalid FETCH_INTERVAL: ${fetchInterval} - must be >= 0.002 minutes (7.2 seconds)`,
+        `Invalid FETCH_INTERVAL: ${fetchInterval} - must be >= 0.002 minutes (0.12 seconds)`,
       );
     }
   }
@@ -117,10 +115,7 @@ async function main() {
       logger.summary('APP', 'Authentication rate limit exceeded');
       return;
     }
-    logger.summary(
-      'APP',
-      `Fatal error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    logger.summary('APP', `Fatal error: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 }

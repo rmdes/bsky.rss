@@ -11,7 +11,7 @@ import {
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
-import {FleetLogger, type FleetLogRecord} from './logging.ts';
+import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
 import {
   LogOverrideWatcher,
   overridesPath,

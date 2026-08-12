@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {ConcurrencyLimiter, SharedLimiters} from './sharedLimiters.ts';
-import {FleetLogger, type FleetLogRecord} from './logging.ts';
+import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));

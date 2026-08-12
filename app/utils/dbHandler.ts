@@ -112,7 +112,11 @@ export function createDbHandler(dataRoot: string) {
       }
     }
 
-    await writeFile(`${dataRoot}/db.txt`, newLines.join('\n') + '\n', 'utf8');
+    await writeFile(
+      `${dataRoot}/db.txt`,
+      newLines.length > 0 ? newLines.join('\n') + '\n' : '',
+      'utf8',
+    );
     return true;
   }
 

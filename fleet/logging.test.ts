@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {FleetLogger, formatDebugError, parseFleetLogLevel} from './logging.ts';
+import {FleetLogger, formatDebugError, parseFleetLogLevel} from '../shared/logging/logger.ts';
 
 test('parseFleetLogLevel defaults an unset value to summary', () => {
   assert.equal(parseFleetLogLevel(undefined), 'summary');

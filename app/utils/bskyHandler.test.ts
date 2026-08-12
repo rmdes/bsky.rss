@@ -4,8 +4,11 @@ import {mkdtempSync, rmSync} from 'fs';
 import {tmpdir} from 'os';
 import path from 'path';
 import {RichText, AppBskyFeedPost, AppBskyRichtextFacet} from '@atproto/api';
+import {FleetLogger} from '../../shared/logging/logger.ts';
 import {createDbHandler} from './dbHandler.ts';
 import {createBskyHandler, type BskyHandler} from './bskyHandler.ts';
+
+const testLogger = new FleetLogger({defaultLevel: 'summary', sink: () => undefined});
 
 /**
  * Tests for bskyHandler module
@@ -27,7 +30,7 @@ describe('bskyHandler', () => {
   });
 
   function freshBskyHandler(): BskyHandler {
-    return createBskyHandler(createDbHandler(testDataDir));
+    return createBskyHandler(createDbHandler(testDataDir), testLogger);
   }
 
   describe('Module exports', () => {

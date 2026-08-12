@@ -9,7 +9,7 @@ import {
   FleetOperationsRuntime,
   type FleetOperationsRuntimeTimers,
 } from './fleetOperationsRuntime.ts';
-import {FleetLogger, type FleetLogRecord} from './logging.ts';
+import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
 import {writeOverrides} from './logOverrides.ts';
 import type {FleetStatusSnapshot} from './statusSnapshot.ts';
 

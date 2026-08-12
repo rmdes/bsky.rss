@@ -18,7 +18,7 @@ import {computeDedupeKey} from './dedupeKey.ts';
 import {BotStore} from './botStore.ts';
 import {SharedLimiters} from './sharedLimiters.ts';
 import {BotOperations} from './botOperations.ts';
-import {FleetLogger, type FleetLogRecord} from './logging.ts';
+import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
 import {Jimp, JimpMime} from 'jimp';
 
 // handleItem is private; these tests drive it directly to exercise item-processing
@@ -833,8 +833,9 @@ test('feed failures are summarized once and a later poll records the exact recov
     'test-bot',
     'test-bot',
     new URL(`http://127.0.0.1:${port}/feed.xml`),
-    1 / 1200, // 50ms - a fractional-minute interval used only to make this test's
-    // multiple poll cycles observable within a normal test timeout.
+    1 / 300, // 200ms - a fractional-minute interval used only to make this test's
+    // multiple poll cycles observable within a normal test timeout. Must stay >=
+    // 0.002 minutes (120ms) - shared/feedSource/poller.ts now rejects anything smaller.
     {string: '$title'},
     store,
     identityStore,

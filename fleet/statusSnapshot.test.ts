@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {BotOperations} from './botOperations.ts';
 import type {BotWorker} from './botWorker.ts';
-import {FleetLogger} from './logging.ts';
+import {FleetLogger} from '../shared/logging/logger.ts';
 import {buildFleetStatusSnapshot} from './statusSnapshot.ts';
 
 const currentTime = new Date('2026-08-03T12:00:00.000Z');

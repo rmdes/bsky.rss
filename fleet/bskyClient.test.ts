@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {XRPCError, ResponseType} from '@atproto/xrpc';
 import {BskyClient, classifyPostError, isAlreadyExistsError, toAtprotoRkey} from './bskyClient.ts';
 import type {BotStore} from './botStore.ts';
-import {FleetLogger, type FleetLogLevel, type FleetLogRecord} from './logging.ts';
+import {FleetLogger, type FleetLogLevel, type FleetLogRecord} from '../shared/logging/logger.ts';
 
 function makeClient(
   level: FleetLogLevel,

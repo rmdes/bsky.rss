@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import {BotStore} from './botStore.ts';
 import {BskyClient} from './bskyClient.ts';
-import {FleetLogger} from './logging.ts';
+import {FleetLogger} from '../shared/logging/logger.ts';
 
 function env(name: string): string {
   const value = process.env[name];

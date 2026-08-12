@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {AuthCoordinator} from './authCoordinator.ts';
 import type {BotSpec} from './configLoader.ts';
 import type {BotWorker} from './botWorker.ts';
-import {FleetLogger, type FleetLogRecord} from './logging.ts';
+import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
 
 function quietLogger(): FleetLogger {
   return new FleetLogger({defaultLevel: 'summary', sink: () => undefined});

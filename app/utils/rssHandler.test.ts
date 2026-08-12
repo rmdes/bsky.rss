@@ -5,10 +5,13 @@ import path from 'path';
 import {tmpdir} from 'os';
 import {createServer} from 'node:http';
 import {decode} from 'html-entities';
+import {FleetLogger} from '../../shared/logging/logger.ts';
 import {createDbHandler, type DbHandler} from './dbHandler.ts';
 import {createBskyHandler} from './bskyHandler.ts';
 import {createQueueHandler, type QueueHandler} from './queueHandler.ts';
 import {createRssHandler, type RssHandler} from './rssHandler.ts';
+
+const testLogger = new FleetLogger({defaultLevel: 'summary', sink: () => undefined});
 
 /**
  * Tests for rssHandler module
@@ -52,9 +55,9 @@ describe('rssHandler', () => {
 
     fs.writeFileSync(path.join(testDataDir, 'config.json'), JSON.stringify(testConfig), 'utf8');
 
-    const bsky = createBskyHandler(db);
-    const queue = createQueueHandler(bsky, db);
-    rssHandler = createRssHandler(queue, db);
+    const bsky = createBskyHandler(db, testLogger);
+    const queue = createQueueHandler(bsky, db, testLogger);
+    rssHandler = createRssHandler(queue, db, testLogger);
   });
 
   afterEach(() => {
@@ -880,7 +883,7 @@ describe('rssHandler', () => {
         start: async () => {},
         runQueue: async (): Promise<QueueItems[]> => queued,
       };
-      const testRssHandler = createRssHandler(fakeQueue, db);
+      const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
       try {
         // 0.002 minutes = 120ms, so several polls fire inside the wait below.
@@ -961,7 +964,7 @@ describe('rssHandler', () => {
         start: async () => {},
         runQueue: async (): Promise<QueueItems[]> => queued,
       };
-      const testRssHandler = createRssHandler(fakeQueue, db);
+      const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
       try {
         // 0.002 minutes = 120ms, so several polls fire inside the wait below - proving
@@ -1033,7 +1036,7 @@ describe('rssHandler', () => {
         start: async () => {},
         runQueue: async (): Promise<QueueItems[]> => queued,
       };
-      const testRssHandler = createRssHandler(fakeQueue, db);
+      const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
       try {
         const reader = await testRssHandler.init({
@@ -1103,7 +1106,7 @@ describe('rssHandler', () => {
         start: async () => {},
         runQueue: async (): Promise<QueueItems[]> => queued,
       };
-      const testRssHandler = createRssHandler(fakeQueue, db);
+      const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
       try {
         const reader = await testRssHandler.init({
@@ -1179,7 +1182,7 @@ describe('rssHandler', () => {
         start: async () => {},
         runQueue: async (): Promise<QueueItems[]> => queued,
       };
-      const testRssHandler = createRssHandler(fakeQueue, db);
+      const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
       try {
         const reader = await testRssHandler.init({
@@ -1256,7 +1259,7 @@ describe('rssHandler', () => {
         start: async () => {},
         runQueue: async (): Promise<QueueItems[]> => queued,
       };
-      const testRssHandler = createRssHandler(fakeQueue, db);
+      const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
 
       try {
         const reader = await testRssHandler.init({

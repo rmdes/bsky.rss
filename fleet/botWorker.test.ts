@@ -7,7 +7,7 @@ import type {FeedReader, ParsedItem} from './feedReader.ts';
 import type {BskyClient, PostResult, ResolvedEmbed} from './bskyClient.ts';
 import type {BotStore, QueueItemRow} from './botStore.ts';
 import {BotOperations} from './botOperations.ts';
-import {FleetLogger, type FleetLogLevel, type FleetLogRecord} from './logging.ts';
+import {FleetLogger, type FleetLogLevel, type FleetLogRecord} from '../shared/logging/logger.ts';
 
 class FakeFeedReader {
   private handler: ((item: ParsedItem) => void) | null = null;
@@ -186,50 +186,12 @@ test('an emitted item is durably queued via BotStore, then drained on the next t
   assert.equal(worker.operationalSnapshot().counters.postSucceeded, 1);
 });
 
-test('drainOnce prunes the identity store after a completed drain pass', async t => {
-  const cleanupCalls: number[] = [];
-  const identityStore = {
-    cleanupOldSeenValues: (maxAgeHours: number) => cleanupCalls.push(maxAgeHours),
-  };
-  const {worker, feedReader} = makeWorker(t, {
-    identityStore: identityStore as unknown as BotStore,
-  });
-  await worker.start();
-
-  feedReader.emit({
-    title: 't',
-    content: 'hello world',
-    languages: ['en'],
-    itemDate: new Date().toISOString(),
-    dedupeKey: 'key-1',
-  });
-
-  await worker.drainOnce();
-
-  assert.deepEqual(cleanupCalls, [96]);
-});
-
-test('drainOnce prunes the identity store even on an empty-queue tick', async t => {
-  const cleanupCalls: number[] = [];
-  const identityStore = {
-    cleanupOldSeenValues: (maxAgeHours: number) => cleanupCalls.push(maxAgeHours),
-  };
-  const {worker} = makeWorker(t, {
-    identityStore: identityStore as unknown as BotStore,
-  });
-  await worker.start();
-
-  assert.equal(worker.queueLength(), 0);
-  await worker.drainOnce();
-
-  assert.deepEqual(cleanupCalls, [96]);
-});
-
 test("drainOnce prunes this bot's own per-bot store, not just the shared identity store", async t => {
   // Session task #68: BotStore.cleanupOldSeenValues existed and was tested but was never
   // called from any fleet mode production code path - the per-bot seen_items table grew
-  // unboundedly. Mirrors the identityStore cleanup wiring above, at the same unconditional,
-  // every-tick placement.
+  // unboundedly. Unconditional, every-tick placement - the shared identity store's own
+  // cleanup runs separately, once per hour, coordinated fleet-wide (fleet/runFleet.ts)
+  // to avoid the SQLite write contention a per-bot-per-tick call caused.
   const {worker, store} = makeWorker(t);
   await worker.start();
 

@@ -4,9 +4,12 @@ import fs, {mkdtempSync, rmSync} from 'fs';
 import {tmpdir} from 'os';
 import path from 'path';
 import healthHandler from './healthHandler.ts';
+import {FleetLogger} from '../../shared/logging/logger.ts';
 import {createDbHandler} from './dbHandler.ts';
 import {createBskyHandler} from './bskyHandler.ts';
 import {createQueueHandler, type QueueHandler} from './queueHandler.ts';
+
+const testLogger = new FleetLogger({defaultLevel: 'summary', sink: () => undefined});
 
 /**
  * Tests for queueHandler module
@@ -49,8 +52,8 @@ describe('queueHandler', () => {
     fs.writeFileSync(path.join(testDataDir, 'config.json'), JSON.stringify(testConfig), 'utf8');
 
     const db = createDbHandler(testDataDir);
-    const bsky = createBskyHandler(db);
-    queueHandler = createQueueHandler(bsky, db);
+    const bsky = createBskyHandler(db, testLogger);
+    queueHandler = createQueueHandler(bsky, db, testLogger);
   });
 
   afterEach(() => {

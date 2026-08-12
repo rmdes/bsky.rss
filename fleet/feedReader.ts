@@ -188,12 +188,6 @@ export function parseString(
   return {text: result, facets};
 }
 
-async function resizeImageToBuffer(bufferData: Buffer): Promise<Buffer> {
-  const image = await Jimp.read(bufferData);
-  // Omitting h maintains aspect ratio (jimp v1 dropped the AUTO sentinel).
-  return image.resize({w: 800}).getBuffer(JimpMime.jpeg, {quality: 80});
-}
-
 export class FeedReader {
   private reader: FeedSource;
   private itemHandler: ((parsed: ParsedItem) => void) | null = null;

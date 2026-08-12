@@ -38,9 +38,7 @@ export function createPoller(
 ): FeedSource {
   // Validate parameters
   if (intervalMinutes < 0.002) {
-    throw new TypeError(
-      `intervalMinutes must be >= 0.002 (7.2 seconds), got ${intervalMinutes}`,
-    );
+    throw new TypeError(`intervalMinutes must be >= 0.002 (0.12 seconds), got ${intervalMinutes}`);
   }
 
   if (options.fetchTimeoutMs !== undefined && options.fetchTimeoutMs <= 0) {

@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {installProcessSafetyNet} from './processSafety.ts';
-import {FleetLogger, type FleetLogRecord} from './logging.ts';
+import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
 
 test('process safety installs once, keeps running, and routes safe summaries plus debug errors', () => {
   const records: FleetLogRecord[] = [];
@@ -46,10 +46,7 @@ test('process safety installs once, keeps running, and routes safe summaries plu
   assert.equal(exited, false);
   assert.deepEqual(
     records.filter(record => record.level === 'summary').map(record => record.message),
-    [
-      'Unhandled rejection (process continues): Error',
-      'Uncaught exception (process continues): TypeError',
-    ],
+    ['Unhandled rejection detected: Error', 'Uncaught exception (process continues): TypeError'],
   );
   assert.ok(
     records.some(
