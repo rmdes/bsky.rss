@@ -1,21 +1,32 @@
-import {readFile, writeFile, appendFile, access} from 'fs/promises';
-import {constants} from 'fs';
+import {readFile, writeFile, appendFile} from 'fs/promises';
+
+// Reads filePath, returning the result of onRead(content). If the file doesn't
+// exist yet, writes defaultContent and returns initResult instead - callers don't
+// need their own access()-then-readFile()-then-catch-ENOENT boilerplate, and
+// readFile's own ENOENT (rather than a separate existence check) is what triggers it.
+async function readOrInit<T>(
+  filePath: string,
+  defaultContent: string,
+  initResult: T,
+  onRead: (content: string) => T | Promise<T>,
+): Promise<T> {
+  try {
+    const content = await readFile(filePath, 'utf8');
+    return await onRead(content);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      await writeFile(filePath, defaultContent, 'utf8');
+      return initResult;
+    }
+    throw error;
+  }
+}
 
 export function createDbHandler(dataRoot: string) {
   let appConfig: Config | null = null;
 
   async function readLast() {
-    try {
-      await access(`${dataRoot}/last.txt`, constants.F_OK);
-      const data = await readFile(`${dataRoot}/last.txt`, 'utf8');
-      return data;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        await writeFile(`${dataRoot}/last.txt`, '', 'utf8');
-        return '';
-      }
-      throw error;
-    }
+    return readOrInit(`${dataRoot}/last.txt`, '', '', content => content);
   }
 
   async function writeDate(date: Date) {
@@ -24,17 +35,9 @@ export function createDbHandler(dataRoot: string) {
   }
 
   async function readPersistData() {
-    try {
-      await access(`${dataRoot}/persist.json`, constants.F_OK);
-      const data = await readFile(`${dataRoot}/persist.json`, 'utf8');
-      return JSON.parse(data);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        await writeFile(`${dataRoot}/persist.json`, JSON.stringify({}), 'utf8');
-        return {};
-      }
-      throw error;
-    }
+    return readOrInit(`${dataRoot}/persist.json`, JSON.stringify({}), {}, content =>
+      JSON.parse(content),
+    );
   }
 
   async function writePersistDate(persistData: object) {
@@ -63,17 +66,7 @@ export function createDbHandler(dataRoot: string) {
   }
 
   async function valueExists(value: string) {
-    try {
-      await access(`${dataRoot}/db.txt`, constants.F_OK);
-      const fileContent = await readFile(`${dataRoot}/db.txt`, 'utf8');
-      return fileContent.includes(value);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        await writeFile(`${dataRoot}/db.txt`, '', 'utf8');
-        return false;
-      }
-      throw error;
-    }
+    return readOrInit(`${dataRoot}/db.txt`, '', false, fileContent => fileContent.includes(value));
   }
 
   async function writeValue(value: string) {
@@ -84,40 +77,31 @@ export function createDbHandler(dataRoot: string) {
 
   // Automatically cleanup old values from the file after 96 hours
   async function cleanupOldValues() {
-    try {
-      await access(`${dataRoot}/db.txt`, constants.F_OK);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        await writeFile(`${dataRoot}/db.txt`, '', 'utf8');
-        return false;
-      }
-      throw error;
-    }
+    return readOrInit(`${dataRoot}/db.txt`, '', false, async oldFileContent => {
+      const currentDate = new Date();
+      const newLines: string[] = [];
 
-    const currentDate = new Date();
-    const oldFileContent = await readFile(`${dataRoot}/db.txt`, 'utf8');
-    const newLines: string[] = [];
+      const fcLines: string[] = oldFileContent.split('\n');
+      for (const line of fcLines) {
+        if (!line) continue;
+        const lineItems: string[] = line.split('|');
+        if (lineItems[0]) {
+          const lineDate = new Date(lineItems[0]);
+          const diffHours = getHoursDiffBetweenDates(lineDate, currentDate);
 
-    const fcLines: string[] = oldFileContent.split('\n');
-    for (const line of fcLines) {
-      if (!line) continue;
-      const lineItems: string[] = line.split('|');
-      if (lineItems[0]) {
-        const lineDate = new Date(lineItems[0]);
-        const diffHours = getHoursDiffBetweenDates(lineDate, currentDate);
-
-        if (diffHours <= 96) {
-          newLines.push(line);
+          if (diffHours <= 96) {
+            newLines.push(line);
+          }
         }
       }
-    }
 
-    await writeFile(
-      `${dataRoot}/db.txt`,
-      newLines.length > 0 ? newLines.join('\n') + '\n' : '',
-      'utf8',
-    );
-    return true;
+      await writeFile(
+        `${dataRoot}/db.txt`,
+        newLines.length > 0 ? newLines.join('\n') + '\n' : '',
+        'utf8',
+      );
+      return true;
+    });
   }
 
   return {

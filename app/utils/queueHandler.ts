@@ -1,9 +1,9 @@
 import type {BskyHandler} from './bskyHandler.ts';
 import type {DbHandler} from './dbHandler.ts';
 import health from './healthHandler.ts';
-import type {FleetLogger} from '../../shared/logging/index.ts';
+import type {Logger} from '../../shared/logging/index.ts';
 
-export function createQueueHandler(bsky: BskyHandler, db: DbHandler, logger: FleetLogger) {
+export function createQueueHandler(bsky: BskyHandler, db: DbHandler, logger: Logger) {
   const queue: QueueItems[] = [];
   let rateLimited: boolean = false;
   let queueRunning: boolean = false;
@@ -63,11 +63,9 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler, logger: Fle
     if (rateLimited) return {ratelimit: true};
     if (queueSnapshot.length > 0) {
       queueRunning = true;
-      for (let i = 0; i < queueSnapshot.length; i++) {
-        const item = queueSnapshot[i] as QueueItems;
-        queue.splice(i, 1);
-        queueSnapshot.splice(i, 1);
-        i--;
+      while (queueSnapshot.length > 0) {
+        const item = queueSnapshot.shift() as QueueItems;
+        queue.shift();
         if (config.minSpacing && lastPostTimestamp) {
           const elapsed = Date.now() - lastPostTimestamp;
           const waitMs = config.minSpacing * 1000 - elapsed;
@@ -97,7 +95,7 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler, logger: Fle
         } else {
           // post.ratelimit === false ('ratelimit' in post but false) is a genuinely
           // uncertain, non-rate-limit outcome (validation failure, expired auth, etc.).
-          // The item was already spliced out of queue/queueSnapshot above, so leaving it
+          // The item was already shifted off queue/queueSnapshot above, so leaving it
           // out here means "skip, don't retry" - unshifting it back would wedge the queue
           // on a permanently-broken item forever, retried every createLimitTimer interval.
           // A real post success ('ratelimit' not in post) runs the same finalization plus
@@ -129,9 +127,8 @@ export function createQueueHandler(bsky: BskyHandler, db: DbHandler, logger: Fle
               `Uncertain result for item; skipped without retry (${item.title})`,
             );
           }
-          if (i === queueSnapshot.length - 1) {
+          if (queueSnapshot.length === 0) {
             queueRunning = false;
-            queueSnapshot = [];
             logger.verbose(
               'QUEUE',
               `Finished running queue. Next run in ${config.runInterval} seconds`,
