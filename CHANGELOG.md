@@ -9,6 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Critical error handling gaps**: Empty catch blocks in `bskyHandler.ts` and `rssHandler.ts` that silently swallowed login failures, image upload errors, and image fetch errors now log the actual error before falling back or retrying
+- **Error comparison anti-patterns**: Replaced fragile string comparisons (`if (e === 'Error: Rate Limit Exceeded')`) with proper instanceof Error checks and message inspection
+- **ENOENT error detection**: Fixed string-parsing error detection (`String(e).startsWith('Error: ENOENT')`) to use proper `NodeJS.ErrnoException.code === 'ENOENT'` checks
+- **Unhandled rejection handling**: Fleet mode now implements a circuit breaker pattern - process exits after 3 unhandled rejections in 60 seconds instead of logging and continuing indefinitely (prevents zombie processes)
+- **Identity store race condition**: Fixed SQLite write contention when multiple bots share the same Bluesky identity by moving identity store cleanup from per-bot (59 bots × 60s = 59 cleanups/min) to fleet-level coordination (10 identities × 1 hour = 10 cleanups/hour)
+
+### Changed
+- **Event loop performance**: Replaced all 17 blocking `fs.*Sync` calls in `app/utils/dbHandler.ts` with async `fs/promises` operations to eliminate event loop blocking in single-bot mode
+- **Cleanup efficiency**: Optimized `cleanupOldSeenValues()` to use `array.join()` instead of string concatenation for better performance
+- **Fleet startup speed**: Reduced default `staggerSeconds` from 30s to 15s (59 bots: 29.5min → 14.75min startup time) while maintaining rate limit safety; value remains user-adjustable via `fleet.json`
+- **Structured logging**: Migrated from ad-hoc `console.log` to structured FleetLogger in both app and fleet modes:
+  - Replaced 55 console.log calls in single-bot mode
+  - Extracted FleetLogger from `fleet/logging.ts` to `shared/logging/` for use across both modes
+  - Added `LOG_LEVEL` environment variable support (`summary`/`verbose`/`debug` levels)
+  - Built-in secret redaction for passwords, tokens, bearer auth, and credential-bearing URLs
+  - Scoped logging (APP, LOGIN, QUEUE, POST, FETCH, RSS) for filtering
+  - Consistent UTC timestamps across all log messages
+
+### Added
+- **SQLite concurrency improvements**: Enabled WAL (Write-Ahead Logging) mode for all fleet BotStore databases with NORMAL synchronous mode for better write concurrency when multiple bots share identity stores
+- **Transaction support**: Added `transaction<T>(fn: () => T)` wrapper to BotStore for atomic multi-step operations
+- **Runtime environment validation**: Added comprehensive startup validation for environment variables:
+  - `FETCH_INTERVAL` validated as number >= 0.002 minutes (not NaN)
+  - `FETCH_URL` and `INSTANCE_URL` validated as proper URLs with helpful error messages
+  - feedSource `intervalMinutes` parameter validated >= 0.002 (7.2 seconds minimum)
+  - feedSource `fetchTimeoutMs` validated as positive if provided
+  - Type-safe `ValidatedEnv` object replaces raw `process.env` access
+- **Bounded queues**: Added queue size limits to `ConcurrencyLimiter` (max 1000 items) to prevent unbounded memory growth when Open Graph fetches or image jobs slow down
+- **HTTP connection pooling**: Added connection pool configuration (50 max sockets, 10 free sockets, 60s timeout) to prevent socket exhaustion at scale
+- **Image size validation**: Added two-tier image validation to prevent OOM crashes:
+  - Raw buffer size limit: 5MB before processing
+  - Decompressed size limit: 100MB after JPEG decode (width × height × 4 bytes RGBA)
+- **Developer documentation**:
+  - `SECURITY.md` with supported versions table, private vulnerability reporting via GitHub Security Advisories, and deployment security best practices
+  - `shared/feedSource/README.md` with complete API documentation, examples, and migration guide (455 lines)
+  - 11 new convenience scripts in `package.json` (dev:logs, dev:clean, fleet:clean, docker:build, docker:run, docker:compose, test:feedSource, deps:check, deps:update, deps:audit)
+- **feedSource API improvements**: Re-exported markdown functions (`extractMarkdownLinks`, `finalizeMarkdownLinks`, `buildFacets`) and types (`MarkdownFacet`, `ExtractedMarkdownLinks`, `MarkdownLinkResult`) from `shared/feedSource/index.ts` for single-import convenience
+- **Fleet configuration documentation**: Added complete `fleet.json` documentation in `documentation/fleet.md`:
+  - Documented all configuration options (`staggerSeconds`, `runIntervalSeconds`, `freshness`, `sharedLimiters`, `perBotQueueMaxLength`)
+  - Explained rate limit context and startup time examples for different fleet sizes
+  - Provided guidance on choosing safe stagger values
+
 ---
 
 ## [2.9.0] - 2026-08-11
