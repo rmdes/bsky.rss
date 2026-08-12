@@ -123,21 +123,11 @@ export class BotWorker {
   async drainOnce(): Promise<void> {
     if (this.queueRunning) return;
 
-    // Runs on every tick, independent of whether this bot's own queue has anything
-    // to drain - identityStore accumulates writes from FeedReader.handleItem, a
-    // separate component not gated on this bot's own queue state. A bot stuck in
-    // catch-up, rate-limited, or with an empty queue must still prune the *shared*
-    // identity store on its own ticks, or growth goes unbounded whenever every bot
-    // sharing that identity is simultaneously in one of those states. 96-hour
-    // retention matches dbHandler.cleanupOldValues()'s convention - a full table
-    // scan (seen_items has no index on seen_at, only a primary key on value), but
-    // row counts here are small enough that coordinating the call away across
-    // multiple BotWorkers sharing one identityStore isn't worth the complexity.
-    this.options.identityStore.cleanupOldSeenValues(96);
-    // Same pruning for this bot's own per-bot seen_items table (written by
-    // FeedReader.handleItem's removeDuplicate check) - previously implemented and
-    // tested (BotStore.cleanupOldSeenValues) but never called from any fleet mode
-    // code path, so it grew unboundedly. Session task #68.
+    // Prune this bot's own per-bot seen_items table (written by
+    // FeedReader.handleItem's removeDuplicate check). Identity store cleanup is now
+    // coordinated at fleet level (runFleet.ts) to prevent race conditions when
+    // multiple bots share the same identity - each identity store is cleaned once
+    // per hour by a single fleet-wide interval, not once per bot per drain tick.
     this.options.store.cleanupOldSeenValues(96);
 
     const rows = this.options.store.listQueued();

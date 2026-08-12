@@ -166,12 +166,24 @@ async function main(): Promise<void> {
     healthHeartbeatIntervalMs,
   );
 
+  // Coordinated cleanup of shared identity stores to prevent race conditions when
+  // multiple bots share the same Bluesky identity. Each identity store is cleaned
+  // once per hour by this single fleet-wide interval, not once per bot per drain
+  // tick (which caused SQLite contention on shared databases).
+  const identityCleanupIntervalMs = 3600_000; // 1 hour
+  const identityCleanupHandle = setInterval(() => {
+    for (const identityStore of identityStores.values()) {
+      identityStore.cleanupOldSeenValues(96);
+    }
+  }, identityCleanupIntervalMs);
+
   let shuttingDown = false;
   async function shutdown(signal: string): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.summary('FLEET', `Received ${signal}, shutting down gracefully`);
     clearInterval(healthHeartbeatHandle);
+    clearInterval(identityCleanupHandle);
     coordinator.abortActivation();
     operationsRuntime.markStopping();
     operationsRuntime.stop();
