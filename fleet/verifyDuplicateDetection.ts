@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import {BotStore} from './botStore.ts';
 import {BskyClient} from './bskyClient.ts';
-import {FleetLogger} from '../shared/logging/logger.ts';
+import {Logger} from '../shared/logging/logger.ts';
 
 function env(name: string): string {
   const value = process.env[name];
@@ -28,7 +28,7 @@ async function main(): Promise<void> {
     'verify-script',
     instanceUrl,
     store,
-    new FleetLogger({defaultLevel: 'debug'}),
+    new Logger({defaultLevel: 'debug'}),
     false,
   );
   await client.login(identifier, password);

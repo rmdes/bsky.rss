@@ -1,31 +1,31 @@
-export type FleetLogLevel = 'summary' | 'verbose' | 'debug';
+export type LogLevel = 'summary' | 'verbose' | 'debug';
 
-export interface FleetLogOverride {
-  level: FleetLogLevel;
+export interface LogOverride {
+  level: LogLevel;
   expiresAt: string;
 }
 
-export interface FleetLogRecord {
-  level: FleetLogLevel;
+export interface LogRecord {
+  level: LogLevel;
   scope: string;
   botId?: string;
   message: string;
 }
 
-const levelRanks: Record<FleetLogLevel, number> = {
+const levelRanks: Record<LogLevel, number> = {
   summary: 0,
   verbose: 1,
   debug: 2,
 };
 
-function isFleetLogLevel(value: unknown): value is FleetLogLevel {
+function isLogLevel(value: unknown): value is LogLevel {
   return value === 'summary' || value === 'verbose' || value === 'debug';
 }
 
-export function parseFleetLogLevel(value: string | undefined): FleetLogLevel {
+export function parseLogLevel(value: string | undefined): LogLevel {
   if (value === undefined) return 'summary';
-  if (isFleetLogLevel(value)) return value;
-  throw new Error(`Invalid fleet log level ${value}; expected one of: summary, verbose, debug`);
+  if (isLogLevel(value)) return value;
+  throw new Error(`Invalid log level ${value}; expected one of: summary, verbose, debug`);
 }
 
 export function formatDebugError(error: unknown): string {
@@ -60,45 +60,45 @@ function redactDebugText(value: string): string {
     .replace(secretValue, `$1${redacted}`);
 }
 
-export class FleetLogger {
-  private overrides = new Map<string, FleetLogOverride>();
+export class Logger {
+  private overrides = new Map<string, LogOverride>();
   private readonly now: () => Date;
-  private readonly sink: (line: string, record: FleetLogRecord) => void;
+  private readonly sink: (line: string, record: LogRecord) => void;
 
   constructor(
     private readonly options: {
-      defaultLevel: FleetLogLevel;
+      defaultLevel: LogLevel;
       now?: () => Date;
-      sink?: (line: string, record: FleetLogRecord) => void;
+      sink?: (line: string, record: LogRecord) => void;
     },
   ) {
     this.now = options.now ?? (() => new Date());
     this.sink = options.sink ?? (line => console.log(line));
   }
 
-  replaceOverrides(overrides: ReadonlyMap<string, FleetLogOverride>): void {
-    const validated = new Map<string, FleetLogOverride>();
+  replaceOverrides(overrides: ReadonlyMap<string, LogOverride>): void {
+    const validated = new Map<string, LogOverride>();
     for (const [botId, override] of overrides) {
-      if (!isFleetLogLevel(override.level)) {
+      if (!isLogLevel(override.level)) {
         throw new Error(
-          `Invalid fleet log level ${String(override.level)}; expected one of: summary, verbose, debug`,
+          `Invalid log level ${String(override.level)}; expected one of: summary, verbose, debug`,
         );
       }
       if (Number.isNaN(new Date(override.expiresAt).getTime())) {
-        throw new Error(`Invalid fleet log override expiry for ${botId}`);
+        throw new Error(`Invalid log override expiry for ${botId}`);
       }
       validated.set(botId, {level: override.level, expiresAt: override.expiresAt});
     }
     this.overrides = validated;
   }
 
-  effectiveLevel(botId?: string): FleetLogLevel {
+  effectiveLevel(botId?: string): LogLevel {
     return botId === undefined
       ? this.options.defaultLevel
       : (this.overrideFor(botId)?.level ?? this.options.defaultLevel);
   }
 
-  overrideFor(botId: string): FleetLogOverride | undefined {
+  overrideFor(botId: string): LogOverride | undefined {
     const override = this.overrides.get(botId);
     if (!override || new Date(override.expiresAt).getTime() <= this.now().getTime())
       return undefined;
@@ -117,9 +117,9 @@ export class FleetLogger {
     this.emit('debug', scope, message, botId);
   }
 
-  private emit(level: FleetLogLevel, scope: string, message: string, botId?: string): void {
+  private emit(level: LogLevel, scope: string, message: string, botId?: string): void {
     if (levelRanks[level] > levelRanks[this.effectiveLevel(botId)]) return;
-    const record: FleetLogRecord = {
+    const record: LogRecord = {
       level,
       scope,
       ...(botId === undefined ? {} : {botId}),

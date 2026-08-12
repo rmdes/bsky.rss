@@ -1,9 +1,9 @@
-import type {FleetLogger} from '../shared/logging/logger.ts';
+import type {Logger} from '../shared/logging/logger.ts';
 
 type LimiterEvent = 'waiting' | 'acquired' | 'released';
 
 export interface LimiterDebugContext {
-  logger: FleetLogger;
+  logger: Logger;
   botId: string;
 }
 

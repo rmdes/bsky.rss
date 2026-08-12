@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {spawn, spawnSync} from 'node:child_process';
 import http from 'node:http';
 import {test, type TestContext} from 'node:test';
-import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
+import {Logger, type LogRecord} from '../shared/logging/logger.ts';
 
 function fetchHealth(port: number): Promise<{status: number; ready: boolean}> {
   return new Promise((resolve, reject) => {
@@ -62,7 +62,7 @@ test('invalid startup log level fails generically without echoing its raw value'
 
   assert.notEqual(result.status, 0);
   assert.match(output, /Fleet startup failed/);
-  assert.doesNotMatch(output, /invalid-startup-secret|Invalid fleet log level|\n\s+at /);
+  assert.doesNotMatch(output, /invalid-startup-secret|Invalid log level|\n\s+at /);
 });
 
 test('debug startup failure uses a safe summary and sanitized diagnostic detail', t => {
@@ -152,14 +152,10 @@ test('shutdown during activation suppresses the contradictory Fleet started summ
   const runFleetModule = (await import('./runFleet.ts')) as Record<string, unknown>;
   const reportFleetStarted = runFleetModule.reportFleetStarted as
     | undefined
-    | ((
-        logger: FleetLogger,
-        counts: {active: number; failed: number},
-        shuttingDown: boolean,
-      ) => void);
+    | ((logger: Logger, counts: {active: number; failed: number}, shuttingDown: boolean) => void);
   assert.equal(typeof reportFleetStarted, 'function');
-  const records: FleetLogRecord[] = [];
-  const logger = new FleetLogger({
+  const records: LogRecord[] = [];
+  const logger = new Logger({
     defaultLevel: 'summary',
     sink: (_line, record) => records.push(record),
   });

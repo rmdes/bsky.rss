@@ -5,7 +5,7 @@ import {tmpdir} from 'os';
 import path from 'path';
 import {RichText, AppBskyFeedPost, AppBskyRichtextFacet} from '@atproto/api';
 import {XRPCError, ResponseType} from '@atproto/xrpc';
-import {FleetLogger} from '../../shared/logging/logger.ts';
+import {Logger} from '../../shared/logging/logger.ts';
 import {createDbHandler} from './dbHandler.ts';
 import {createBskyHandler, type BskyHandler} from './bskyHandler.ts';
 
@@ -17,7 +17,7 @@ function makeXRPCError(status: number, headers?: Record<string, string>): XRPCEr
   return err;
 }
 
-const testLogger = new FleetLogger({defaultLevel: 'summary', sink: () => undefined});
+const testLogger = new Logger({defaultLevel: 'summary', sink: () => undefined});
 
 /**
  * Tests for bskyHandler module

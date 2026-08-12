@@ -10,9 +10,9 @@ import {
 import {XRPCError, ResponseType} from '@atproto/xrpc';
 import type {DbHandler} from './dbHandler.ts';
 import {buildFacets, type MarkdownFacet} from '../../shared/feedSource/markdownLinks.ts';
-import type {FleetLogger} from '../../shared/logging/index.ts';
+import type {Logger} from '../../shared/logging/index.ts';
 
-export function createBskyHandler(db: DbHandler, logger: FleetLogger) {
+export function createBskyHandler(db: DbHandler, logger: Logger) {
   let bskyAgent: BskyAgent | null = null;
 
   async function init(service: string) {

@@ -1,11 +1,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {installProcessSafetyNet} from './processSafety.ts';
-import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
+import {Logger, type LogRecord} from '../shared/logging/logger.ts';
 
 test('process safety installs once, keeps running, and routes safe summaries plus debug errors', () => {
-  const records: FleetLogRecord[] = [];
-  const logger = new FleetLogger({
+  const records: LogRecord[] = [];
+  const logger = new Logger({
     defaultLevel: 'debug',
     sink: (_line, record) => records.push(record),
   });
@@ -14,7 +14,7 @@ test('process safety installs once, keeps running, and routes safe summaries plu
 
   installProcessSafetyNet(logger);
   installProcessSafetyNet(
-    new FleetLogger({defaultLevel: 'debug', sink: () => assert.fail('second logger used')}),
+    new Logger({defaultLevel: 'debug', sink: () => assert.fail('second logger used')}),
   );
 
   const rejectionListenersAfter = process.listeners('unhandledRejection');

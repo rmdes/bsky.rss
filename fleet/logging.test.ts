@@ -1,21 +1,21 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {FleetLogger, formatDebugError, parseFleetLogLevel} from '../shared/logging/logger.ts';
+import {Logger, formatDebugError, parseLogLevel} from '../shared/logging/logger.ts';
 
-test('parseFleetLogLevel defaults an unset value to summary', () => {
-  assert.equal(parseFleetLogLevel(undefined), 'summary');
+test('parseLogLevel defaults an unset value to summary', () => {
+  assert.equal(parseLogLevel(undefined), 'summary');
 });
 
-test('parseFleetLogLevel accepts each supported level and rejects other values', () => {
-  assert.equal(parseFleetLogLevel('summary'), 'summary');
-  assert.equal(parseFleetLogLevel('verbose'), 'verbose');
-  assert.equal(parseFleetLogLevel('debug'), 'debug');
-  assert.throws(() => parseFleetLogLevel('trace'), /summary, verbose, debug/);
+test('parseLogLevel accepts each supported level and rejects other values', () => {
+  assert.equal(parseLogLevel('summary'), 'summary');
+  assert.equal(parseLogLevel('verbose'), 'verbose');
+  assert.equal(parseLogLevel('debug'), 'debug');
+  assert.throws(() => parseLogLevel('trace'), /summary, verbose, debug/);
 });
 
 test('a summary logger emits only summary records', () => {
   const records: string[] = [];
-  const logger = new FleetLogger({
+  const logger = new Logger({
     defaultLevel: 'summary',
     sink: (_line, record) => records.push(record.level),
   });
@@ -29,7 +29,7 @@ test('a summary logger emits only summary records', () => {
 
 test('a verbose logger emits summary and verbose records', () => {
   const records: string[] = [];
-  const logger = new FleetLogger({
+  const logger = new Logger({
     defaultLevel: 'verbose',
     sink: (_line, record) => records.push(record.level),
   });
@@ -43,7 +43,7 @@ test('a verbose logger emits summary and verbose records', () => {
 
 test('a debug logger emits every record level', () => {
   const records: string[] = [];
-  const logger = new FleetLogger({
+  const logger = new Logger({
     defaultLevel: 'debug',
     sink: (_line, record) => records.push(record.level),
   });
@@ -57,7 +57,7 @@ test('a debug logger emits every record level', () => {
 
 test('a temporary debug override affects only its bot', () => {
   const records: Array<{level: string; botId?: string}> = [];
-  const logger = new FleetLogger({
+  const logger = new Logger({
     defaultLevel: 'summary',
     now: () => new Date('2026-08-03T12:00:00.000Z'),
     sink: (_line, record) => records.push(record),
@@ -80,7 +80,7 @@ test('a temporary debug override affects only its bot', () => {
 });
 
 test('an expired override is ignored using the injected clock', () => {
-  const logger = new FleetLogger({
+  const logger = new Logger({
     defaultLevel: 'summary',
     now: () => new Date('2026-08-03T12:00:00.000Z'),
   });

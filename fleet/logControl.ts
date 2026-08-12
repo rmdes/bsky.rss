@@ -1,5 +1,5 @@
 import {basename} from 'node:path';
-import type {FleetLogLevel, FleetLogOverride} from '../shared/logging/logger.ts';
+import type {LogLevel, LogOverride} from '../shared/logging/logger.ts';
 import {overridesPath, parseDuration, readValidOverrides, writeOverrides} from './logOverrides.ts';
 import {readFleetStatus, statusPath} from './status.ts';
 
@@ -59,12 +59,12 @@ function requireKnownBot(botId: string, knownBotIds: ReadonlySet<string>): void 
   if (!knownBotIds.has(botId)) throw new Error(`Unknown bot ID: ${botId}`);
 }
 
-function parseLevel(value: string | undefined): FleetLogLevel {
+function parseLevel(value: string | undefined): LogLevel {
   if (value === 'summary' || value === 'verbose' || value === 'debug') return value;
   throw new Error('Invalid log level; expected summary, verbose, or debug');
 }
 
-function formatOverrides(overrides: ReadonlyMap<string, FleetLogOverride>, now: Date): string {
+function formatOverrides(overrides: ReadonlyMap<string, LogOverride>, now: Date): string {
   if (overrides.size === 0) return 'No active log overrides.';
   return [...overrides]
     .sort(([left], [right]) => left.localeCompare(right))

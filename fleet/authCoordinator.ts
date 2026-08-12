@@ -1,12 +1,12 @@
 import type {BotWorker} from './botWorker.ts';
 import type {BotSpec} from './configLoader.ts';
-import {FleetLogger, formatDebugError} from '../shared/logging/logger.ts';
+import {Logger, formatDebugError} from '../shared/logging/logger.ts';
 
 export interface AuthCoordinatorOptions {
   bots: BotSpec[];
   staggerSeconds: number;
   activateBot: (spec: BotSpec) => Promise<BotWorker>;
-  logger: FleetLogger;
+  logger: Logger;
 }
 
 export class AuthCoordinator {

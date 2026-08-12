@@ -4,13 +4,13 @@ import fs, {mkdtempSync, rmSync} from 'fs';
 import path from 'path';
 import {tmpdir} from 'os';
 import {createServer} from 'node:http';
-import {FleetLogger} from '../../shared/logging/logger.ts';
+import {Logger} from '../../shared/logging/logger.ts';
 import {createDbHandler, type DbHandler} from './dbHandler.ts';
 import {createBskyHandler} from './bskyHandler.ts';
 import {createQueueHandler, type QueueHandler} from './queueHandler.ts';
 import {createRssHandler, type RssHandler} from './rssHandler.ts';
 
-const testLogger = new FleetLogger({defaultLevel: 'summary', sink: () => undefined});
+const testLogger = new Logger({defaultLevel: 'summary', sink: () => undefined});
 
 /**
  * Tests for rssHandler module

@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {AuthCoordinator} from './authCoordinator.ts';
 import type {BotSpec} from './configLoader.ts';
 import type {BotWorker} from './botWorker.ts';
-import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
+import {Logger, type LogRecord} from '../shared/logging/logger.ts';
 
-function quietLogger(): FleetLogger {
-  return new FleetLogger({defaultLevel: 'summary', sink: () => undefined});
+function quietLogger(): Logger {
+  return new Logger({defaultLevel: 'summary', sink: () => undefined});
 }
 
 function makeSpec(botId: string): BotSpec {
@@ -181,8 +181,8 @@ test('shutdownAll calls shutdown on every active worker in parallel with the giv
 });
 
 test('activation summaries are privacy-safe while debug retains failure detail and stored status is unchanged', async () => {
-  const records: FleetLogRecord[] = [];
-  const logger = new FleetLogger({
+  const records: LogRecord[] = [];
+  const logger = new Logger({
     defaultLevel: 'debug',
     sink: (_line, record) => records.push(record),
   });

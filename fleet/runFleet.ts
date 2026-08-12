@@ -13,7 +13,7 @@ import {AuthCoordinator} from './authCoordinator.ts';
 import {acquireLock, releaseLock} from './pidLock.ts';
 import {BotOperations} from './botOperations.ts';
 import {FleetOperationsRuntime} from './fleetOperationsRuntime.ts';
-import {FleetLogger, formatDebugError, parseFleetLogLevel} from '../shared/logging/logger.ts';
+import {Logger, formatDebugError, parseLogLevel} from '../shared/logging/logger.ts';
 import {overridesPath} from './logOverrides.ts';
 import {statusPath} from './status.ts';
 import health from '../app/utils/healthHandler.ts';
@@ -24,7 +24,7 @@ async function buildWorker(
   spec: BotSpec,
   sharedLimiters: SharedLimiters,
   operations: BotOperations,
-  logger: FleetLogger,
+  logger: Logger,
   dryRun: boolean,
   runIntervalSeconds: number,
   freshnessConfig: FreshnessConfig,
@@ -71,10 +71,10 @@ async function buildWorker(
 // Runs in dry-run mode by default (no real posts); set DRY_RUN=false to actually publish.
 // Point FLEET_CONFIG_ROOT/FLEET_SECRETS_PATH/FLEET_DATA_ROOT at a real config tree
 // (see config.example/ for the shape) before running against real bot accounts.
-let startupLogger = new FleetLogger({defaultLevel: 'summary'});
+let startupLogger = new Logger({defaultLevel: 'summary'});
 
 export function reportFleetStarted(
-  logger: FleetLogger,
+  logger: Logger,
   counts: {active: number; failed: number},
   shuttingDown: boolean,
 ): void {
@@ -83,8 +83,8 @@ export function reportFleetStarted(
 }
 
 async function main(): Promise<void> {
-  const logLevel = parseFleetLogLevel(process.env.FLEET_LOG_LEVEL);
-  const logger = new FleetLogger({defaultLevel: logLevel});
+  const logLevel = parseLogLevel(process.env.FLEET_LOG_LEVEL);
+  const logger = new Logger({defaultLevel: logLevel});
   startupLogger = logger;
   installProcessSafetyNet(logger);
   health.start();

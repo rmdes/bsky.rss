@@ -2,7 +2,7 @@ import type {BotOperations, BotOperationalSnapshot, BotCounters} from './botOper
 import type {BotWorker} from './botWorker.ts';
 import {formatFleetIntervalSummary, subtractBotCounters, sumBotCounters} from './fleetSummary.ts';
 import {LogOverrideWatcher} from './logOverrides.ts';
-import {FleetLogger, formatDebugError} from '../shared/logging/logger.ts';
+import {Logger, formatDebugError} from '../shared/logging/logger.ts';
 import {writePrivateJsonAtomic} from './atomicJson.ts';
 import {buildFleetStatusSnapshot, type FleetPhase} from './statusSnapshot.ts';
 import type {SharedLimiters} from './sharedLimiters.ts';
@@ -21,7 +21,7 @@ export interface FleetOperationsRuntimeOptions {
   now: () => Date;
   memoryUsage: () => Pick<NodeJS.MemoryUsage, 'rss' | 'heapUsed'>;
   paths: {status: string; overrides: string};
-  logger: FleetLogger;
+  logger: Logger;
   operations: ReadonlyMap<string, BotOperations>;
   coordinator: {
     activeWorkers(): readonly BotWorker[];

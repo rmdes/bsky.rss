@@ -9,7 +9,7 @@ import {
   FleetOperationsRuntime,
   type FleetOperationsRuntimeTimers,
 } from './fleetOperationsRuntime.ts';
-import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
+import {Logger, type LogRecord} from '../shared/logging/logger.ts';
 import {writeOverrides} from './logOverrides.ts';
 import type {FleetStatusSnapshot} from './statusSnapshot.ts';
 import type {SharedLimiters} from './sharedLimiters.ts';
@@ -81,7 +81,7 @@ test('start writes all 59 starting bots before activation finishes and markRunni
     now: () => now,
     memoryUsage: () => ({rss: 241, heapUsed: 80}),
     paths: {status: statusFilePath, overrides: join(directory, 'log-overrides.json')},
-    logger: new FleetLogger({defaultLevel: 'summary', now: () => now, sink: () => undefined}),
+    logger: new Logger({defaultLevel: 'summary', now: () => now, sink: () => undefined}),
     operations,
     coordinator: {
       activeWorkers: () => [],
@@ -123,8 +123,8 @@ test('the 5-second, 60-second, and 5-minute timers perform only their own action
   const overridesFilePath = join(directory, 'log-overrides.json');
   let now = new Date('2026-08-03T12:00:00.000Z');
   const timers = new FakeTimers();
-  const records: FleetLogRecord[] = [];
-  const logger = new FleetLogger({
+  const records: LogRecord[] = [];
+  const logger = new Logger({
     defaultLevel: 'summary',
     now: () => now,
     sink: (_line, record) => records.push(record),
@@ -203,7 +203,7 @@ test('a failed queue or memory observation retains every delta for the next summ
     await t.test(failurePoint, t => {
       const directory = tempDirectory(t);
       const timers = new FakeTimers();
-      const records: FleetLogRecord[] = [];
+      const records: LogRecord[] = [];
       const operation = new BotOperations('bot-a');
       let failNextObservation = false;
       const worker = {
@@ -230,7 +230,7 @@ test('a failed queue or memory observation retains every delta for the next summ
           status: join(directory, 'status.json'),
           overrides: join(directory, 'log-overrides.json'),
         },
-        logger: new FleetLogger({
+        logger: new Logger({
           defaultLevel: 'debug',
           sink: (_line, record) => records.push(record),
         }),
@@ -277,10 +277,10 @@ test('a failed queue or memory observation retains every delta for the next summ
 test('a failed summary emission retains every delta for the next successful emission', t => {
   const directory = tempDirectory(t);
   const timers = new FakeTimers();
-  const records: FleetLogRecord[] = [];
+  const records: LogRecord[] = [];
   const operation = new BotOperations('bot-a');
   let failNextEmission = false;
-  const logger = new FleetLogger({
+  const logger = new Logger({
     defaultLevel: 'debug',
     sink: (_line, record) => {
       if (failNextEmission && record.scope === 'FLEET' && record.message.startsWith('5m:')) {
@@ -345,7 +345,7 @@ test('markStopping writes stopping before worker shutdown resolves', async t => 
     now: () => new Date('2026-08-03T12:00:00.000Z'),
     memoryUsage: () => ({rss: 1, heapUsed: 2}),
     paths: {status: statusFilePath, overrides: join(directory, 'log-overrides.json')},
-    logger: new FleetLogger({defaultLevel: 'summary', sink: () => undefined}),
+    logger: new Logger({defaultLevel: 'summary', sink: () => undefined}),
     operations: new Map([['bot-a', operation]]),
     coordinator: {
       activeWorkers: () => [fakeWorker('bot-a', 0)],
@@ -381,7 +381,7 @@ test('snapshot observer failures produce a safe warning and debug detail without
   const directory = tempDirectory(t);
   const blockedParent = join(directory, 'not-a-directory');
   writeFileSync(blockedParent, 'block parent directory creation');
-  const records: FleetLogRecord[] = [];
+  const records: LogRecord[] = [];
   const runtime = new FleetOperationsRuntime({
     timers: new FakeTimers(),
     now: () => new Date('2026-08-03T12:00:00.000Z'),
@@ -390,7 +390,7 @@ test('snapshot observer failures produce a safe warning and debug detail without
       status: join(blockedParent, 'status.json'),
       overrides: join(directory, 'log-overrides.json'),
     },
-    logger: new FleetLogger({
+    logger: new Logger({
       defaultLevel: 'debug',
       sink: (_line, record) => records.push(record),
     }),
@@ -427,13 +427,13 @@ test('a persistent snapshot write failure warns once, and a later failure re-war
   const statusFilePath = join(blockedParent, 'status.json');
   writeFileSync(blockedParent, 'block parent directory creation');
   const timers = new FakeTimers();
-  const records: FleetLogRecord[] = [];
+  const records: LogRecord[] = [];
   const runtime = new FleetOperationsRuntime({
     timers,
     now: () => new Date('2026-08-03T12:00:00.000Z'),
     memoryUsage: () => ({rss: 1, heapUsed: 2}),
     paths: {status: statusFilePath, overrides: join(directory, 'log-overrides.json')},
-    logger: new FleetLogger({
+    logger: new Logger({
       defaultLevel: 'debug',
       sink: (_line, record) => records.push(record),
     }),
@@ -479,8 +479,8 @@ test('override observer failures produce a safe warning and debug detail without
   const directory = tempDirectory(t);
   const overridesFilePath = join(directory, 'log-overrides.json');
   const timers = new FakeTimers();
-  const records: FleetLogRecord[] = [];
-  const logger = new FleetLogger({
+  const records: LogRecord[] = [];
+  const logger = new Logger({
     defaultLevel: 'debug',
     sink: (_line, record) => records.push(record),
   });
@@ -529,7 +529,7 @@ test('override observer failures produce a safe warning and debug detail without
 
 test("override filesystem read failures reach the runtime's safe observer warning", t => {
   const directory = tempDirectory(t);
-  const records: FleetLogRecord[] = [];
+  const records: LogRecord[] = [];
   const runtime = new FleetOperationsRuntime({
     timers: new FakeTimers(),
     now: () => new Date('2026-08-03T12:00:00.000Z'),
@@ -538,7 +538,7 @@ test("override filesystem read failures reach the runtime's safe observer warnin
       status: join(directory, 'status.json'),
       overrides: directory,
     },
-    logger: new FleetLogger({
+    logger: new Logger({
       defaultLevel: 'debug',
       sink: (_line, record) => records.push(record),
     }),

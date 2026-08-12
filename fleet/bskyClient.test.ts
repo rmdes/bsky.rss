@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import {XRPCError, ResponseType} from '@atproto/xrpc';
 import {BskyClient, classifyPostError, isAlreadyExistsError, toAtprotoRkey} from './bskyClient.ts';
 import type {BotStore} from './botStore.ts';
-import {FleetLogger, type FleetLogLevel, type FleetLogRecord} from '../shared/logging/logger.ts';
+import {Logger, type LogLevel, type LogRecord} from '../shared/logging/logger.ts';
 
 function makeClient(
-  level: FleetLogLevel,
+  level: LogLevel,
   dryRun = false,
   alreadyExistsClassifier?: (error: unknown) => boolean,
 ) {
-  const records: FleetLogRecord[] = [];
-  const logger = new FleetLogger({
+  const records: LogRecord[] = [];
+  const logger = new Logger({
     defaultLevel: level,
     now: () => new Date('2026-08-03T12:00:00.000Z'),
     sink: (_line, record) => records.push(record),
@@ -142,8 +142,8 @@ test('summary login records omit the account handle while verbose records may in
 });
 
 test('resumed-session summary omits the handle and retains the successful short-circuit', async () => {
-  const records: FleetLogRecord[] = [];
-  const logger = new FleetLogger({
+  const records: LogRecord[] = [];
+  const logger = new Logger({
     defaultLevel: 'summary',
     sink: (_line, record) => records.push(record),
   });
@@ -174,8 +174,8 @@ test('resumed-session summary omits the handle and retains the successful short-
 });
 
 test('caught session-resume errors and login durations are debug-only for the selected bot', async () => {
-  const records: FleetLogRecord[] = [];
-  const logger = new FleetLogger({
+  const records: LogRecord[] = [];
+  const logger = new Logger({
     defaultLevel: 'summary',
     sink: (_line, record) => records.push(record),
   });

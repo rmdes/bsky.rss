@@ -11,7 +11,7 @@ import {
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
-import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
+import {Logger, type LogRecord} from '../shared/logging/logger.ts';
 import {
   LogOverrideWatcher,
   overridesPath,
@@ -133,9 +133,9 @@ test('writeOverrides privately and atomically replaces the complete document', t
 
 test('watcher applies one bot override, expires it, and does not repeat administrative lines', t => {
   const path = join(tempDirectory(t), 'log-overrides.json');
-  const records: FleetLogRecord[] = [];
+  const records: LogRecord[] = [];
   let now = new Date('2026-08-03T12:00:00.000Z');
-  const logger = new FleetLogger({
+  const logger = new Logger({
     defaultLevel: 'summary',
     now: () => now,
     sink: (_line, record) => records.push(record),
@@ -174,9 +174,9 @@ test('watcher applies one bot override, expires it, and does not repeat administ
 
 test('watcher warns only when an active override transitions into debug', t => {
   const path = join(tempDirectory(t), 'log-overrides.json');
-  const records: FleetLogRecord[] = [];
+  const records: LogRecord[] = [];
   const now = new Date('2026-08-03T12:00:00.000Z');
-  const logger = new FleetLogger({
+  const logger = new Logger({
     defaultLevel: 'summary',
     now: () => now,
     sink: (_line, record) => records.push(record),
@@ -218,9 +218,9 @@ test('watcher warns only when an active override transitions into debug', t => {
 
 test('watcher logs a valid clear once, including when deletion supplies the empty document', t => {
   const path = join(tempDirectory(t), 'log-overrides.json');
-  const records: FleetLogRecord[] = [];
+  const records: LogRecord[] = [];
   const now = new Date('2026-08-03T12:00:00.000Z');
-  const logger = new FleetLogger({
+  const logger = new Logger({
     defaultLevel: 'debug',
     now: () => now,
     sink: (_line, record) => records.push(record),
@@ -247,9 +247,9 @@ test('watcher logs a valid clear once, including when deletion supplies the empt
 
 test('watcher warns once for malformed rewrites, retains state, and still expires it', t => {
   const path = join(tempDirectory(t), 'log-overrides.json');
-  const records: FleetLogRecord[] = [];
+  const records: LogRecord[] = [];
   let now = new Date('2026-08-03T12:00:00.000Z');
-  const logger = new FleetLogger({
+  const logger = new Logger({
     defaultLevel: 'summary',
     now: () => now,
     sink: (_line, record) => records.push(record),
@@ -290,11 +290,11 @@ test('watcher warns once for malformed rewrites, retains state, and still expire
 
 test('watcher rethrows operational filesystem read failures instead of calling them malformed', t => {
   const path = tempDirectory(t);
-  const records: FleetLogRecord[] = [];
+  const records: LogRecord[] = [];
   const watcher = new LogOverrideWatcher({
     path,
     knownBotIds: new Set(['bot-a']),
-    logger: new FleetLogger({
+    logger: new Logger({
       defaultLevel: 'debug',
       sink: (_line, record) => records.push(record),
     }),

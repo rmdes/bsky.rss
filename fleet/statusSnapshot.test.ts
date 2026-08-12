@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {BotOperations} from './botOperations.ts';
 import type {BotWorker} from './botWorker.ts';
-import {FleetLogger} from '../shared/logging/logger.ts';
+import {Logger} from '../shared/logging/logger.ts';
 import {buildFleetStatusSnapshot} from './statusSnapshot.ts';
 import type {SharedLimiters} from './sharedLimiters.ts';
 
@@ -44,7 +44,7 @@ test('aggregates a 59-bot startup snapshot without starting workers or waiting',
     activeWorkers.set(botId, fakeWorker(botId, index + 1));
   }
   const activationFailureIds = new Set(['bot-40', 'bot-41', 'bot-42', 'bot-43', 'bot-44']);
-  const logger = new FleetLogger({defaultLevel: 'summary', now: () => currentTime});
+  const logger = new Logger({defaultLevel: 'summary', now: () => currentTime});
   logger.replaceOverrides(
     new Map([
       ['bot-00', {level: 'debug', expiresAt: '2026-08-03T13:00:00.000Z'}],
@@ -127,7 +127,7 @@ test('snapshot results do not alias operational counters or expose activation er
     activeWorkers: new Map<string, BotWorker>(),
     activationFailureIds: new Set(['safe-bot']),
     configErrorCount: 0,
-    logger: new FleetLogger({defaultLevel: 'summary', now: () => currentTime}),
+    logger: new Logger({defaultLevel: 'summary', now: () => currentTime}),
     memoryUsage: {rss: 1, heapUsed: 2},
     sharedLimiters: fakeSharedLimiters(0, 0),
   };

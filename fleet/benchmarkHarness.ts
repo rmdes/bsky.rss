@@ -11,7 +11,7 @@ import {FeedReader} from './feedReader.ts';
 import {BotWorker} from './botWorker.ts';
 import {SharedLimiters} from './sharedLimiters.ts';
 import {BotOperations} from './botOperations.ts';
-import {FleetLogger} from '../shared/logging/logger.ts';
+import {Logger} from '../shared/logging/logger.ts';
 
 export interface BenchmarkOptions {
   botCount: number;
@@ -119,7 +119,7 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
   const workers: BotWorker[] = [];
   const stores: BotStore[] = [];
   const feedReaders: FeedReader[] = [];
-  const logger = new FleetLogger({defaultLevel: 'summary', sink: () => undefined});
+  const logger = new Logger({defaultLevel: 'summary', sink: () => undefined});
 
   for (let i = 0; i < options.botCount; i++) {
     const botId = `bench-bot-${i}`;

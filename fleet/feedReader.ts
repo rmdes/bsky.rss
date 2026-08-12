@@ -8,7 +8,7 @@ import {BotStore} from './botStore.ts';
 import {computeDedupeKey} from './dedupeKey.ts';
 import {SharedLimiters} from './sharedLimiters.ts';
 import {BotOperations, classifyFeedFailure} from './botOperations.ts';
-import {FleetLogger, formatDebugError} from '../shared/logging/logger.ts';
+import {Logger, formatDebugError} from '../shared/logging/logger.ts';
 import {createFeedSource} from '../shared/feedSource/index.ts';
 import type {FeedSource, NormalizedItem} from '../shared/feedSource/index.ts';
 import {
@@ -49,7 +49,7 @@ export interface FeedReaderConfig {
 
 export interface FeedReaderRuntime {
   operations: BotOperations;
-  logger: FleetLogger;
+  logger: Logger;
   fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>;
 }
 

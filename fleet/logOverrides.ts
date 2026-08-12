@@ -1,10 +1,10 @@
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {writePrivateJsonAtomic} from './atomicJson.ts';
-import {type FleetLogOverride, FleetLogger} from '../shared/logging/logger.ts';
-import {hasErrorCode, isFleetLogLevel, isRecord, isTimestamp} from './jsonGuards.ts';
+import {type LogOverride, Logger} from '../shared/logging/logger.ts';
+import {hasErrorCode, isLogLevel, isRecord, isTimestamp} from './jsonGuards.ts';
 
-export type LogOverrideDocument = Record<string, FleetLogOverride>;
+export type LogOverrideDocument = Record<string, LogOverride>;
 
 class InvalidLogOverrideDocumentError extends Error {}
 
@@ -34,7 +34,7 @@ export function readValidOverrides(
   path: string,
   knownBotIds: ReadonlySet<string>,
   now: Date,
-): ReadonlyMap<string, FleetLogOverride> {
+): ReadonlyMap<string, LogOverride> {
   let source: string;
   try {
     source = readFileSync(path, 'utf8');
@@ -57,9 +57,9 @@ export function readValidOverrides(
     );
   }
 
-  const validated = new Map<string, FleetLogOverride>();
+  const validated = new Map<string, LogOverride>();
   for (const [botId, value] of Object.entries(parsed)) {
-    if (!isRecord(value) || !isFleetLogLevel(value.level) || !isTimestamp(value.expiresAt)) {
+    if (!isRecord(value) || !isLogLevel(value.level) || !isTimestamp(value.expiresAt)) {
       throw new InvalidLogOverrideDocumentError(
         `Invalid log override document at ${path}: invalid entry for ${botId}`,
       );
@@ -67,7 +67,7 @@ export function readValidOverrides(
     validated.set(botId, {level: value.level, expiresAt: value.expiresAt});
   }
 
-  const overrides = new Map<string, FleetLogOverride>();
+  const overrides = new Map<string, LogOverride>();
   for (const [botId, override] of validated) {
     if (new Date(override.expiresAt).getTime() <= now.getTime()) continue;
     if (!knownBotIds.has(botId)) {
@@ -80,15 +80,12 @@ export function readValidOverrides(
   return overrides;
 }
 
-export function writeOverrides(
-  path: string,
-  overrides: ReadonlyMap<string, FleetLogOverride>,
-): void {
+export function writeOverrides(path: string, overrides: ReadonlyMap<string, LogOverride>): void {
   writePrivateJsonAtomic(path, Object.fromEntries(overrides));
 }
 
 export class LogOverrideWatcher {
-  private activeOverrides = new Map<string, FleetLogOverride>();
+  private activeOverrides = new Map<string, LogOverride>();
   private malformedWarningEmitted = false;
   private readonly now: () => Date;
 
@@ -96,7 +93,7 @@ export class LogOverrideWatcher {
     private readonly options: {
       path: string;
       knownBotIds: ReadonlySet<string>;
-      logger: FleetLogger;
+      logger: Logger;
       now?: () => Date;
     },
   ) {
@@ -107,7 +104,7 @@ export class LogOverrideWatcher {
     const now = this.now();
     this.expireRetainedOverrides(now);
 
-    let nextOverrides: ReadonlyMap<string, FleetLogOverride>;
+    let nextOverrides: ReadonlyMap<string, LogOverride>;
     try {
       nextOverrides = readValidOverrides(this.options.path, this.options.knownBotIds, now);
       this.malformedWarningEmitted = false;
@@ -183,9 +180,7 @@ export class LogOverrideWatcher {
   }
 }
 
-function cloneOverrides(
-  overrides: ReadonlyMap<string, FleetLogOverride>,
-): Map<string, FleetLogOverride> {
+function cloneOverrides(overrides: ReadonlyMap<string, LogOverride>): Map<string, LogOverride> {
   return new Map(
     [...overrides].map(([botId, override]) => [
       botId,
@@ -194,6 +189,6 @@ function cloneOverrides(
   );
 }
 
-function sameOverride(current: FleetLogOverride | undefined, next: FleetLogOverride): boolean {
+function sameOverride(current: LogOverride | undefined, next: LogOverride): boolean {
   return current?.level === next.level && current.expiresAt === next.expiresAt;
 }

@@ -2,7 +2,7 @@ import {readFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
 import type {FeedFailureCategory, FeedState} from './botOperations.ts';
 import {counterNames} from './botOperations.ts';
-import {hasErrorCode, isFleetLogLevel, isRecord, isTimestamp} from './jsonGuards.ts';
+import {hasErrorCode, isLogLevel, isRecord, isTimestamp} from './jsonGuards.ts';
 import type {
   ActivationState,
   FleetBotStatus,
@@ -246,7 +246,7 @@ function isFleetBotStatus(value: unknown): value is FleetBotStatus {
     isNullableTimestamp(value.lastPostSuccessAt) &&
     hasNumericProperties(value.counters, counterNames) &&
     (value.queueDepth === null || isFiniteNonnegativeNumber(value.queueDepth)) &&
-    isFleetLogLevel(value.effectiveLogLevel) &&
+    isLogLevel(value.effectiveLogLevel) &&
     isNullableTimestamp(value.logOverrideExpiresAt)
   );
 }

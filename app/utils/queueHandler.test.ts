@@ -4,12 +4,12 @@ import fs, {mkdtempSync, rmSync} from 'fs';
 import {tmpdir} from 'os';
 import path from 'path';
 import healthHandler from './healthHandler.ts';
-import {FleetLogger} from '../../shared/logging/logger.ts';
+import {Logger} from '../../shared/logging/logger.ts';
 import {createDbHandler} from './dbHandler.ts';
 import {createBskyHandler} from './bskyHandler.ts';
 import {createQueueHandler, type QueueHandler} from './queueHandler.ts';
 
-const testLogger = new FleetLogger({defaultLevel: 'summary', sink: () => undefined});
+const testLogger = new Logger({defaultLevel: 'summary', sink: () => undefined});
 
 /**
  * Tests for queueHandler module

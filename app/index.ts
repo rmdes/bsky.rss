@@ -5,7 +5,7 @@ import {createBskyHandler} from './utils/bskyHandler.ts';
 import {createQueueHandler} from './utils/queueHandler.ts';
 import {createRssHandler} from './utils/rssHandler.ts';
 import health from './utils/healthHandler.ts';
-import {FleetLogger, parseFleetLogLevel} from '../shared/logging/index.ts';
+import {Logger, parseLogLevel} from '../shared/logging/index.ts';
 import 'dotenv/config';
 
 interface ValidatedEnv {
@@ -72,8 +72,8 @@ function validateEnvironment(): ValidatedEnv {
 
 const env = validateEnvironment();
 
-const logger = new FleetLogger({
-  defaultLevel: parseFleetLogLevel(process.env.LOG_LEVEL),
+const logger = new Logger({
+  defaultLevel: parseLogLevel(process.env.LOG_LEVEL),
 });
 
 const db = createDbHandler(join(import.meta.dirname, '../data'));

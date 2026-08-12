@@ -9,7 +9,7 @@ import {
 } from '@atproto/api';
 import {XRPCError, ResponseType} from '@atproto/xrpc';
 import {BotStore} from './botStore.ts';
-import {FleetLogger, formatDebugError} from '../shared/logging/logger.ts';
+import {Logger, formatDebugError} from '../shared/logging/logger.ts';
 import {buildFacets, type MarkdownFacet} from '../shared/feedSource/markdownLinks.ts';
 
 const TID_CHARSET = '234567abcdefghijklmnopqrstuvwxyz';
@@ -119,7 +119,7 @@ export class BskyClient {
     private botId: string,
     service: string,
     private store: BotStore,
-    private logger: FleetLogger,
+    private logger: Logger,
     private dryRun: boolean = false,
     private alreadyExistsClassifier: (error: unknown) => boolean = isAlreadyExistsError,
   ) {

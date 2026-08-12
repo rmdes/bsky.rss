@@ -1,4 +1,4 @@
-import {FleetLogger, formatDebugError} from '../shared/logging/logger.ts';
+import {Logger, formatDebugError} from '../shared/logging/logger.ts';
 
 let installed = false;
 let unhandledRejectionCount = 0;
@@ -9,7 +9,7 @@ function exceptionClass(error: unknown): string {
   return error instanceof Error ? error.constructor.name : typeof error;
 }
 
-export function installProcessSafetyNet(logger: FleetLogger): void {
+export function installProcessSafetyNet(logger: Logger): void {
   if (installed) return;
   installed = true;
 

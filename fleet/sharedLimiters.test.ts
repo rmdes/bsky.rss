@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {ConcurrencyLimiter, SharedLimiters} from './sharedLimiters.ts';
-import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
+import {Logger, type LogRecord} from '../shared/logging/logger.ts';
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -88,8 +88,8 @@ test('SharedLimiters.withOgLimit enforces maxConcurrentOpenGraphFetches independ
 });
 
 test('shared limiter contention diagnostics honor per-bot debug overrides', async () => {
-  const records: FleetLogRecord[] = [];
-  const logger = new FleetLogger({
+  const records: LogRecord[] = [];
+  const logger = new Logger({
     defaultLevel: 'summary',
     sink: (_line, record) => records.push(record),
   });

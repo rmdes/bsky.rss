@@ -6,7 +6,7 @@ import {
   type BotOperations,
 } from './botOperations.ts';
 import type {BotWorker} from './botWorker.ts';
-import type {FleetLogger, FleetLogLevel} from '../shared/logging/logger.ts';
+import type {Logger, LogLevel} from '../shared/logging/logger.ts';
 import type {SharedLimiters} from './sharedLimiters.ts';
 
 export type FleetPhase = 'starting' | 'running' | 'stopping';
@@ -15,7 +15,7 @@ export type ActivationState = 'pending' | 'active' | 'failed';
 export interface FleetBotStatus extends BotOperationalSnapshot {
   activationState: ActivationState;
   queueDepth: number | null;
-  effectiveLogLevel: FleetLogLevel;
+  effectiveLogLevel: LogLevel;
   logOverrideExpiresAt: string | null;
 }
 
@@ -47,7 +47,7 @@ export interface BuildFleetStatusSnapshotOptions {
   activeWorkers: ReadonlyMap<string, BotWorker>;
   activationFailureIds: ReadonlySet<string>;
   configErrorCount: number;
-  logger: FleetLogger;
+  logger: Logger;
   memoryUsage: Pick<NodeJS.MemoryUsage, 'rss' | 'heapUsed'>;
   sharedLimiters: SharedLimiters;
 }

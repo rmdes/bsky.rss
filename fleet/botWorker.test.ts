@@ -7,7 +7,7 @@ import type {FeedReader, ParsedItem} from './feedReader.ts';
 import type {BskyClient, PostResult, ResolvedEmbed} from './bskyClient.ts';
 import type {BotStore, QueueItemRow} from './botStore.ts';
 import {BotOperations} from './botOperations.ts';
-import {FleetLogger, type FleetLogLevel, type FleetLogRecord} from '../shared/logging/logger.ts';
+import {Logger, type LogLevel, type LogRecord} from '../shared/logging/logger.ts';
 
 class FakeFeedReader {
   private handler: ((item: ParsedItem) => void) | null = null;
@@ -107,8 +107,8 @@ function makeWorker(
           recordPost: () => void;
         };
     freshnessConfig?: {maxCatchupItems: number; maxItemAgeMinutes: number};
-    logger?: FleetLogger;
-    logLevel?: FleetLogLevel;
+    logger?: Logger;
+    logLevel?: LogLevel;
     botId?: string;
   },
 ) {
@@ -117,10 +117,10 @@ function makeWorker(
   const bskyClient = overrides?.bskyClient ?? new FakeBskyClient();
   const store = overrides?.store ?? new FakeBotStore();
   const operations = new BotOperations(botId, () => new Date('2026-08-03T12:00:00.000Z'));
-  const records: FleetLogRecord[] = [];
+  const records: LogRecord[] = [];
   const logger =
     overrides?.logger ??
-    new FleetLogger({
+    new Logger({
       defaultLevel: overrides?.logLevel ?? 'debug',
       now: () => new Date('2026-08-03T12:00:00.000Z'),
       sink: (_line, record) => records.push(record),
@@ -496,8 +496,8 @@ test('multiple queued items drain in item_date order', async t => {
 });
 
 test('a thrown post exception stays queued, records once, and keeps raw detail debug-only for its bot', async t => {
-  const records: FleetLogRecord[] = [];
-  const logger = new FleetLogger({
+  const records: LogRecord[] = [];
+  const logger = new Logger({
     defaultLevel: 'summary',
     sink: (_line, record) => records.push(record),
   });
@@ -661,7 +661,7 @@ test('enqueue drops a new item once the queue is at perBotQueueMaxLength, keepin
     freshnessConfig: {maxCatchupItems: 5, maxItemAgeMinutes: 120},
     perBotQueueMaxLength: 2,
     operations: new BotOperations('test-bot'),
-    logger: new FleetLogger({defaultLevel: 'debug', sink: () => undefined}),
+    logger: new Logger({defaultLevel: 'debug', sink: () => undefined}),
   });
   t.after(() => worker.stop());
   await worker.start();
@@ -733,7 +733,7 @@ test('shutdown stops the FeedReader immediately, waits for an in-flight drain, t
     freshnessConfig: {maxCatchupItems: 5, maxItemAgeMinutes: 120},
     perBotQueueMaxLength: 500,
     operations: new BotOperations('test-bot'),
-    logger: new FleetLogger({defaultLevel: 'debug', sink: () => undefined}),
+    logger: new Logger({defaultLevel: 'debug', sink: () => undefined}),
   });
   await worker.start();
   feedReader.emit({
@@ -783,7 +783,7 @@ test('shutdown does not wait past its timeout even if the in-flight drain never 
     freshnessConfig: {maxCatchupItems: 5, maxItemAgeMinutes: 120},
     perBotQueueMaxLength: 500,
     operations: new BotOperations('test-bot'),
-    logger: new FleetLogger({defaultLevel: 'debug', sink: () => undefined}),
+    logger: new Logger({defaultLevel: 'debug', sink: () => undefined}),
   });
   await worker.start();
   feedReader.emit({

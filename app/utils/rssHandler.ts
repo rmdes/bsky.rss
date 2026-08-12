@@ -10,9 +10,9 @@ import {
   extractMarkdownLinks,
   finalizeMarkdownLinks,
 } from '../../shared/feedSource/markdownLinks.ts';
-import type {FleetLogger} from '../../shared/logging/index.ts';
+import type {Logger} from '../../shared/logging/index.ts';
 
-export function createRssHandler(queue: QueueHandler, db: DbHandler, logger: FleetLogger) {
+export function createRssHandler(queue: QueueHandler, db: DbHandler, logger: Logger) {
   let reader: FeedSource | null = null;
   let lastDate: string = '';
   // Tracks the newest date seen *within the batch currently being processed*, committed

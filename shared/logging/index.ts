@@ -1,3 +1,3 @@
 // Re-export all logging functionality
-export {FleetLogger, formatDebugError, parseFleetLogLevel} from './logger.ts';
-export type {FleetLogLevel, FleetLogOverride, FleetLogRecord} from './logger.ts';
+export {Logger, formatDebugError, parseLogLevel} from './logger.ts';
+export type {LogLevel, LogOverride, LogRecord} from './logger.ts';

@@ -18,7 +18,7 @@ import {computeDedupeKey} from './dedupeKey.ts';
 import {BotStore} from './botStore.ts';
 import {SharedLimiters} from './sharedLimiters.ts';
 import {BotOperations} from './botOperations.ts';
-import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
+import {Logger, type LogRecord} from '../shared/logging/logger.ts';
 import {Jimp, JimpMime} from 'jimp';
 
 // handleItem is private; these tests drive it directly to exercise item-processing
@@ -51,14 +51,14 @@ function createRuntime(
   fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>,
 ): {
   operations: BotOperations;
-  logger: FleetLogger;
-  records: FleetLogRecord[];
+  logger: Logger;
+  records: LogRecord[];
   fetchOpenGraph?: typeof fetchOpenGraph;
 } {
-  const records: FleetLogRecord[] = [];
+  const records: LogRecord[] = [];
   return {
     operations: new BotOperations(botId, () => fixedNow),
-    logger: new FleetLogger({
+    logger: new Logger({
       defaultLevel: 'debug',
       now: () => fixedNow,
       sink: (_line, record) => records.push(record),
