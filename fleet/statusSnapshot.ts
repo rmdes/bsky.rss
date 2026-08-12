@@ -6,6 +6,7 @@ import {
 } from './botOperations.ts';
 import type {BotWorker} from './botWorker.ts';
 import type {FleetLogger, FleetLogLevel} from '../shared/logging/logger.ts';
+import type {SharedLimiters} from './sharedLimiters.ts';
 
 export type FleetPhase = 'starting' | 'running' | 'stopping';
 export type ActivationState = 'pending' | 'active' | 'failed';
@@ -33,6 +34,7 @@ export interface FleetStatusSnapshot {
   };
   totals: BotCounters & {queueDepth: number};
   memory: {rssBytes: number; heapUsedBytes: number};
+  limiters: {ogQueueDepth: number; imageQueueDepth: number};
   botStates: FleetBotStatus[];
 }
 
@@ -46,6 +48,7 @@ export interface BuildFleetStatusSnapshotOptions {
   configErrorCount: number;
   logger: FleetLogger;
   memoryUsage: Pick<NodeJS.MemoryUsage, 'rss' | 'heapUsed'>;
+  sharedLimiters: SharedLimiters;
 }
 
 const counterNames: readonly (keyof BotCounters)[] = [
@@ -67,6 +70,7 @@ export function buildFleetStatusSnapshot(
 ): FleetStatusSnapshot {
   const totals = {...emptyBotCounters(), queueDepth: 0};
   const botStates: FleetBotStatus[] = [];
+  const queueDepths = options.sharedLimiters.getQueueDepths();
 
   for (const [botId, operations] of options.operations) {
     const operational = operations.snapshot();
@@ -117,6 +121,7 @@ export function buildFleetStatusSnapshot(
       rssBytes: options.memoryUsage.rss,
       heapUsedBytes: options.memoryUsage.heapUsed,
     },
+    limiters: {ogQueueDepth: queueDepths.ogQueue, imageQueueDepth: queueDepths.imageQueue},
     botStates,
   };
 }

@@ -123,6 +123,8 @@ test('formatFleetIntervalSummary uses approved compact denominators and optional
       queueDepth: 14,
       feedsFailing: 1,
       rssBytes: 241 * 1024 * 1024,
+      ogQueueDepth: 0,
+      imageQueueDepth: 0,
     }),
     '5m: feeds 1059/1062 ok · OG 80/114 ok, 34 fallbacks · posts 95/95 ok, 2 deferred, 1 exception · 10 policy-skipped · queue 14 · 1 feed failing · RSS 241.0MB',
   );
@@ -135,7 +137,35 @@ test('formatFleetIntervalSummary reports n/a for zero attempts and omits zero op
       queueDepth: 0,
       feedsFailing: 0,
       rssBytes: 0,
+      ogQueueDepth: 0,
+      imageQueueDepth: 0,
     }),
     '5m: feeds n/a · OG n/a, 0 fallbacks · posts n/a · 0 policy-skipped · queue 0 · 0 feeds failing · RSS 0.0MB',
+  );
+});
+
+test('formatFleetIntervalSummary includes shared-limiter queue depths only when non-zero', () => {
+  assert.equal(
+    formatFleetIntervalSummary({
+      delta: emptyBotCounters(),
+      queueDepth: 0,
+      feedsFailing: 0,
+      rssBytes: 0,
+      ogQueueDepth: 5,
+      imageQueueDepth: 2,
+    }),
+    '5m: feeds n/a · OG n/a, 0 fallbacks · posts n/a · 0 policy-skipped · queue 0 · 5 OG queued · 2 image queued · 0 feeds failing · RSS 0.0MB',
+  );
+
+  assert.equal(
+    formatFleetIntervalSummary({
+      delta: emptyBotCounters(),
+      queueDepth: 0,
+      feedsFailing: 0,
+      rssBytes: 0,
+      ogQueueDepth: 5,
+      imageQueueDepth: 0,
+    }),
+    '5m: feeds n/a · OG n/a, 0 fallbacks · posts n/a · 0 policy-skipped · queue 0 · 5 OG queued · 0 feeds failing · RSS 0.0MB',
   );
 });

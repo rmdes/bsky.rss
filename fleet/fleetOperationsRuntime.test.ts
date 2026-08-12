@@ -12,6 +12,7 @@ import {
 import {FleetLogger, type FleetLogRecord} from '../shared/logging/logger.ts';
 import {writeOverrides} from './logOverrides.ts';
 import type {FleetStatusSnapshot} from './statusSnapshot.ts';
+import type {SharedLimiters} from './sharedLimiters.ts';
 
 class FakeTimers implements FleetOperationsRuntimeTimers {
   private nextHandle = 1;
@@ -61,6 +62,10 @@ function fakeWorker(botId: string, queueDepth: number): BotWorker {
   return {botId, queueLength: () => queueDepth} as BotWorker;
 }
 
+function fakeSharedLimiters(ogQueue = 0, imageQueue = 0): SharedLimiters {
+  return {getQueueDepths: () => ({ogQueue, imageQueue})} as SharedLimiters;
+}
+
 test('start writes all 59 starting bots before activation finishes and markRunning publishes the transition', async t => {
   const directory = tempDirectory(t);
   const statusFilePath = join(directory, 'status.json');
@@ -83,6 +88,7 @@ test('start writes all 59 starting bots before activation finishes and markRunni
       activationFailures: () => [],
     },
     configInvalidCount: 3,
+    sharedLimiters: fakeSharedLimiters(),
   });
 
   let finishActivation!: () => void;
@@ -136,6 +142,7 @@ test('the 5-second, 60-second, and 5-minute timers perform only their own action
       activationFailures: () => [],
     },
     configInvalidCount: 0,
+    sharedLimiters: fakeSharedLimiters(2, 1),
   });
 
   runtime.start();
@@ -170,7 +177,7 @@ test('the 5-second, 60-second, and 5-minute timers perform only their own action
   assert.equal(readSnapshot(statusFilePath).heartbeatAt, minuteHeartbeat);
   assert.equal(
     records.find(record => record.scope === 'FLEET')?.message,
-    '5m: feeds 1/1 ok · OG 0/1 ok, 1 fallback · posts 1/1 ok · 1 policy-skipped · queue 14 · 0 feeds failing · RSS 241.0MB',
+    '5m: feeds 1/1 ok · OG 0/1 ok, 1 fallback · posts 1/1 ok · 1 policy-skipped · queue 14 · 2 OG queued · 1 image queued · 0 feeds failing · RSS 241.0MB',
   );
 
   operation.recordFeedFailure('timeout');
@@ -180,7 +187,7 @@ test('the 5-second, 60-second, and 5-minute timers perform only their own action
   timers.fire(300_000);
   assert.equal(
     records.find(record => record.scope === 'FLEET')?.message,
-    '5m: feeds 0/1 ok · OG n/a, 0 fallbacks · posts n/a, 1 deferred · 0 policy-skipped · queue 14 · 1 feed failing · RSS 241.0MB',
+    '5m: feeds 0/1 ok · OG n/a, 0 fallbacks · posts n/a, 1 deferred · 0 policy-skipped · queue 14 · 2 OG queued · 1 image queued · 1 feed failing · RSS 241.0MB',
   );
 
   runtime.stop();
@@ -233,6 +240,7 @@ test('a failed queue or memory observation retains every delta for the next summ
           activationFailures: () => [],
         },
         configInvalidCount: 0,
+        sharedLimiters: fakeSharedLimiters(),
       });
       runtime.start();
       operation.recordPostSuccess();
@@ -297,6 +305,7 @@ test('a failed summary emission retains every delta for the next successful emis
       activationFailures: () => [],
     },
     configInvalidCount: 0,
+    sharedLimiters: fakeSharedLimiters(),
   });
   runtime.start();
   operation.recordPostSuccess();
@@ -343,6 +352,7 @@ test('markStopping writes stopping before worker shutdown resolves', async t => 
       activationFailures: () => [],
     },
     configInvalidCount: 0,
+    sharedLimiters: fakeSharedLimiters(),
   });
   runtime.start();
   runtime.markRunning();
@@ -390,6 +400,7 @@ test('snapshot observer failures produce a safe warning and debug detail without
       activationFailures: () => [],
     },
     configInvalidCount: 0,
+    sharedLimiters: fakeSharedLimiters(),
   });
 
   assert.doesNotThrow(() => runtime.start());
@@ -432,6 +443,7 @@ test('a persistent snapshot write failure warns once, and a later failure re-war
       activationFailures: () => [],
     },
     configInvalidCount: 0,
+    sharedLimiters: fakeSharedLimiters(),
   });
   const warnings = () =>
     records.filter(
@@ -484,6 +496,7 @@ test('override observer failures produce a safe warning and debug detail without
       activationFailures: () => [],
     },
     configInvalidCount: 0,
+    sharedLimiters: fakeSharedLimiters(),
   });
   runtime.start();
   records.length = 0;
@@ -535,6 +548,7 @@ test("override filesystem read failures reach the runtime's safe observer warnin
       activationFailures: () => [],
     },
     configInvalidCount: 0,
+    sharedLimiters: fakeSharedLimiters(),
   });
 
   assert.doesNotThrow(() => runtime.start());

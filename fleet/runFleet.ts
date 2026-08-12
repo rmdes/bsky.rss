@@ -157,6 +157,7 @@ async function main(): Promise<void> {
     operations,
     coordinator,
     configInvalidCount: errors.length,
+    sharedLimiters,
   });
 
   const healthHeartbeatIntervalMs = 60_000;

@@ -34,6 +34,8 @@ export function formatFleetIntervalSummary(input: {
   queueDepth: number;
   feedsFailing: number;
   rssBytes: number;
+  ogQueueDepth: number;
+  imageQueueDepth: number;
 }): string {
   const feedAttempts = input.delta.feedPollSucceeded + input.delta.feedPollFailed;
   const terminalPosts = input.delta.postSucceeded + input.delta.postUncertain;
@@ -53,6 +55,10 @@ export function formatFleetIntervalSummary(input: {
     `posts ${postOutcomes}`,
     `${input.delta.policySkipped} policy-skipped`,
     `queue ${input.queueDepth}`,
+    ...(input.ogQueueDepth === 0 ? [] : [count(input.ogQueueDepth, 'OG queued', 'OG queued')]),
+    ...(input.imageQueueDepth === 0
+      ? []
+      : [count(input.imageQueueDepth, 'image queued', 'image queued')]),
     count(input.feedsFailing, 'feed failing', 'feeds failing'),
     `RSS ${formatBytesAsMegabytes(input.rssBytes)}`,
   ].join(' · ');

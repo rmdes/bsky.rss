@@ -4,11 +4,16 @@ import {BotOperations} from './botOperations.ts';
 import type {BotWorker} from './botWorker.ts';
 import {FleetLogger} from '../shared/logging/logger.ts';
 import {buildFleetStatusSnapshot} from './statusSnapshot.ts';
+import type {SharedLimiters} from './sharedLimiters.ts';
 
 const currentTime = new Date('2026-08-03T12:00:00.000Z');
 
 function fakeWorker(botId: string, queueDepth: number): BotWorker {
   return {botId, queueLength: () => queueDepth} as BotWorker;
+}
+
+function fakeSharedLimiters(ogQueue: number, imageQueue: number): SharedLimiters {
+  return {getQueueDepths: () => ({ogQueue, imageQueue})} as SharedLimiters;
 }
 
 test('aggregates a 59-bot startup snapshot without starting workers or waiting', () => {
@@ -57,6 +62,7 @@ test('aggregates a 59-bot startup snapshot without starting workers or waiting',
     configErrorCount: 3,
     logger,
     memoryUsage: {rss: 241 * 1024 * 1024, heapUsed: 80 * 1024 * 1024},
+    sharedLimiters: fakeSharedLimiters(9, 4),
   });
 
   assert.deepEqual(snapshot.bots, {
@@ -93,6 +99,7 @@ test('aggregates a 59-bot startup snapshot without starting workers or waiting',
     rssBytes: 241 * 1024 * 1024,
     heapUsedBytes: 80 * 1024 * 1024,
   });
+  assert.deepEqual(snapshot.limiters, {ogQueueDepth: 9, imageQueueDepth: 4});
   assert.equal(snapshot.schemaVersion, 1);
   assert.equal(snapshot.phase, 'starting');
   assert.equal(snapshot.startedAt, '2026-08-03T11:30:00.000Z');
@@ -122,6 +129,7 @@ test('snapshot results do not alias operational counters or expose activation er
     configErrorCount: 0,
     logger: new FleetLogger({defaultLevel: 'summary', now: () => currentTime}),
     memoryUsage: {rss: 1, heapUsed: 2},
+    sharedLimiters: fakeSharedLimiters(0, 0),
   };
 
   const first = buildFleetStatusSnapshot(input);

@@ -129,6 +129,12 @@ export function formatFleetStatus(
     ),
   );
   lines.push(formatLine('Memory', `${formatMegabytes(snapshot.memory.rssBytes)} MB RSS`));
+  lines.push(
+    formatLine(
+      'Limiters',
+      `${formatInteger(snapshot.limiters.ogQueueDepth)} waiting for OG capacity · ${formatInteger(snapshot.limiters.imageQueueDepth)} waiting for image capacity`,
+    ),
+  );
 
   if (options.showBots) {
     lines.push('', 'Bot states');
@@ -288,6 +294,7 @@ function isFleetStatusSnapshot(value: unknown): value is FleetStatusSnapshot {
     ]) ||
     !hasNumericProperties(value.totals, [...counterNames, 'queueDepth']) ||
     !hasNumericProperties(value.memory, ['rssBytes', 'heapUsedBytes']) ||
+    !hasNumericProperties(value.limiters, ['ogQueueDepth', 'imageQueueDepth']) ||
     !Array.isArray(value.botStates)
   ) {
     return false;

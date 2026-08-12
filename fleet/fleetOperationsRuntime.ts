@@ -5,6 +5,7 @@ import {LogOverrideWatcher} from './logOverrides.ts';
 import {FleetLogger, formatDebugError} from '../shared/logging/logger.ts';
 import {writePrivateJsonAtomic} from './atomicJson.ts';
 import {buildFleetStatusSnapshot, type FleetPhase} from './statusSnapshot.ts';
+import type {SharedLimiters} from './sharedLimiters.ts';
 
 const statusIntervalMs = 60_000;
 const overrideIntervalMs = 5_000;
@@ -27,6 +28,7 @@ export interface FleetOperationsRuntimeOptions {
     activationFailures(): readonly {botId: string}[];
   };
   configInvalidCount: number;
+  sharedLimiters: SharedLimiters;
 }
 
 export class FleetOperationsRuntime {
@@ -94,6 +96,7 @@ export class FleetOperationsRuntime {
         configErrorCount: this.options.configInvalidCount,
         logger: this.options.logger,
         memoryUsage: this.options.memoryUsage(),
+        sharedLimiters: this.options.sharedLimiters,
       });
       writePrivateJsonAtomic(this.options.paths.status, snapshot);
       this.snapshotWriteWarningEmitted = false;
@@ -127,6 +130,7 @@ export class FleetOperationsRuntime {
       const current = sumBotCounters(states);
       const previous = this.previousCounters ?? current;
       const activeWorkers = this.options.coordinator.activeWorkers();
+      const {ogQueue, imageQueue} = this.options.sharedLimiters.getQueueDepths();
       this.options.logger.summary(
         'FLEET',
         formatFleetIntervalSummary({
@@ -134,6 +138,8 @@ export class FleetOperationsRuntime {
           queueDepth: activeWorkers.reduce((total, worker) => total + worker.queueLength(), 0),
           feedsFailing: states.filter(state => state.feedState === 'failing').length,
           rssBytes: this.options.memoryUsage().rss,
+          ogQueueDepth: ogQueue,
+          imageQueueDepth: imageQueue,
         }),
       );
       this.previousCounters = current;

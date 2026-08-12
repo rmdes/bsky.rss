@@ -46,6 +46,7 @@ function statusFixture(overrides: Partial<FleetStatusSnapshot> = {}): FleetStatu
       queueDepth: 14,
     },
     memory: {rssBytes: 241 * 1024 * 1024, heapUsedBytes: 80 * 1024 * 1024},
+    limiters: {ogQueueDepth: 3, imageQueueDepth: 2},
     botStates: [
       {
         botId: 'bot-safe',
@@ -148,9 +149,19 @@ test('formats the approved aggregate current-status output without bot rows', ()
       'Posts      867 / 868 terminal outcomes successful (99.88%) · 1 uncertain · 2 deferred · 3 exceptions',
       'Queue      14 waiting · 111 policy-skipped',
       'Memory     241 MB RSS',
+      'Limiters   3 waiting for OG capacity · 2 waiting for image capacity',
     ].join('\n'),
   );
   assert.doesNotMatch(output, /bot-safe/);
+});
+
+test('renders zero shared-limiter queue depths without noise', () => {
+  const output = formatFleetStatus(
+    statusFixture({limiters: {ogQueueDepth: 0, imageQueueDepth: 0}}),
+    {showBots: false, now},
+  );
+
+  assert.match(output, /^Limiters {3}0 waiting for OG capacity · 0 waiting for image capacity$/m);
 });
 
 test('marks a heartbeat older than 150 seconds stale while 150 seconds remains current', () => {

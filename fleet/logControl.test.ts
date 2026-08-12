@@ -48,6 +48,7 @@ function statusFixture(): FleetStatusSnapshot {
     },
     totals: {...counters, queueDepth: 0},
     memory: {rssBytes: 1, heapUsedBytes: 1},
+    limiters: {ogQueueDepth: 0, imageQueueDepth: 0},
     botStates: ['bot-a', 'bot-b'].map(botId => ({
       botId,
       activationState: 'active' as const,
