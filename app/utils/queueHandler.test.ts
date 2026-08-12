@@ -23,6 +23,7 @@ describe('queueHandler', () => {
   let testDataDir: string;
   let queueHandler: QueueHandler;
   let bsky: ReturnType<typeof createBskyHandler>;
+  let db: ReturnType<typeof createDbHandler>;
 
   beforeEach(() => {
     testDataDir = mkdtempSync(path.join(tmpdir(), 'bsky-rss-test-'));
@@ -52,7 +53,7 @@ describe('queueHandler', () => {
 
     fs.writeFileSync(path.join(testDataDir, 'config.json'), JSON.stringify(testConfig), 'utf8');
 
-    const db = createDbHandler(testDataDir);
+    db = createDbHandler(testDataDir);
     bsky = createBskyHandler(db, testLogger);
     queueHandler = createQueueHandler(bsky, db, testLogger);
   });
@@ -285,7 +286,21 @@ describe('queueHandler', () => {
         return {uri: 'at://did:plc:test/app.bsky.feed.post/abc', cid: 'bafycid'};
       }) as typeof bsky.post;
 
+      // runQueue() fires db.writeDate() for the successful item without awaiting it
+      // (production `void db.writeDate(...)`, intentional fire-and-forget) - capture and
+      // await it here so this test doesn't return before that write lands, which would
+      // otherwise race afterEach's rmSync(testDataDir) and surface as an unhandled
+      // rejection (ENOENT, file already deleted) attributed to a since-finished test.
+      let writeDatePromise: ReturnType<typeof db.writeDate> | undefined;
+      const originalWriteDate = db.writeDate;
+      db.writeDate = ((date: Date) => {
+        writeDatePromise = originalWriteDate(date);
+        return writeDatePromise;
+      }) as typeof db.writeDate;
+
       const result = await queueHandler.runQueue();
+      await writeDatePromise;
+      db.writeDate = originalWriteDate;
 
       assert.deepStrictEqual(
         calls,
@@ -296,6 +311,77 @@ describe('queueHandler', () => {
         (result as QueueItems[]).length,
         0,
         'neither item should remain queued - the bad one was skipped, not requeued',
+      );
+    });
+
+    it('requeues at the front and stops the drain on a real {ratelimit: true} result, without recording it as posted', async t => {
+      // The sibling test above covers the NEW {ratelimit: false} skip-without-retry path
+      // added by the earlier bug-fix task. This proves the OLD {ratelimit: true}
+      // retry-and-preserve-order behavior still works after the drain loop was later
+      // rewritten from splice-based to shift/unshift-based by a different task.
+      //
+      // Mock timers so createLimitTimer's real setTimeout(retryAfter * 1000) never
+      // actually fires and re-enters runQueue() in the background - it would otherwise
+      // keep re-calling the {ratelimit: true} mock forever, each call rescheduling
+      // another timer, long after this test (and its testDataDir) is gone.
+      t.mock.timers.enable({apis: ['setTimeout']});
+
+      const rateLimitedItem = {
+        content: 'Rate limited item',
+        title: 'Rate Limited',
+        date: new Date().toString(),
+        languages: ['en'],
+        embed: undefined,
+        facets: [],
+      };
+      const untouchedItem = {
+        content: 'Untouched item',
+        title: 'Untouched',
+        date: new Date().toString(),
+        languages: ['en'],
+        embed: undefined,
+        facets: [],
+      };
+      await queueHandler.writeQueue(rateLimitedItem);
+      await queueHandler.writeQueue(untouchedItem);
+
+      const calls: string[] = [];
+      bsky.post = (async ({content}: {content: string}) => {
+        calls.push(content);
+        return {ratelimit: true, retryAfter: 45};
+      }) as typeof bsky.post;
+
+      let writeDateCalled = false;
+      const originalWriteDate = db.writeDate;
+      db.writeDate = (async (date: Date) => {
+        writeDateCalled = true;
+        return originalWriteDate(date);
+      }) as typeof db.writeDate;
+
+      const result = (await queueHandler.runQueue()) as QueueItems[];
+
+      db.writeDate = originalWriteDate;
+
+      assert.deepStrictEqual(
+        calls,
+        [rateLimitedItem.content],
+        'the drain loop must stop after the rate-limited item - the second item must not be attempted',
+      );
+      assert.strictEqual(
+        writeDateCalled,
+        false,
+        'a rate-limited item must not be recorded as posted',
+      );
+      assert.strictEqual(result.length, 2, 'both items should remain queued');
+      assert.strictEqual(
+        result[0]!.content,
+        rateLimitedItem.content,
+        'the rate-limited item must be back at the front of the queue',
+      );
+      assert.strictEqual(
+        result[1]!.content,
+        untouchedItem.content,
+        'the untouched item must remain behind it, in its original order',
       );
     });
   });
