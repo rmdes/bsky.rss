@@ -50,6 +50,8 @@ export function emptyBotCounters(): BotCounters {
   };
 }
 
+export const counterNames = Object.keys(emptyBotCounters()) as readonly (keyof BotCounters)[];
+
 export class BotOperations {
   private feedState: FeedState = 'starting';
   private lastFeedSuccessAt: string | null = null;

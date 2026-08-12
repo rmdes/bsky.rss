@@ -1,4 +1,5 @@
 import {
+  counterNames,
   emptyBotCounters,
   type BotCounters,
   type BotOperationalSnapshot,
@@ -50,20 +51,6 @@ export interface BuildFleetStatusSnapshotOptions {
   memoryUsage: Pick<NodeJS.MemoryUsage, 'rss' | 'heapUsed'>;
   sharedLimiters: SharedLimiters;
 }
-
-const counterNames: readonly (keyof BotCounters)[] = [
-  'feedPollSucceeded',
-  'feedPollFailed',
-  'openGraphAttempted',
-  'openGraphSucceeded',
-  'openGraphFallback',
-  'queued',
-  'policySkipped',
-  'postSucceeded',
-  'postUncertain',
-  'postDeferred',
-  'postException',
-];
 
 export function buildFleetStatusSnapshot(
   options: BuildFleetStatusSnapshotOptions,

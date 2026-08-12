@@ -1,12 +1,9 @@
 // fleet/runBenchmarkCli.ts
 import {runBenchmark} from './benchmarkHarness.ts';
+import {formatBytesAsMegabytes} from './memoryLog.ts';
 
 function log(message: string): void {
   console.log(`[${new Date().toUTCString()}] - [bsky.rss BENCH] ${message}`);
-}
-
-function mb(bytes: number): string {
-  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
 async function main(): Promise<void> {
@@ -31,8 +28,8 @@ async function main(): Promise<void> {
     fetchIntervalMinutes,
   });
 
-  log(`Steady-state RSS: ${mb(report.steadyStateRssBytes)}`);
-  log(`Peak RSS:         ${mb(report.peakRssBytes)}`);
+  log(`Steady-state RSS: ${formatBytesAsMegabytes(report.steadyStateRssBytes)}`);
+  log(`Peak RSS:         ${formatBytesAsMegabytes(report.peakRssBytes)}`);
   log(`Samples taken:    ${report.sampleCount}`);
 }
 

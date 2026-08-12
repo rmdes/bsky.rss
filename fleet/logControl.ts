@@ -75,6 +75,9 @@ function formatOverrides(overrides: ReadonlyMap<string, FleetLogOverride>, now: 
     .join('\n');
 }
 
+// Deliberately different from status.ts's formatDuration (that one shows elapsed age - uptime,
+// heartbeat - capped at 2 units and rolled into days) - this one shows remaining time until a
+// log override expires, always up to 3 units (h/m/s) and never rolled into days.
 function formatDuration(milliseconds: number): string {
   let seconds = Math.ceil(milliseconds / 1_000);
   const hours = Math.floor(seconds / 3_600);

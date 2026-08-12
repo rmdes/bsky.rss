@@ -1,7 +1,8 @@
 import {readFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
-import type {BotCounters, FeedFailureCategory, FeedState} from './botOperations.ts';
-import type {FleetLogLevel} from '../shared/logging/logger.ts';
+import type {FeedFailureCategory, FeedState} from './botOperations.ts';
+import {counterNames} from './botOperations.ts';
+import {hasErrorCode, isFleetLogLevel, isRecord, isTimestamp} from './jsonGuards.ts';
 import type {
   ActivationState,
   FleetBotStatus,
@@ -10,19 +11,6 @@ import type {
 } from './statusSnapshot.ts';
 
 const staleAfterMilliseconds = 150_000;
-const counterNames: readonly (keyof BotCounters)[] = [
-  'feedPollSucceeded',
-  'feedPollFailed',
-  'openGraphAttempted',
-  'openGraphSucceeded',
-  'openGraphFallback',
-  'queued',
-  'policySkipped',
-  'postSucceeded',
-  'postUncertain',
-  'postDeferred',
-  'postException',
-];
 const numberFormatter = new Intl.NumberFormat('en-US');
 
 export function statusPath(dataRoot: string): string {
@@ -186,6 +174,9 @@ function elapsedMilliseconds(timestamp: string, now: Date): number {
   return Math.max(0, now.getTime() - new Date(timestamp).getTime());
 }
 
+// Deliberately different from logControl.ts's formatDuration (that one shows remaining time
+// until a log override expires, unrounded to days) - this one shows elapsed age (uptime,
+// heartbeat), capped at 2 units and rolled into days once the duration is long enough.
 function formatDuration(milliseconds: number): string {
   const seconds = Math.floor(milliseconds / 1000);
   const days = Math.floor(seconds / 86_400);
@@ -202,20 +193,8 @@ function plural(value: number): string {
   return value === 1 ? '' : 's';
 }
 
-function hasErrorCode(error: unknown, expected: string): boolean {
-  return isRecord(error) && error.code === expected;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function isFiniteNonnegativeNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
-}
-
-function isTimestamp(value: unknown): value is string {
-  return typeof value === 'string' && !Number.isNaN(new Date(value).getTime());
 }
 
 function isNullableTimestamp(value: unknown): value is string | null {
@@ -232,10 +211,6 @@ function isActivationState(value: unknown): value is ActivationState {
 
 function isFleetPhase(value: unknown): value is FleetPhase {
   return value === 'starting' || value === 'running' || value === 'stopping';
-}
-
-function isFleetLogLevel(value: unknown): value is FleetLogLevel {
-  return value === 'summary' || value === 'verbose' || value === 'debug';
 }
 
 function isFeedFailureCategory(value: unknown): value is FeedFailureCategory | null {

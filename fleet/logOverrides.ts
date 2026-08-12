@@ -1,7 +1,8 @@
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {writePrivateJsonAtomic} from './atomicJson.ts';
-import {type FleetLogLevel, type FleetLogOverride, FleetLogger} from '../shared/logging/logger.ts';
+import {type FleetLogOverride, FleetLogger} from '../shared/logging/logger.ts';
+import {hasErrorCode, isFleetLogLevel, isRecord, isTimestamp} from './jsonGuards.ts';
 
 export type LogOverrideDocument = Record<string, FleetLogOverride>;
 
@@ -195,20 +196,4 @@ function cloneOverrides(
 
 function sameOverride(current: FleetLogOverride | undefined, next: FleetLogOverride): boolean {
   return current?.level === next.level && current.expiresAt === next.expiresAt;
-}
-
-function hasErrorCode(error: unknown, expected: string): boolean {
-  return isRecord(error) && error.code === expected;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isFleetLogLevel(value: unknown): value is FleetLogLevel {
-  return value === 'summary' || value === 'verbose' || value === 'debug';
-}
-
-function isTimestamp(value: unknown): value is string {
-  return typeof value === 'string' && !Number.isNaN(new Date(value).getTime());
 }

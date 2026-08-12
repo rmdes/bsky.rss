@@ -1,19 +1,10 @@
-import {emptyBotCounters, type BotCounters, type BotOperationalSnapshot} from './botOperations.ts';
+import {
+  counterNames,
+  emptyBotCounters,
+  type BotCounters,
+  type BotOperationalSnapshot,
+} from './botOperations.ts';
 import {formatBytesAsMegabytes} from './memoryLog.ts';
-
-const counterNames: readonly (keyof BotCounters)[] = [
-  'feedPollSucceeded',
-  'feedPollFailed',
-  'openGraphAttempted',
-  'openGraphSucceeded',
-  'openGraphFallback',
-  'queued',
-  'policySkipped',
-  'postSucceeded',
-  'postUncertain',
-  'postDeferred',
-  'postException',
-];
 
 export function sumBotCounters(states: readonly BotOperationalSnapshot[]): BotCounters {
   const totals = emptyBotCounters();
