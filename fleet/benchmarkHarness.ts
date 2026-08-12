@@ -161,7 +161,6 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
       }),
       bskyClient,
       store,
-      identityStore,
       runIntervalSeconds: 1,
       freshnessConfig: {maxCatchupItems: 50, maxItemAgeMinutes: 60},
       perBotQueueMaxLength: 500,

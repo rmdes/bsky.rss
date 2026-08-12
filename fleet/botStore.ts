@@ -77,22 +77,6 @@ export class BotStore {
     }
   }
 
-  /**
-   * Execute a function within a transaction. Automatically commits on success
-   * and rolls back on error.
-   */
-  transaction<T>(fn: () => T): T {
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
-      const result = fn();
-      this.db.exec('COMMIT');
-      return result;
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
-  }
-
   writeSession(data: unknown): void {
     const json = JSON.stringify(data);
     const now = new Date().toISOString();

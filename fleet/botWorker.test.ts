@@ -99,7 +99,6 @@ function makeWorker(
     feedReader?: FakeFeedReader;
     bskyClient?: FakeBskyClient | {post: (params: {content: string}) => Promise<PostResult>};
     store?: FakeBotStore;
-    identityStore?: BotStore;
     scheduler?:
       | Scheduler
       | {
@@ -117,8 +116,6 @@ function makeWorker(
   const feedReader = overrides?.feedReader ?? new FakeFeedReader();
   const bskyClient = overrides?.bskyClient ?? new FakeBskyClient();
   const store = overrides?.store ?? new FakeBotStore();
-  const identityStore =
-    overrides?.identityStore ?? ({cleanupOldSeenValues: () => undefined} as unknown as BotStore);
   const operations = new BotOperations(botId, () => new Date('2026-08-03T12:00:00.000Z'));
   const records: FleetLogRecord[] = [];
   const logger =
@@ -137,7 +134,6 @@ function makeWorker(
     scheduler: scheduler as unknown as Scheduler,
     bskyClient: bskyClient as unknown as BskyClient,
     store: store as unknown as BotStore,
-    identityStore,
     runIntervalSeconds: 60,
     freshnessConfig: overrides?.freshnessConfig ?? {maxCatchupItems: 5, maxItemAgeMinutes: 120},
     perBotQueueMaxLength: 500,
@@ -661,7 +657,6 @@ test('enqueue drops a new item once the queue is at perBotQueueMaxLength, keepin
     scheduler: scheduler as unknown as Scheduler,
     bskyClient: bskyClient as unknown as BskyClient,
     store: store as unknown as BotStore,
-    identityStore: {cleanupOldSeenValues: () => undefined} as unknown as BotStore,
     runIntervalSeconds: 60,
     freshnessConfig: {maxCatchupItems: 5, maxItemAgeMinutes: 120},
     perBotQueueMaxLength: 2,
@@ -734,7 +729,6 @@ test('shutdown stops the FeedReader immediately, waits for an in-flight drain, t
     scheduler: scheduler as unknown as Scheduler,
     bskyClient: bskyClient as unknown as BskyClient,
     store: store as unknown as BotStore,
-    identityStore: {cleanupOldSeenValues: () => undefined} as unknown as BotStore,
     runIntervalSeconds: 60,
     freshnessConfig: {maxCatchupItems: 5, maxItemAgeMinutes: 120},
     perBotQueueMaxLength: 500,
@@ -785,7 +779,6 @@ test('shutdown does not wait past its timeout even if the in-flight drain never 
     scheduler: scheduler as unknown as Scheduler,
     bskyClient: bskyClient as unknown as BskyClient,
     store: store as unknown as BotStore,
-    identityStore: {cleanupOldSeenValues: () => undefined} as unknown as BotStore,
     runIntervalSeconds: 60,
     freshnessConfig: {maxCatchupItems: 5, maxItemAgeMinutes: 120},
     perBotQueueMaxLength: 500,

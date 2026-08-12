@@ -54,7 +54,6 @@ async function buildWorker(
       scheduler: new Scheduler(spec.schedulerConfig),
       bskyClient,
       store,
-      identityStore,
       runIntervalSeconds,
       freshnessConfig,
       perBotQueueMaxLength,
