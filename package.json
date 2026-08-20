@@ -53,7 +53,7 @@
     "@types/node": "24.13.3",
     "eslint": "^9.37.0",
     "gts": "7.0.0",
-    "typescript": "6.0.3",
+    "typescript": "7.0.2",
     "underscore-cli": "^0.2.19"
   },
   "typeRoots": [
