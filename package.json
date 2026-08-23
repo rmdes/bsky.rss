@@ -60,5 +60,11 @@
     "./node_modules/@types",
     "./app/types"
   ],
-  "packageManager": "yarn@4.18.0"
+  "packageManager": "yarn@4.18.0",
+  "resolutions": {
+    "@typescript-eslint/eslint-plugin": "^8.67.0",
+    "@typescript-eslint/parser": "^8.67.0",
+    "@typescript-eslint/scope-manager": "^8.67.0",
+    "typescript-eslint": "^8.67.0"
+  }
 }
