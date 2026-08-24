@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.2] - 2026-08-24
+
+### Changed
+- Bumped `@atproto/api` 0.20.38 → 0.20.41 (patch release from upstream). No code changes required;
+  `yarn typecheck`/`yarn test` verified clean against the new version.
+
+---
+
 ## [2.11.1] - 2026-08-12
 
 ### Fixed

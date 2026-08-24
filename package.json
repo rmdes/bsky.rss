@@ -1,6 +1,6 @@
 {
   "name": "bsky.rss",
-  "version": "2.11.1",
+  "version": "2.11.2",
   "description": "A configurable RSS poster for Bluesky",
   "main": "index.js",
   "repository": "https://github.com/rmdes/bsky.rss.git",
