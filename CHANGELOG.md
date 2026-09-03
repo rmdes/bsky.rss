@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.3] - 2026-09-03
+
+### Changed
+- Bumped `axios` 1.19.0 → 1.20.0 and `@atproto/api` 0.20.41 → 0.20.42 / `@atproto/xrpc` 0.8.10 → 0.8.11
+  (patch releases from upstream, PRs #29/#28). No code changes required; `yarn typecheck`/`yarn test`
+  verified clean against the new versions.
+
+---
+
 ## [2.11.2] - 2026-08-24
 
 ### Changed
