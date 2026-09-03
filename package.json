@@ -41,7 +41,7 @@
   "dependencies": {
     "@atproto/api": "0.20.41",
     "@atproto/xrpc": "0.8.10",
-    "axios": "1.19.0",
+    "axios": "1.20.0",
     "dotenv": "^17.0.0",
     "feedsmith": "^2.9.6",
     "html-entities": "2.6.0",
