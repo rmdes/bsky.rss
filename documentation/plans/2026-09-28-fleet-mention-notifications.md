@@ -287,7 +287,7 @@ git commit -m "feat(fleet): add BskyClient.listNotifications with rate-limit cla
 
 **Interfaces:**
 - Consumes: `BotStore.seenValueExists/writeSeenValue/cleanupOldSeenValues(value, table?)` (Task 1), `BskyClient.listNotifications` + `ListNotificationsResult` (Task 2), `createTimeoutFetch` (`shared/http/timeoutFetch.ts`, existing), `Logger`/`formatDebugError` (`shared/logging/logger.ts`, existing).
-- Produces: `atUriToBskyUrl(uri: string): string`, `buildNtfyMessage(botHandle: string, notification: AppBskyNotificationListNotifications.Notification): {body: string; headers: Record<string, string>}`, `checkBotNotifications(params: CheckBotNotificationsParams): Promise<void>` where `CheckBotNotificationsParams = {botId: string; botHandle: string; bskyClient: Pick<BskyClient, 'listNotifications'>; store: Pick<BotStore, 'seenValueExists' | 'writeSeenValue' | 'cleanupOldSeenValues'>; ntfyUrl: string; logger: Logger; fetchImpl?: typeof fetch}` — this is what Task 4 (`BotWorker`) calls.
+- Produces: `atUriToBskyUrl(uri: string): string`, `buildNtfyMessage(botHandle: string, notification: AppBskyNotificationListNotifications.Notification): {body: string; headers: Record<string, string>}`, `checkBotNotifications(params: CheckBotNotificationsParams): Promise<void>` where `CheckBotNotificationsParams = {botId: string; botHandle: string; bskyClient: BskyClient; store: BotStore; ntfyUrl: string; logger: Logger; fetchImpl?: typeof fetch}` — typed against the concrete classes directly (matching every other fleet file's convention, e.g. `BotWorkerOptions`), not a `Pick<>` interface-segregation with only one real caller. This is what Task 4 (`BotWorker`) calls.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -298,7 +298,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {atUriToBskyUrl, buildNtfyMessage, checkBotNotifications} from './notificationWatcher.ts';
 import {Logger, type LogRecord} from '../shared/logging/logger.ts';
-import type {ListNotificationsResult} from './bskyClient.ts';
+import type {BskyClient, ListNotificationsResult} from './bskyClient.ts';
+import type {BotStore} from './botStore.ts';
 import type {AppBskyNotificationListNotifications} from '@atproto/api';
 
 type Notification = AppBskyNotificationListNotifications.Notification;
@@ -403,8 +404,8 @@ test('checkBotNotifications skips a notification already recorded as sent', asyn
   await checkBotNotifications({
     botId: 'b',
     botHandle: 'b.bsky.social',
-    bskyClient,
-    store,
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
     ntfyUrl: 'https://ntfy.example/topic',
     logger,
     fetchImpl,
@@ -428,8 +429,8 @@ test('checkBotNotifications posts to ntfy and records the uri only after a succe
   await checkBotNotifications({
     botId: 'b',
     botHandle: 'b.bsky.social',
-    bskyClient,
-    store,
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
     ntfyUrl: 'https://ntfy.example/topic',
     logger,
     fetchImpl,
@@ -456,8 +457,8 @@ test('one failed ntfy POST does not block the rest of the batch, and is not reco
   await checkBotNotifications({
     botId: 'b',
     botHandle: 'b.bsky.social',
-    bskyClient,
-    store,
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
     ntfyUrl: 'https://ntfy.example/topic',
     logger,
     fetchImpl,
@@ -482,8 +483,8 @@ test('a failed send is retried on the next call (its uri was never recorded)', a
   const params = {
     botId: 'b',
     botHandle: 'b.bsky.social',
-    bskyClient,
-    store,
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
     ntfyUrl: 'https://ntfy.example/topic',
     logger,
     fetchImpl,
@@ -511,8 +512,8 @@ test('a rate-limited listNotifications logs a summary line and sends nothing', a
   await checkBotNotifications({
     botId: 'b',
     botHandle: 'b.bsky.social',
-    bskyClient,
-    store,
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
     ntfyUrl: 'https://ntfy.example/topic',
     logger,
     fetchImpl,
@@ -536,8 +537,8 @@ test('a non-rate-limit listNotifications failure is logged at debug only, sends 
   await checkBotNotifications({
     botId: 'b',
     botHandle: 'b.bsky.social',
-    bskyClient,
-    store,
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
     ntfyUrl: 'https://ntfy.example/topic',
     logger,
     fetchImpl,
@@ -616,8 +617,8 @@ export function buildNtfyMessage(
 export interface CheckBotNotificationsParams {
   botId: string;
   botHandle: string;
-  bskyClient: Pick<BskyClient, 'listNotifications'>;
-  store: Pick<BotStore, 'seenValueExists' | 'writeSeenValue' | 'cleanupOldSeenValues'>;
+  bskyClient: BskyClient;
+  store: BotStore;
   ntfyUrl: string;
   logger: Logger;
   fetchImpl?: typeof fetch;
@@ -785,10 +786,14 @@ Expected: FAIL — `worker.checkNotificationsOnce is not a function`, and `notif
 
 - [ ] **Step 3: Implement**
 
-In `fleet/botWorker.ts`, add the import:
+In `fleet/botWorker.ts`, add the import and a module-level constant (matching `bskyClient.ts`'s
+`DEFAULT_FETCH_TIMEOUT_MS`/`DEFAULT_RETRY_SECONDS` convention — a plain top-of-file `const`, not a
+class member, since it's a fixed value with no per-instance variation):
 
 ```typescript
 import {checkBotNotifications} from './notificationWatcher.ts';
+
+const NOTIFICATION_CHECK_INTERVAL_MS = 300_000;
 ```
 
 Add two fields to `BotWorkerOptions` (after `logger: Logger;`):
@@ -798,11 +803,10 @@ Add two fields to `BotWorkerOptions` (after `logger: Logger;`):
   botHandle?: string;
 ```
 
-Add a private field and constant to the class (after `private intervalHandle: NodeJS.Timeout | null = null;`):
+Add a private field to the class (after `private intervalHandle: NodeJS.Timeout | null = null;`):
 
 ```typescript
   private notificationIntervalHandle: NodeJS.Timeout | null = null;
-  private static readonly NOTIFICATION_CHECK_INTERVAL_MS = 300_000;
 ```
 
 Update `start()`:
@@ -824,7 +828,7 @@ Update `start()`:
           this.options.logger.summary('NOTIFY', 'Unexpected error checking notifications', this.botId);
           this.options.logger.debug('NOTIFY', formatDebugError(err), this.botId);
         });
-      }, BotWorker.NOTIFICATION_CHECK_INTERVAL_MS);
+      }, NOTIFICATION_CHECK_INTERVAL_MS);
     }
   }
 
@@ -1022,7 +1026,7 @@ git commit -m "docs(fleet): document NTFY_URL reply/mention/quote notifications"
 
 **2. Placeholder scan.** No TODOs, no "add appropriate handling," no "similar to Task N" — every step has complete, real code.
 
-**3. Type consistency.** `ListNotificationsResult` (Task 2) is the same shape used in Task 3's `CheckBotNotificationsParams.bskyClient` (via `Pick<BskyClient, 'listNotifications'>`) and Task 4's `FakeBskyClient`. `SeenTable` (Task 1) is used identically in Task 3's `NOTIFIED_TABLE` constant. `checkBotNotifications`'s params object matches exactly between its Task 3 definition and its Task 4 call site inside `BotWorker.checkNotificationsOnce()`. `botHandle` flows from `BotSpec.identifier` (Task 5) → `BotWorkerOptions.botHandle` (Task 4) → `CheckBotNotificationsParams.botHandle` (Task 3) → `buildNtfyMessage`'s title/body (Task 3) — traced end to end, no name mismatch.
+**3. Type consistency.** `ListNotificationsResult` (Task 2) is the same shape used in Task 3's `CheckBotNotificationsParams.bskyClient: BskyClient` and Task 4's `FakeBskyClient`. `SeenTable` (Task 1) is used identically in Task 3's `NOTIFIED_TABLE` constant. `checkBotNotifications`'s params object matches exactly between its Task 3 definition and its Task 4 call site inside `BotWorker.checkNotificationsOnce()`. `botHandle` flows from `BotSpec.identifier` (Task 5) → `BotWorkerOptions.botHandle` (Task 4) → `CheckBotNotificationsParams.botHandle` (Task 3) → `buildNtfyMessage`'s title/body (Task 3) — traced end to end, no name mismatch.
 
 ---
 
