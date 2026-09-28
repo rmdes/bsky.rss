@@ -227,7 +227,17 @@ export class BotWorker {
         this.options.operations.recordPostSuccess();
         this.options.store.setQueueItemStatus(row.id, 'published');
         this.options.scheduler.recordPost();
-        this.options.store.writeCursor(new Date(row.itemDate));
+        // Some feeds (e.g. webinar/virtual-event listings) set an item's date to a future
+        // scheduled event rather than when the listing was published. FeedReader.isPastCursor
+        // treats any item whose date is <= the cursor as already-seen, so advancing the cursor
+        // to a future date would silently drop every genuinely new item until real time caught
+        // up to it - observed live: a stray "[Virtual Event] ..." item advanced a bot's cursor
+        // to December, wedging it for 11 days. The item itself still posts normally (it's real,
+        // new content) - only the cursor advance is skipped when it wouldn't reflect real
+        // elapsed time.
+        if (new Date(row.itemDate).getTime() <= Date.now()) {
+          this.options.store.writeCursor(new Date(row.itemDate));
+        }
         this.options.logger.verbose(
           'POST',
           `Posted item (${row.content.slice(0, 40)})`,

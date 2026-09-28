@@ -182,6 +182,55 @@ test('an emitted item is durably queued via BotStore, then drained on the next t
   assert.equal(worker.operationalSnapshot().counters.postSucceeded, 1);
 });
 
+test('a future-dated item (e.g. a webinar listing whose date is the scheduled event, not the publish time) posts normally but does not advance the cursor', async t => {
+  const {worker, bskyClient, store} = makeWorker(t);
+  await worker.start();
+
+  const farFuture = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+
+  const feedReader = (worker as unknown as {options: BotWorkerOptions}).options
+    .feedReader as unknown as FakeFeedReader;
+  feedReader.emit({
+    title: 'Virtual Event',
+    content: 'join us next year',
+    languages: ['en'],
+    itemDate: farFuture,
+    dedupeKey: 'key-future',
+  });
+
+  await worker.drainOnce();
+
+  // The item is real, new content - it still posts.
+  assert.equal(bskyClient.posted.length, 1);
+  assert.equal(bskyClient.posted[0]!.content, 'join us next year');
+  // But the cursor must not jump to a future date - isPastCursor (feedReader.ts) treats
+  // any item whose date is <= the cursor as already-seen, so a future cursor would silently
+  // drop every genuinely new item until real time caught up to it.
+  assert.equal(store.cursor, '');
+});
+
+test('an item dated exactly now does advance the cursor (the future-date guard is not off-by-one)', async t => {
+  const {worker, bskyClient, store} = makeWorker(t);
+  await worker.start();
+
+  const now = new Date().toISOString();
+
+  const feedReader = (worker as unknown as {options: BotWorkerOptions}).options
+    .feedReader as unknown as FakeFeedReader;
+  feedReader.emit({
+    title: 't',
+    content: 'hello world',
+    languages: ['en'],
+    itemDate: now,
+    dedupeKey: 'key-now',
+  });
+
+  await worker.drainOnce();
+
+  assert.equal(bskyClient.posted.length, 1);
+  assert.equal(store.cursor, now);
+});
+
 test("drainOnce prunes this bot's own per-bot store, not just the shared identity store", async t => {
   // Session task #68: BotStore.cleanupOldSeenValues existed and was tested but was never
   // called from any fleet mode production code path - the per-bot seen_items table grew
