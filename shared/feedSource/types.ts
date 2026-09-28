@@ -1,6 +1,12 @@
-import type {parseFeed} from 'feedsmith';
+import type {AnyFeed} from 'feedsmith';
 
-export type ParsedFeedResult = ReturnType<typeof parseFeed>;
+// parseRawFeed() (parse.ts) calls parseFeed(rawBody) with no options, so its TDate generic
+// resolves to its own default of `string` (dates come back as raw, unparsed strings) - pin
+// that explicitly rather than deriving it via ReturnType<typeof parseFeed>, which does not
+// carry a generic function's default through a bare `typeof` reference and resolves TDate to
+// `unknown` instead, forcing every downstream consumer to deal with `unknown` dates for no
+// reason.
+export type ParsedFeedResult = AnyFeed<string>;
 
 export interface NormalizedItem {
   id: string;

@@ -1,5 +1,4 @@
-import type {Atom, Json, Rdf, Rss} from 'feedsmith/types';
-import type {DeepPartial} from 'feedsmith/types';
+import type {AtomFeed, JsonFeed, RdfFeed, RssFeed} from 'feedsmith';
 import type {FeedSourceConfig, NormalizedItem, ParsedFeedResult} from './types.ts';
 import {resolveImageUrl} from './imageResolver.ts';
 import {resolveMappedValues} from './mappedValues.ts';
@@ -21,7 +20,7 @@ function extractGeo(
   return undefined;
 }
 
-function normalizeRssItem(item: DeepPartial<Rss.Item<string>>): NormalizedItem {
+function normalizeRssItem(item: RssFeed.Item<string>): NormalizedItem {
   return {
     id: item.guid?.value || item.link || '',
     title: item.title,
@@ -35,7 +34,7 @@ function normalizeRssItem(item: DeepPartial<Rss.Item<string>>): NormalizedItem {
   };
 }
 
-function normalizeAtomEntry(entry: DeepPartial<Atom.Entry<string>>): NormalizedItem {
+function normalizeAtomEntry(entry: AtomFeed.Entry<string>): NormalizedItem {
   const explicitLink =
     entry.links?.find(l => !l.rel || l.rel === 'alternate')?.href ?? entry.links?.[0]?.href;
   // Some Atom feeds (e.g. Environment and Climate Change Canada's earthquake alerts) omit <link>
@@ -46,11 +45,13 @@ function normalizeAtomEntry(entry: DeepPartial<Atom.Entry<string>>): NormalizedI
   const link = explicitLink ?? (entry.id && /^https?:\/\//.test(entry.id) ? entry.id : undefined);
   return {
     id: entry.id || link || '',
-    title: entry.title,
+    // feedsmith v3 wraps Atom's title/summary/content in a {value, type?, xml?} object
+    // (to carry the type="html"/"xhtml" attribute) instead of a plain string - unwrap it.
+    title: entry.title?.value,
     link,
     date: entry.published ?? entry.updated,
-    description: entry.summary,
-    content: entry.content,
+    description: entry.summary?.value,
+    content: entry.content?.value,
     imageUrl: undefined,
     geo: extractGeo(entry.georss?.point, entry.geo),
     mappedValues: {},
@@ -58,7 +59,7 @@ function normalizeAtomEntry(entry: DeepPartial<Atom.Entry<string>>): NormalizedI
 }
 
 function normalizeJsonItem(
-  item: DeepPartial<Json.Item<string>>,
+  item: JsonFeed.Item<string>,
   imageField: string | undefined,
   mappedValues: Array<{key: string; value: string}> | undefined,
 ): NormalizedItem {
@@ -85,7 +86,7 @@ function normalizeJsonItem(
   };
 }
 
-function normalizeRdfItem(item: DeepPartial<Rdf.Item<string>>): NormalizedItem {
+function normalizeRdfItem(item: RdfFeed.Item<string>): NormalizedItem {
   return {
     id: item.link || '',
     title: item.title,
