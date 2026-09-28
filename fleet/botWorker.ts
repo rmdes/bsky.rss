@@ -7,6 +7,9 @@ import type {QueueItemRow} from './botStore.ts';
 import {BotOperations, type BotOperationalSnapshot} from './botOperations.ts';
 import {Logger, formatDebugError} from '../shared/logging/logger.ts';
 import type {MarkdownFacet} from '../shared/feedSource/markdownLinks.ts';
+import {checkBotNotifications} from './notificationWatcher.ts';
+
+const NOTIFICATION_CHECK_INTERVAL_MS = 300_000;
 
 export interface BotWorkerOptions {
   botId: string;
@@ -19,12 +22,15 @@ export interface BotWorkerOptions {
   perBotQueueMaxLength: number;
   operations: BotOperations;
   logger: Logger;
+  ntfyUrl?: string;
+  botHandle?: string;
 }
 
 export class BotWorker {
   readonly botId: string;
   private queueRunning = false;
   private intervalHandle: NodeJS.Timeout | null = null;
+  private notificationIntervalHandle: NodeJS.Timeout | null = null;
 
   constructor(private options: BotWorkerOptions) {
     this.botId = options.botId;
@@ -39,15 +45,42 @@ export class BotWorker {
         this.options.logger.debug('QUEUE', formatDebugError(err), this.botId);
       });
     }, this.options.runIntervalSeconds * 1000);
+
+    if (this.options.ntfyUrl) {
+      this.notificationIntervalHandle = setInterval(() => {
+        this.checkNotificationsOnce().catch(err => {
+          this.options.logger.summary(
+            'NOTIFY',
+            'Unexpected error checking notifications',
+            this.botId,
+          );
+          this.options.logger.debug('NOTIFY', formatDebugError(err), this.botId);
+        });
+      }, NOTIFICATION_CHECK_INTERVAL_MS);
+    }
+  }
+
+  async checkNotificationsOnce(): Promise<void> {
+    if (!this.options.ntfyUrl) return;
+    await checkBotNotifications({
+      botId: this.botId,
+      botHandle: this.options.botHandle ?? this.botId,
+      bskyClient: this.options.bskyClient,
+      store: this.options.store,
+      ntfyUrl: this.options.ntfyUrl,
+      logger: this.options.logger,
+    });
   }
 
   stop(): void {
     if (this.intervalHandle) clearInterval(this.intervalHandle);
+    if (this.notificationIntervalHandle) clearInterval(this.notificationIntervalHandle);
   }
 
   async shutdown(timeoutMs: number): Promise<void> {
     this.options.feedReader.stop();
     if (this.intervalHandle) clearInterval(this.intervalHandle);
+    if (this.notificationIntervalHandle) clearInterval(this.notificationIntervalHandle);
     await this.waitForDrainToFinish(timeoutMs);
     this.options.store.close();
   }
