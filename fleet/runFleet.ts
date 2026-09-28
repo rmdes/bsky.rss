@@ -30,6 +30,7 @@ async function buildWorker(
   freshnessConfig: FreshnessConfig,
   perBotQueueMaxLength: number,
   identityStore: BotStore,
+  ntfyUrl: string | undefined,
 ): Promise<BotWorker> {
   const store = new BotStore(spec.dbPath);
   try {
@@ -59,6 +60,8 @@ async function buildWorker(
       perBotQueueMaxLength,
       operations,
       logger,
+      ntfyUrl,
+      botHandle: spec.identifier,
     });
     await worker.start();
     return worker;
@@ -100,6 +103,7 @@ async function main(): Promise<void> {
   const lockFilePath = process.env.FLEET_LOCK_PATH ?? './data/fleet/fleet.pid';
   const shutdownPerBotTimeoutMs = Number(process.env.FLEET_SHUTDOWN_PER_BOT_TIMEOUT_MS ?? '10000');
   const shutdownOverallTimeoutMs = Number(process.env.FLEET_SHUTDOWN_OVERALL_TIMEOUT_MS ?? '30000');
+  const ntfyUrl = process.env.NTFY_URL;
 
   acquireLock(lockFilePath);
   process.on('exit', () => releaseLock(lockFilePath));
@@ -110,6 +114,10 @@ async function main(): Promise<void> {
   for (const error of errors) {
     logger.summary('CONFIG', 'Config invalid', error.botId);
     logger.debug('CONFIG', formatDebugError(error.error), error.botId);
+  }
+
+  if (!ntfyUrl) {
+    logger.summary('FLEET', 'NTFY_URL not set - reply/mention/quote notifications disabled');
   }
 
   const identityStores = new Map<string, BotStore>();
@@ -142,6 +150,7 @@ async function main(): Promise<void> {
         fleetConfig.freshness,
         fleetConfig.perBotQueueMaxLength,
         getIdentityStore(spec.identifier),
+        ntfyUrl,
       );
     },
   });
