@@ -31,15 +31,26 @@ is seen - never twice for the same one, even across process restarts.
 
 ### Where it runs
 
-Inside the existing fleet process (`fleet/runFleet.ts`), as a new periodic task alongside the
-already-existing hourly identity-store cleanup interval. It reuses each bot's already-authenticated
-`BskyClient` session - no new login/credential handling, no new failure mode for the posting
-pipeline to worry about, since this task is purely read-only against the Bluesky API.
+Inside the existing fleet process, owned by `BotWorker` (`fleet/botWorker.ts`) rather than
+scheduled centrally from `runFleet.ts`. `AuthCoordinator.start()` already activates bots
+sequentially - a `for` loop that `await`s `activateBot(spec)` then sleeps `staggerSeconds` before
+the next one - so a `setInterval` started inside `BotWorker.start()` (called at the end of each
+bot's `activateBot`) is staggered across the fleet for free, the same way the existing posting-drain
+interval already is. No separate stagger computation is needed. `BotWorker` already holds the
+`bskyClient` reference and the exact `start()`/`stop()`/`shutdown()` lifecycle this needs, so it's
+the natural owner rather than a new top-level scheduling concern in `runFleet.ts`.
 
-### New module: `fleet/mentionWatcher.ts`
+It reuses each bot's already-authenticated `BskyClient` session - no new login/credential handling,
+no new failure mode for the posting pipeline to worry about, since this task is purely read-only
+against the Bluesky API.
 
-One function, `checkBotNotifications(botId, bskyClient, store, ntfyUrl, logger)`, called on a
-per-bot timer. Responsibilities:
+### New module: `fleet/notificationWatcher.ts`
+
+Pure orchestration logic, separate from `BotWorker` itself - matching the existing split between
+`BotWorker` (owns timing/lifecycle) and `freshnessPolicy.ts` (pure decision logic `BotWorker` calls
+into). One function, `checkBotNotifications(params: {botId, bskyClient, store, ntfyUrl, logger})`,
+called from a second `setInterval` inside `BotWorker.start()` (independent of the existing
+posting-drain interval). Responsibilities:
 
 1. Call `bskyClient.listNotifications({reasons: ['reply', 'mention', 'quote']})` (new method on
    `BskyClient`, see below).
@@ -76,20 +87,31 @@ async listNotifications(
   limit = 50,
 ): Promise<
   | {ok: true; notifications: AppBskyNotificationListNotifications.Notification[]}
-  | {ok: false}
+  | {ok: false; ratelimit: boolean; retryAfterSeconds: number}
 > {
   try {
     const result = await this.agent.app.bsky.notification.listNotifications({reasons, limit});
     return {ok: true, notifications: result.data.notifications};
   } catch (error) {
     this.logger.debug('NOTIFY', `listNotifications failed\n${formatDebugError(error)}`, this.botId);
-    return {ok: false};
+    return {ok: false, ...classifyPostError(error)};
   }
 }
 ```
 
 Matches `post()`'s existing style: never throws, returns a result the caller branches on. The
 raw agent stays private to the class, consistent with the rest of `BskyClient`.
+
+**Rate limits.** Bluesky's documented global limit is 3000 requests/5min per IP (record-creation
+limits - 1,666/hour per account - don't apply here since this is a read call); at 60 bots checking
+once per 5 minutes, staggered, this adds well under 60 requests/5min fleet-wide, far below that
+ceiling. The one thing worth handling deliberately is a 429 (`RateLimitExceeded`) actually
+happening - `classifyPostError` (despite its name, generic: it only inspects an `XRPCError`'s
+status and `retry-after` header, nothing post-specific) already does exactly this and is reused
+verbatim rather than duplicated. On a classified rate limit, `notificationWatcher.ts` logs at
+`summary` (not `debug`, unlike other listNotifications failures - a sustained rate limit across the
+fleet is worth surfacing) and skips this bot's check for the cycle; the existing 5-minute interval
+is already coarser than any observed `retry-after` value, so no separate backoff timer is added.
 
 ### `BotStore` changes (`fleet/botStore.ts`)
 
@@ -108,13 +130,12 @@ Identical shape to the existing `seen_items` table. Reuses `writeSeenValue`/`see
 `cleanupOldSeenValues` verbatim by parameterizing those methods' table name (currently hardcoded
 to `seen_items`) - the only change needed to the existing methods.
 
-### Scheduling (`fleet/runFleet.ts`)
+### Scheduling (`fleet/botWorker.ts`)
 
-Each bot's notification check runs on its own 5-minute interval, staggered across that 5-minute
-window the same way `AuthCoordinator` staggers logins - bot *N* (0-indexed) of 60 starts its
-first check at `(N / 60) * 300` seconds after fleet startup, then repeats every 300 seconds. This
-spreads 60 accounts' worth of `listNotifications` calls evenly instead of firing them all in the
-same instant every 5 minutes.
+Each bot's notification check runs on its own 5-minute interval, started inside `BotWorker.start()`
+at the moment that bot activates. Since `AuthCoordinator.start()` activates bots sequentially
+(sleeping `staggerSeconds` between each), bot *N*'s interval naturally starts `staggerSeconds`
+after bot *N-1*'s - no computed offset needed, the existing activation order does the spreading.
 
 ### Message format
 
@@ -129,24 +150,27 @@ Headers:
 - `X-Tags`: `speech_balloon` (reply) / `loudspeaker` (mention) / `repeat` (quote) - one glance at
   the notification list tells you the type without opening it.
 - `X-Actions`: a `view` action button labeled "Open original post", linking to
-  `https://bsky.app/profile/{bot's handle}/post/{rkey extracted from notification.reasonSubject}`
-  - only added when `reasonSubject` is present (it's optional in the schema; present for
-  reply/mention referencing a specific post, may be absent for some mention shapes).
+  `https://bsky.app/profile/{did}/post/{rkey}` derived directly from `notification.reasonSubject`'s
+  own AT-URI (`at://{did}/{collection}/{rkey}`) - only added when `reasonSubject` is present (it's
+  optional in the schema; present for reply/mention referencing a specific post, may be absent for
+  some mention shapes). Using the DID embedded in the AT-URI itself means no separate lookup of the
+  bot's handle is needed; bsky.app resolves a DID in a profile URL identically to a handle.
 
 ### Configuration
 
 New env var, `NTFY_URL` (matching the existing `bsky_queue_monitor.py` convention), e.g.
 `https://ntfy.rmendes.net/skyfleet` - a plain `POST` to this URL is all ntfy needs
 (`curl -d "Hi" https://ntfy.rmendes.net/skyfleet`), enrichment headers ride alongside the same
-request. Read once at fleet startup; if unset, the notification watcher logs a summary line and
-does not start (fleet posting itself is unaffected - this is purely additive, optional tooling).
+request. Read once in `runFleet.ts`'s `main()` and threaded through `buildWorker()` into each
+`BotWorker`; if unset, no bot starts a notification-check interval (fleet posting itself is
+unaffected - this is purely additive, optional tooling).
 
 ## Data flow
 
 ```
-Every 5 min (staggered per bot):
+Every 5 min (staggered per bot, independent of the posting-drain interval):
   BotWorker's own posting cycle  <-- unaffected, entirely separate timer
-  mentionWatcher tick for this bot:
+  notificationWatcher tick for this bot:
     bskyClient.listNotifications(['reply','mention','quote'])
       -> for each notification (newest-to-oldest, as returned):
            already in notified_items? -> skip
@@ -160,22 +184,28 @@ Every 5 min (staggered per bot):
 - `listNotifications` itself failing (network, auth) - logged at `debug`, that bot's check is
   skipped for this cycle, retried on the next one. No different from any other transient network
   failure already tolerated elsewhere in the fleet.
+- `listNotifications` classified as rate-limited (429/504, via the same `classifyPostError` logic
+  `post()` already uses) - logged at `summary` (worth surfacing if it starts happening across the
+  fleet), skipped for this cycle. The existing 5-minute interval already exceeds any observed
+  `retry-after` value, so no separate backoff timer is needed.
 - ntfy POST failing - per-notification, logged at `debug`, not recorded as sent, retried next
   cycle (see above).
-- `NTFY_URL` unset - watcher doesn't start at all, one `summary`-level log line at fleet startup.
-  Fleet posting is entirely unaffected either way.
+- `NTFY_URL` unset - no bot starts its notification-check interval; one `summary`-level log line
+  at fleet startup. Fleet posting is entirely unaffected either way.
 
 ## Testing
 
-- `mentionWatcher.test.ts`: unit tests for the dedup logic (skip already-sent, record only after
-  a successful ntfy POST, one failed send doesn't block the rest of the batch, a failed send is
-  retried on the next call) using a fake `BskyClient` and fake `fetch` for ntfy, matching this
-  codebase's existing fake-based unit test style (`botWorker.test.ts`'s `FakeBskyClient`/
-  `FakeBotStore`).
-- `bskyClient.test.ts`: a couple of new cases for `listNotifications`'s `{ok: true/false}`
+- `notificationWatcher.test.ts`: unit tests for the dedup logic (skip already-sent, record only
+  after a successful ntfy POST, one failed send doesn't block the rest of the batch, a failed send
+  is retried on the next call, a rate-limited `listNotifications` is logged and skipped without
+  recording anything) using a fake `BskyClient` and fake `fetch` for ntfy, matching this codebase's
+  existing fake-based unit test style (`botWorker.test.ts`'s `FakeBskyClient`/`FakeBotStore`).
+- `bskyClient.test.ts`: new cases for `listNotifications`'s `{ok: true}` / `{ok: false, ratelimit}`
   branches, matching the existing `post()`/`login()` test coverage style.
 - `botStore.test.ts`: confirm `notified_items` behaves identically to `seen_items` (write, read,
   cleanup) once the table-name parameterization lands.
+- `botWorker.test.ts`: confirm the notification-check interval starts/stops/clears alongside the
+  existing posting-drain interval, and that it's simply absent when `ntfyUrl` is undefined.
 
 ## Documentation
 
@@ -188,8 +218,8 @@ fleet-level operational infrastructure):
   `NTFY_URL` is, the 5-minute check interval, what triggers a notification (reply/mention/quote),
   and that it's optional (fleet posting works identically whether it's set or not).
 - `CLAUDE.md`'s Fleet mode section: one line alongside the existing `AuthCoordinator`/
-  `fleet/status.ts` bullets, naming `fleet/mentionWatcher.ts` and its purpose - matching how that
-  section already introduces every other fleet module in one sentence each.
+  `fleet/status.ts` bullets, naming `fleet/notificationWatcher.ts` and its purpose - matching how
+  that section already introduces every other fleet module in one sentence each.
 
 `documentation/DEPLOYMENT.md` doesn't apply - it covers single-bot-mode deployment platforms
 (Railway, Render, etc.), not fleet-mode's own env vars, which live entirely in `fleet.md`.
