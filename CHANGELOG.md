@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.4] - 2026-09-28
+
+### Fixed
+- `feedsmith` v3 wraps Atom's `title`/`summary`/`content` in a `{value, type?, xml?}` object
+  instead of returning a plain string (to carry the `type="html"`/`"xhtml"` attribute). The
+  normalize step wasn't updated for this, so `$title` (and other placeholders) substituted the
+  literal text `[object Object]` for any Atom-sourced feed. Fixed at the source: also repaired a
+  type-inference gap (`ParsedFeedResult` losing its `string`-typed dates through a bare
+  `ReturnType<typeof parseFeed>`) that masked the same issue from typecheck.
+
+### Changed
+- Bumped `feedsmith` 2.9.6 → 3.0.0, `@atproto/api` 0.20.42 → 0.20.44, `@atproto/xrpc` 0.8.11 →
+  0.8.13, `dotenv` 17.0.0 → 18.0.0. No other code changes required beyond the fix above; `yarn
+  typecheck`/`yarn test` verified clean against the new versions.
+
+---
+
 ## [2.11.3] - 2026-09-03
 
 ### Changed
