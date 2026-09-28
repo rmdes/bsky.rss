@@ -94,6 +94,64 @@ test('isAlreadyExistsError is deliberately conservative — returns false for an
   assert.equal(isAlreadyExistsError({status: 400, error: 'AlreadyExists'}), false);
 });
 
+function stubListNotifications(
+  client: BskyClient,
+  impl: () => Promise<{data: {notifications: unknown[]}}>,
+): void {
+  (
+    client as unknown as {
+      agent: {app: {bsky: {notification: {listNotifications: typeof impl}}}};
+    }
+  ).agent.app = {bsky: {notification: {listNotifications: impl}}};
+}
+
+test('listNotifications returns ok:true with the raw notifications array on success', async () => {
+  const {client} = makeClient('summary');
+  const fakeNotifications = [
+    {
+      uri: 'at://did:plc:a/app.bsky.feed.post/1',
+      cid: 'c1',
+      author: {did: 'did:plc:a', handle: 'a.bsky.social'},
+      reason: 'reply',
+      record: {text: 'hi'},
+      isRead: false,
+      indexedAt: '2026-09-28T00:00:00.000Z',
+    },
+  ];
+  stubListNotifications(client, async () => ({data: {notifications: fakeNotifications}}));
+
+  const result = await client.listNotifications(['reply', 'mention', 'quote']);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.notifications, fakeNotifications);
+});
+
+test('listNotifications classifies a 429 the same way post() does', async () => {
+  const {client} = makeClient('summary');
+  const err = makeXRPCError(ResponseType.RateLimitExceeded, {'retry-after': '20'});
+  stubListNotifications(client, async () => {
+    throw err;
+  });
+
+  const result = await client.listNotifications(['reply']);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ratelimit, true);
+  assert.equal(result.retryAfterSeconds, 20);
+});
+
+test('listNotifications treats a non-rate-limit error as uncertain, not a rate limit', async () => {
+  const {client} = makeClient('summary');
+  stubListNotifications(client, async () => {
+    throw new Error('network down');
+  });
+
+  const result = await client.listNotifications(['reply']);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ratelimit, false);
+});
+
 // The real AT-Proto TID regex, copied verbatim from @atproto/syntax's tid.ts
 // (TID_REGEX) rather than imported, so this test doesn't depend on an
 // unlisted transitive package - this is the actual server-side validation
