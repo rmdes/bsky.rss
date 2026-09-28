@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.5] - 2026-09-28
+
+### Fixed
+- A fleet bot's cursor could be advanced to a date far in the future by an item whose date
+  reflects something other than when it was published - observed live: a "virtual event" RSS
+  listing set its date to the webinar's scheduled date (2+ months out) rather than the listing's
+  actual publish time. Once posted, the cursor advance silently made every subsequent genuinely
+  new item look "already past" and get dropped without posting - the bot appeared stalled for 11
+  days. `writeCursor()` now skips the cursor advance (the item itself still posts normally) when
+  the item's date is in the future.
+
+---
+
 ## [2.11.4] - 2026-09-28
 
 ### Fixed
