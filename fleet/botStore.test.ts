@@ -374,3 +374,33 @@ test('listSeenValues returns every seen value with its recorded timestamp', t =>
   assert.deepEqual(values, ['https://example.com/a', 'https://example.com/b']);
   assert.ok(rows.every(r => typeof r.seenAt === 'string' && r.seenAt.length > 0));
 });
+
+test('notified_items is a separate table from seen_items, addressed via the table parameter', () => {
+  const {store, dir} = makeStore();
+  store.writeSeenValue('at://did:plc:abc/app.bsky.feed.post/xyz', 'notified_items');
+  assert.equal(store.seenValueExists('at://did:plc:abc/app.bsky.feed.post/xyz', 'notified_items'), true);
+  assert.equal(store.seenValueExists('at://did:plc:abc/app.bsky.feed.post/xyz', 'seen_items'), false);
+  cleanup(store, dir);
+});
+
+test('cleanupOldSeenValues respects the table parameter for notified_items too', () => {
+  const {store, dir} = makeStore();
+  store.writeSeenValue('old-notification-uri', 'notified_items');
+  rawDb(store)
+    .prepare("UPDATE notified_items SET seen_at = ? WHERE value = 'old-notification-uri'")
+    .run(new Date(Date.now() - 100 * 3600 * 1000).toISOString());
+  store.writeSeenValue('recent-notification-uri', 'notified_items');
+
+  store.cleanupOldSeenValues(96, 'notified_items');
+
+  assert.equal(store.seenValueExists('old-notification-uri', 'notified_items'), false);
+  assert.equal(store.seenValueExists('recent-notification-uri', 'notified_items'), true);
+  cleanup(store, dir);
+});
+
+test('existing seen_items callers are unaffected by the new table parameter defaulting', () => {
+  const {store, dir} = makeStore();
+  store.writeSeenValue('unchanged-call-site');
+  assert.equal(store.seenValueExists('unchanged-call-site'), true);
+  cleanup(store, dir);
+});

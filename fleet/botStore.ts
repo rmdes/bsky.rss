@@ -16,6 +16,8 @@ export interface QueueItemRow {
   publishedAt: string | null;
 }
 
+export type SeenTable = 'seen_items' | 'notified_items';
+
 export class BotStore {
   private db: DatabaseSync;
 
@@ -42,6 +44,10 @@ export class BotStore {
         last_item_date TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS seen_items (
+        value TEXT PRIMARY KEY,
+        seen_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS notified_items (
         value TEXT PRIMARY KEY,
         seen_at TEXT NOT NULL
       );
@@ -111,15 +117,15 @@ export class BotStore {
     return row ? row.last_item_date : '';
   }
 
-  seenValueExists(value: string): boolean {
-    const row = this.db.prepare('SELECT 1 FROM seen_items WHERE value = ?').get(value);
+  seenValueExists(value: string, table: SeenTable = 'seen_items'): boolean {
+    const row = this.db.prepare(`SELECT 1 FROM ${table} WHERE value = ?`).get(value);
     return row !== undefined;
   }
 
-  writeSeenValue(value: string): void {
+  writeSeenValue(value: string, table: SeenTable = 'seen_items'): void {
     const now = new Date().toISOString();
     this.db
-      .prepare('INSERT OR IGNORE INTO seen_items (value, seen_at) VALUES (?, ?)')
+      .prepare(`INSERT OR IGNORE INTO ${table} (value, seen_at) VALUES (?, ?)`)
       .run(value, now);
   }
 
@@ -129,9 +135,9 @@ export class BotStore {
       .all() as {value: string; seenAt: string}[];
   }
 
-  cleanupOldSeenValues(maxAgeHours: number): void {
+  cleanupOldSeenValues(maxAgeHours: number, table: SeenTable = 'seen_items'): void {
     const cutoff = new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString();
-    this.db.prepare('DELETE FROM seen_items WHERE seen_at < ?').run(cutoff);
+    this.db.prepare(`DELETE FROM ${table} WHERE seen_at < ?`).run(cutoff);
   }
 
   enqueue(item: {
