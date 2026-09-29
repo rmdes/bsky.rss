@@ -281,8 +281,9 @@ yarn fleet:broadcast --yes        # skips the confirmation prompt
 
 ### Running it against a real deployment
 
-Production runs from a pulled image with no source checkout (see "Docker (Recommended for
-self-hosting)" above) - this script needs a real TypeScript checkout to edit and run, so keep a
+Production runs from a pulled image with no source checkout (see the main `README.md`'s "Docker
+(Recommended for self-hosting)" section) - this script needs a real TypeScript checkout to edit
+and run, so keep a
 separate git clone of this repo on the deployment host purely for running admin scripts like
 this one. It doesn't replace or interfere with the docker-compose deployment; it just needs to
 point at the same `config`/`secrets`/`data` directories the running container already mounts:
