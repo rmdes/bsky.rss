@@ -149,8 +149,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  const ogResult = await scrapeOpenGraph(LINK);
-  const embed = buildBroadcastEmbed(ogResult, LINK);
   const dedupeKey = broadcastDedupeKey(MESSAGE, LINK);
   const title = `Broadcast: ${MESSAGE.slice(0, 40)}`;
   const content = buildBroadcastContent(MESSAGE, LINK);
@@ -161,6 +159,11 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
+
+  // Checked before the Open Graph scrape - an over-length message shouldn't cost a real
+  // network request before the script tells the operator to fix it.
+  const ogResult = await scrapeOpenGraph(LINK);
+  const embed = buildBroadcastEmbed(ogResult, LINK);
 
   console.log(`Message: ${MESSAGE}`);
   console.log(`Link: ${LINK}`);
