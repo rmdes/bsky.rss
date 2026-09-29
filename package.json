@@ -20,6 +20,7 @@
     "fleet": "NODE_NO_WARNINGS=1 tsx ./fleet/runFleet.ts",
     "fleet:status": "NODE_NO_WARNINGS=1 tsx ./fleet/status.ts",
     "fleet:log": "NODE_NO_WARNINGS=1 tsx ./fleet/logControl.ts",
+    "fleet:broadcast": "NODE_NO_WARNINGS=1 tsx ./fleet/broadcast.ts",
     "fleet:clean": "rm -rf data/fleet/*/state.sqlite data/fleet/*/state.sqlite-*",
     "docker": "bash release.sh",
     "docker:build": "docker build -t bsky-rss:dev .",

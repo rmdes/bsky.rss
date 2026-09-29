@@ -1,5 +1,8 @@
 import {createHash} from 'node:crypto';
+import {createInterface} from 'node:readline/promises';
+import og from 'open-graph-scraper';
 import type {BotSpec} from './configLoader.ts';
+import {loadFleet} from './configLoader.ts';
 import type {ParsedEmbed} from './feedReader.ts';
 import {BotStore} from './botStore.ts';
 
@@ -78,4 +81,111 @@ export function enqueueBroadcast(
     dedupeKey: params.dedupeKey,
   });
   return id === 0 ? 'duplicate' : 'enqueued';
+}
+
+// Operator edits these three before running `yarn fleet:broadcast`. MESSAGE and LINK are
+// hashed together into this run's dedupeKey (see broadcastDedupeKey) - editing either one
+// after a previous run means every bot treats it as a new broadcast, not a duplicate.
+const MESSAGE = 'Edit this message before running.';
+const LINK = 'https://example.com/announcement';
+const EXCLUDE_BOT_IDS: string[] = [];
+
+const DEFAULT_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+async function scrapeOpenGraph(link: string): Promise<OpenGraphResult | undefined> {
+  try {
+    const response = await og({
+      url: link,
+      timeout: 10,
+      fetchOptions: {headers: {'user-agent': DEFAULT_USER_AGENT}},
+    });
+    return response.error ? undefined : (response.result as OpenGraphResult);
+  } catch {
+    // og() can throw directly (e.g. a malformed URL) in addition to returning error:true -
+    // either way, no embed; the broadcast still posts as plain text with an auto-detected link.
+    return undefined;
+  }
+}
+
+async function main(): Promise<void> {
+  const dryRun = process.argv.includes('--dry-run');
+  const skipConfirm = process.argv.includes('--yes');
+
+  const configRoot = process.env.FLEET_CONFIG_ROOT ?? './config.example';
+  const secretsFilePath =
+    process.env.FLEET_SECRETS_PATH ?? './config.example/secrets/bsky-fleet.json';
+  const dataRoot = process.env.FLEET_DATA_ROOT ?? './data/fleet';
+
+  const {bots, errors} = loadFleet(configRoot, secretsFilePath, dataRoot);
+  if (errors.length > 0) {
+    console.log(`Warning: ${errors.length} bot config(s) failed to load and will be skipped.`);
+  }
+
+  const targets = targetBots(bots, EXCLUDE_BOT_IDS);
+  if (targets.length === 0) {
+    console.log('No target bots (empty fleet, or all excluded). Nothing to do.');
+    return;
+  }
+
+  const ogResult = await scrapeOpenGraph(LINK);
+  const embed = buildBroadcastEmbed(ogResult, LINK);
+  const dedupeKey = broadcastDedupeKey(MESSAGE, LINK);
+  const title = `Broadcast: ${MESSAGE.slice(0, 40)}`;
+
+  console.log(`Message: ${MESSAGE}`);
+  console.log(`Link: ${LINK}`);
+  console.log(
+    embed
+      ? `Embed: "${embed.title}"${embed.imageUrl ? ' (with image)' : ' (no image)'}`
+      : 'No embed (Open Graph scrape failed or produced no title) - link will still be clickable.',
+  );
+  console.log(`Targets (${targets.length}): ${targets.map(b => b.botId).join(', ')}`);
+
+  if (dryRun) {
+    console.log('\n--dry-run: stopping before any writes.');
+    return;
+  }
+
+  if (!skipConfirm) {
+    const rl = createInterface({input: process.stdin, output: process.stdout});
+    const answer = await rl.question('\nType BROADCAST to continue: ');
+    rl.close();
+    if (answer.trim() !== 'BROADCAST') {
+      console.log('Aborted - no changes made.');
+      return;
+    }
+  }
+
+  const enqueued: string[] = [];
+  const duplicate: string[] = [];
+  const failed: string[] = [];
+  for (const bot of targets) {
+    let store: BotStore | undefined;
+    try {
+      store = new BotStore(bot.dbPath);
+      const outcome = enqueueBroadcast(store, {title, message: MESSAGE, embed, dedupeKey});
+      (outcome === 'enqueued' ? enqueued : duplicate).push(bot.botId);
+    } catch (error) {
+      failed.push(bot.botId);
+      console.error(`${bot.botId}: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      store?.close();
+    }
+  }
+
+  console.log(
+    `\nEnqueued: ${enqueued.length}${enqueued.length ? ` (${enqueued.join(', ')})` : ''}`,
+  );
+  console.log(
+    `Already queued: ${duplicate.length}${duplicate.length ? ` (${duplicate.join(', ')})` : ''}`,
+  );
+  console.log(`Failed: ${failed.length}${failed.length ? ` (${failed.join(', ')})` : ''}`);
+}
+
+if (import.meta.main) {
+  main().catch(error => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
 }
