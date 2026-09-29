@@ -119,12 +119,18 @@ export function enqueueBroadcast(
   return id === 0 ? 'duplicate' : 'enqueued';
 }
 
-// Operator edits these three before running `yarn fleet:broadcast`. MESSAGE and LINK are
-// hashed together into this run's dedupeKey (see broadcastDedupeKey) - editing either one
-// after a previous run means every bot treats it as a new broadcast, not a duplicate.
-const MESSAGE = 'Edit this message before running.';
-const LINK = 'https://example.com/announcement';
-const EXCLUDE_BOT_IDS: string[] = [];
+/**
+ * Splits a comma-separated BROADCAST_EXCLUDE_BOT_IDS value into trimmed, non-empty bot IDs.
+ * Blank/undefined input (the common case - most broadcasts target everyone) is an empty list,
+ * not an error.
+ */
+export function parseExcludeBotIds(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map(id => id.trim())
+    .filter(id => id.length > 0);
+}
 
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -147,6 +153,18 @@ async function scrapeOpenGraph(link: string): Promise<OpenGraphResult | undefine
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry-run');
   const skipConfirm = process.argv.includes('--yes');
+
+  const MESSAGE = process.env.BROADCAST_MESSAGE;
+  const LINK = process.env.BROADCAST_LINK;
+  const EXCLUDE_BOT_IDS = parseExcludeBotIds(process.env.BROADCAST_EXCLUDE_BOT_IDS);
+  if (!MESSAGE || !LINK) {
+    console.error(
+      'Set BROADCAST_MESSAGE and BROADCAST_LINK before running - copy fleet/broadcast.sh.example ' +
+        'to fleet/broadcast.sh (gitignored), edit it, and run that instead of invoking this file directly.',
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   const configRoot = process.env.FLEET_CONFIG_ROOT ?? './config.example';
   const secretsFilePath =

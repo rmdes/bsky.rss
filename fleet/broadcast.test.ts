@@ -10,6 +10,7 @@ import {
   buildBroadcastContent,
   isWithinPostLimit,
   hasExistingDatabase,
+  parseExcludeBotIds,
   enqueueBroadcast,
 } from './broadcast.ts';
 import {BotStore} from './botStore.ts';
@@ -113,6 +114,25 @@ test('isWithinPostLimit accepts a short message, rejects one over 300 graphemes'
   assert.equal(isWithinPostLimit('short message'), true);
   assert.equal(isWithinPostLimit('x'.repeat(301)), false);
   assert.equal(isWithinPostLimit('x'.repeat(300)), true);
+});
+
+test('parseExcludeBotIds splits on commas and trims whitespace', () => {
+  assert.deepEqual(parseExcludeBotIds('bot-a,bot-b, bot-c ,  bot-d'), [
+    'bot-a',
+    'bot-b',
+    'bot-c',
+    'bot-d',
+  ]);
+});
+
+test('parseExcludeBotIds returns an empty list for undefined or blank input', () => {
+  assert.deepEqual(parseExcludeBotIds(undefined), []);
+  assert.deepEqual(parseExcludeBotIds(''), []);
+  assert.deepEqual(parseExcludeBotIds('   '), []);
+});
+
+test('parseExcludeBotIds drops empty entries from stray commas', () => {
+  assert.deepEqual(parseExcludeBotIds('bot-a,,bot-b,'), ['bot-a', 'bot-b']);
 });
 
 function makeStore(): {store: BotStore; dir: string} {

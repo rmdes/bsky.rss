@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Copy this file to fleet/broadcast.sh (gitignored - your real edits never touch git),
+# fill in your message/link below, then run: fleet/broadcast.sh [--dry-run|--yes]
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+export BROADCAST_MESSAGE="Edit this message before running."
+export BROADCAST_LINK="https://example.com/announcement"
+# Comma-separated bot IDs to skip, or leave blank to target every configured bot.
+export BROADCAST_EXCLUDE_BOT_IDS=""
+
+# Point these at your real deployment - see documentation/fleet.md's "Broadcast messages"
+# section for how FLEET_DATA_ROOT relates to the running fleet container's own env var and
+# volume mount (they are not the same string).
+FLEET_CONFIG_ROOT="${FLEET_CONFIG_ROOT:-/path/to/your/deployment/config}" \
+FLEET_SECRETS_PATH="${FLEET_SECRETS_PATH:-/path/to/your/deployment/secrets/bsky-fleet.json}" \
+FLEET_DATA_ROOT="${FLEET_DATA_ROOT:-/path/to/your/deployment/data/fleet}" \
+node_modules/.bin/tsx fleet/broadcast.ts "$@"

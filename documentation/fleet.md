@@ -268,16 +268,28 @@ publishing.
 
 ## Broadcast messages
 
-`fleet/broadcast.ts` (`yarn fleet:broadcast`) posts the same maintenance/support message and
-link to every fleet account at once - for something like "we're aware of an issue with X feed"
-or "brief downtime expected tonight." Edit the `MESSAGE`, `LINK`, and (optionally)
-`EXCLUDE_BOT_IDS` constants directly at the top of `fleet/broadcast.ts`, then run:
+`fleet/broadcast.ts` posts the same maintenance/support message and link to every fleet account
+at once - for something like "we're aware of an issue with X feed" or "brief downtime expected
+tonight." It reads its message from environment variables, not from editing the tracked
+TypeScript file directly - copy the example wrapper script once, edit your real message into
+your own untracked copy, and run that from then on:
 
 ```bash
-yarn fleet:broadcast              # preview, then asks you to type BROADCAST to confirm
-yarn fleet:broadcast --dry-run    # preview only, never writes anything
-yarn fleet:broadcast --yes        # skips the confirmation prompt
+cp fleet/broadcast.sh.example fleet/broadcast.sh   # one-time - fleet/broadcast.sh is gitignored
+chmod +x fleet/broadcast.sh
+$EDITOR fleet/broadcast.sh   # set BROADCAST_MESSAGE, BROADCAST_LINK, and the FLEET_* paths
+
+fleet/broadcast.sh              # preview, then asks you to type BROADCAST to confirm
+fleet/broadcast.sh --dry-run    # preview only, never writes anything
+fleet/broadcast.sh --yes        # skips the confirmation prompt
 ```
+
+`fleet/broadcast.sh` is your own file (gitignored, never committed) - edit `BROADCAST_MESSAGE`/
+`BROADCAST_LINK` directly in it each time, instead of touching `fleet/broadcast.ts`. `git pull`
+in this checkout only ever updates the script's logic, never your message text, so there's
+nothing to reconcile before pulling an update. `BROADCAST_EXCLUDE_BOT_IDS` is a comma-separated
+list of bot IDs to skip (blank targets every configured bot). Running `fleet/broadcast.ts`
+directly without these env vars set refuses to run, with a message pointing at this file.
 
 ### Running it against a real deployment
 
@@ -292,16 +304,17 @@ point at the same `config`/`secrets`/`data` directories the running container al
 # One-time setup on the deployment host:
 git clone https://github.com/rmdes/bsky.rss.git ~/bsky.rss-admin
 cd ~/bsky.rss-admin
-yarn install
+npm install   # or yarn install, if this host has yarn/corepack set up
+cp fleet/broadcast.sh.example fleet/broadcast.sh
+chmod +x fleet/broadcast.sh
+# Edit fleet/broadcast.sh: BROADCAST_MESSAGE/BROADCAST_LINK, and the FLEET_CONFIG_ROOT/
+# FLEET_SECRETS_PATH/FLEET_DATA_ROOT defaults for this specific deployment (see below) -
+# once set correctly here, you won't need to re-set them for future broadcasts.
 
-# Before each broadcast: pull the latest script, edit MESSAGE/LINK, then run it pointed at
-# the real deployment's config/secrets/data (adjust the paths to match your deployment
-# directory's actual layout):
+# Before each broadcast: pull the latest script (never touches your fleet/broadcast.sh),
+# edit BROADCAST_MESSAGE/BROADCAST_LINK in it, then run it:
 git pull
-FLEET_CONFIG_ROOT=/path/to/your/deployment/config \
-FLEET_SECRETS_PATH=/path/to/your/deployment/secrets/bsky-fleet.json \
-FLEET_DATA_ROOT=/path/to/your/deployment/data/fleet \
-yarn fleet:broadcast
+fleet/broadcast.sh
 ```
 
 **Getting `FLEET_DATA_ROOT` right matters - the container's env var and the host path are not
@@ -325,9 +338,9 @@ to go out, and posting isn't instant - expect it within each bot's normal drain 
 immediately when the script exits. `DRY_RUN=true` on the fleet container is respected exactly
 like any other post (logged, not actually published), with no special-casing needed here.
 
-Re-running the script with the exact same `MESSAGE`/`LINK` is safe - each bot's queue dedupes
-by a hash of the message+link, so nothing gets posted twice. Editing the text is treated as a
-genuinely new broadcast.
+Re-running the script with the exact same `BROADCAST_MESSAGE`/`BROADCAST_LINK` is safe - each
+bot's queue dedupes by a hash of the message+link, so nothing gets posted twice. Editing the
+text is treated as a genuinely new broadcast.
 
 If a target bot's fleet process doesn't drain the broadcast within its configured
 `maxItemAgeMinutes` (see the `freshness` section of `fleet.json` - 120 minutes in the example
