@@ -16,10 +16,10 @@ import {
 import {BotStore} from './botStore.ts';
 import type {BotSpec} from './configLoader.ts';
 
-function makeBotSpec(botId: string): BotSpec {
+function makeBotSpec(botId: string, identifier = `${botId}.bsky.social`): BotSpec {
   return {
     botId,
-    identifier: `${botId}.bsky.social`,
+    identifier,
     appPassword: 'unused-in-this-test',
     instanceUrl: 'https://bsky.social',
     feedUrl: 'https://example.com/feed.xml',
@@ -65,6 +65,26 @@ test('targetBots excluding a nonexistent bot ID is a no-op, not an error', () =>
   assert.deepEqual(
     targetBots(all, ['does-not-exist']).map(b => b.botId),
     ['a'],
+  );
+});
+
+test('targetBots keeps only the first bot config per shared Bluesky identity', () => {
+  // Advanced setups can point several bot configs (different feeds) at one shared Bluesky
+  // account - since a broadcast's rkey is deterministic from the message hash, every config
+  // sharing an identity would otherwise attempt to create the exact same record on the exact
+  // same account, and Bluesky correctly rejects every attempt after the first. This is a no-op
+  // for the common case (every bot has its own distinct identity) - nothing gets filtered.
+  const all = [
+    makeBotSpec('news-en', 'shared-account.bsky.social'),
+    makeBotSpec('news-fr', 'shared-account.bsky.social'),
+    makeBotSpec('news-es', 'shared-account.bsky.social'),
+    makeBotSpec('sports-fr', 'sports-account.bsky.social'),
+    makeBotSpec('sports-en', 'sports-account.bsky.social'),
+    makeBotSpec('solo-bot', 'solo-bot.bsky.social'),
+  ];
+  assert.deepEqual(
+    targetBots(all, []).map(b => b.botId),
+    ['news-en', 'sports-fr', 'solo-bot'],
   );
 });
 

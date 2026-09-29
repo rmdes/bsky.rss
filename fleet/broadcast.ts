@@ -20,13 +20,33 @@ export function broadcastDedupeKey(message: string, link: string): string {
   return `broadcast:${hash}`;
 }
 
-/** Every loaded bot's spec, minus any explicitly excluded botId. */
+/**
+ * Every loaded bot's spec, minus any explicitly excluded botId, and deduplicated so at most one
+ * config per distinct Bluesky identity survives (keeping the first one encountered). This is a
+ * no-op for the common case (one bot config, one distinct identity) - nothing gets filtered.
+ * It matters for advanced setups that point several bot configs (different feeds) at one
+ * shared Bluesky account: since a broadcast's rkey is deterministic from the message hash,
+ * every config sharing an identity would otherwise attempt to create the exact same record on
+ * the exact same account. Bluesky correctly rejects every attempt after the first, and this
+ * codebase's isAlreadyExistsError is deliberately conservative (never recognizes that
+ * collision as "already posted" - see its own doc comment in bskyClient.ts), so the rejected
+ * attempts would show up as misleading "uncertain" failures instead of the successes they
+ * actually represent - observed live on a fleet with several such shared-identity setups.
+ */
 export function targetBots(
   allBots: readonly BotSpec[],
   excludeBotIds: readonly string[],
 ): BotSpec[] {
   const excluded = new Set(excludeBotIds);
-  return allBots.filter(bot => !excluded.has(bot.botId));
+  const seenIdentifiers = new Set<string>();
+  const targets: BotSpec[] = [];
+  for (const bot of allBots) {
+    if (excluded.has(bot.botId)) continue;
+    if (seenIdentifiers.has(bot.identifier)) continue;
+    seenIdentifiers.add(bot.identifier);
+    targets.push(bot);
+  }
+  return targets;
 }
 
 /**

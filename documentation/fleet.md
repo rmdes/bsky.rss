@@ -342,6 +342,13 @@ Re-running the script with the exact same `BROADCAST_MESSAGE`/`BROADCAST_LINK` i
 bot's queue dedupes by a hash of the message+link, so nothing gets posted twice. Editing the
 text is treated as a genuinely new broadcast.
 
+If you run multiple bot configs against one shared Bluesky account (an advanced setup - e.g.
+several different feeds all posting to the same account), the target list only includes the
+first config per distinct account, not every config - posting the identical broadcast from two
+configs sharing one account would otherwise have the second attempt correctly rejected by
+Bluesky as a duplicate, surfacing as a misleading "uncertain" failure. This has no effect if
+every bot config already has its own distinct account, which is the common case.
+
 If a target bot's fleet process doesn't drain the broadcast within its configured
 `maxItemAgeMinutes` (see the `freshness` section of `fleet.json` - 120 minutes in the example
 config), the item is silently marked skipped and never posts on that bot. A re-run reports it as
