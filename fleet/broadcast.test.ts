@@ -128,7 +128,13 @@ test('enqueueBroadcast writes a real queued row and reports "enqueued"', () => {
 test('enqueueBroadcast with an embed serializes it into embedJson', () => {
   const {store, dir} = makeStore();
   try {
-    const embed = {uri: 'https://example.com', title: 'T', description: undefined, imageUrl: undefined, imageAlt: undefined};
+    const embed = {
+      uri: 'https://example.com',
+      title: 'T',
+      description: undefined,
+      imageUrl: undefined,
+      imageAlt: undefined,
+    };
     enqueueBroadcast(store, {
       title: 'Broadcast: test',
       message: 'msg',
@@ -150,8 +156,18 @@ test('enqueueBroadcast reports "duplicate" for a repeated dedupeKey, without add
   const {store, dir} = makeStore();
   try {
     const dedupeKey = broadcastDedupeKey('msg', 'https://example.com');
-    const first = enqueueBroadcast(store, {title: 't', message: 'msg', embed: undefined, dedupeKey});
-    const second = enqueueBroadcast(store, {title: 't', message: 'msg', embed: undefined, dedupeKey});
+    const first = enqueueBroadcast(store, {
+      title: 't',
+      message: 'msg',
+      embed: undefined,
+      dedupeKey,
+    });
+    const second = enqueueBroadcast(store, {
+      title: 't',
+      message: 'msg',
+      embed: undefined,
+      dedupeKey,
+    });
     assert.equal(first, 'enqueued');
     assert.equal(second, 'duplicate');
     assert.equal(store.listQueued().length, 1);
