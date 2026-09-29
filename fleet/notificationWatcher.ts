@@ -12,9 +12,12 @@ const BODY_TRUNCATE_LENGTH = 200;
 
 // A notification older than this is not worth pushing — it's either already handled or long
 // past the point where a same-day operator response matters (see design spec's "catch a
-// reclamation quickly" framing). Must stay well inside cleanupOldSeenValues' 96h prune window
-// (checked below) so a notification can never be pruned from notified_items while it's still
-// within this cutoff — that interaction is exactly what caused the old repeating-resend bug.
+// reclamation quickly" framing). Must stay well inside the 96h prune window passed to
+// cleanupOldSeenValues() below so a notification can never be pruned from notified_items while
+// it's still within this cutoff — that interaction is exactly what caused the old
+// repeating-resend bug. The two values aren't derived from one shared constant (96h is a
+// fixed, unrelated retention policy this module doesn't own), so a future edit to either one
+// must re-check the other stays clear of it.
 const MAX_NOTIFICATION_AGE_MS = 24 * 3600 * 1000;
 
 const REASON_TAGS: Record<string, string> = {
