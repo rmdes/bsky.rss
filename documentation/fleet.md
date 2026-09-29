@@ -234,6 +234,13 @@ notification URIs persists in that bot's own `state.sqlite`, so a fleet
 restart never resends anything. A failed push (network error, ntfy
 unreachable) is retried on the next 5-minute check rather than lost.
 
+Only the first bot config for a given Bluesky identity actually checks and pushes - if several
+bot configs share one identity (some do; see the identity-dedup design doc), the others stay
+inert for this feature, so a shared account's replies aren't pushed once per config. A
+notification older than 24 hours when first seen is deliberately never pushed at all, even the
+first time `NTFY_URL` is enabled - recent enough to matter for a same-day response is the bar,
+not "found it eventually."
+
 `NTFY_URL` is entirely optional. Leave it unset and fleet posting behaves
 identically; nothing in the posting pipeline depends on it.
 

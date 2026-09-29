@@ -1,9 +1,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {mkdtempSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {atUriToBskyUrl, buildNtfyMessage, checkBotNotifications} from './notificationWatcher.ts';
 import {Logger, type LogRecord} from '../shared/logging/logger.ts';
 import type {BskyClient, ListNotificationsResult} from './bskyClient.ts';
 import type {BotStore} from './botStore.ts';
+import {BotStore as RealBotStore} from './botStore.ts';
 import type {AppBskyNotificationListNotifications} from '@atproto/api';
 
 type Notification = AppBskyNotificationListNotifications.Notification;
@@ -17,7 +21,9 @@ function makeNotification(overrides: Partial<Notification> = {}): Notification {
     reasonSubject: 'at://did:plc:bot/app.bsky.feed.post/original1',
     record: {text: 'hello there'},
     isRead: false,
-    indexedAt: '2026-09-28T00:00:00.000Z',
+    // Fresh by default so tests exercising dedup/logging/etc. aren't incidentally caught by
+    // the age cutoff (MAX_NOTIFICATION_AGE_MS) - tests for that cutoff pass their own indexedAt.
+    indexedAt: new Date().toISOString(),
     ...overrides,
   };
 }
@@ -251,4 +257,102 @@ test('a non-rate-limit listNotifications failure is logged at debug only, sends 
   assert.equal(fetchCalls, 0);
   assert.equal(records.filter(r => r.level === 'summary').length, 0);
   assert.ok(records.some(r => r.level === 'debug'));
+});
+
+test('a notification older than the age cutoff is skipped without being pushed or recorded', async () => {
+  const bskyClient = new FakeBskyClient();
+  const old = makeNotification({
+    uri: 'at://did:plc:replier/app.bsky.feed.post/stale',
+    indexedAt: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), // 25h old
+  });
+  bskyClient.setResult({ok: true, notifications: [old]});
+  const store = new FakeStore();
+  let fetchCalls = 0;
+  const fetchImpl = async () => {
+    fetchCalls++;
+    return new Response(null, {status: 200});
+  };
+  const {logger} = makeLogger();
+
+  await checkBotNotifications({
+    botId: 'b',
+    botHandle: 'b.bsky.social',
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
+    ntfyUrl: 'https://ntfy.example/topic',
+    logger,
+    fetchImpl,
+  });
+
+  assert.equal(fetchCalls, 0);
+  assert.equal(store.seenValueExists(old.uri, 'notified_items'), false);
+});
+
+test('a notification just inside the age cutoff still gets pushed', async () => {
+  const bskyClient = new FakeBskyClient();
+  const recent = makeNotification({
+    uri: 'at://did:plc:replier/app.bsky.feed.post/fresh',
+    indexedAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(), // 1h old
+  });
+  bskyClient.setResult({ok: true, notifications: [recent]});
+  const store = new FakeStore();
+  let fetchCalls = 0;
+  const fetchImpl = async () => {
+    fetchCalls++;
+    return new Response(null, {status: 200});
+  };
+  const {logger} = makeLogger();
+
+  await checkBotNotifications({
+    botId: 'b',
+    botHandle: 'b.bsky.social',
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
+    ntfyUrl: 'https://ntfy.example/topic',
+    logger,
+    fetchImpl,
+  });
+
+  assert.equal(fetchCalls, 1);
+  assert.equal(store.seenValueExists(recent.uri, 'notified_items'), true);
+});
+
+test('a real BotStore: a notification stale enough to be near the 96h prune window is still just skipped by the age cutoff, never resent', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'notificationwatcher-test-'));
+  const store = new RealBotStore(join(dir, 'state.sqlite'));
+  try {
+    const bskyClient = new FakeBskyClient();
+    const stale = makeNotification({
+      uri: 'at://did:plc:replier/app.bsky.feed.post/near-prune',
+      indexedAt: new Date(Date.now() - 90 * 3600 * 1000).toISOString(), // 90h old — inside the 96h prune window, but far past the 24h age cutoff
+    });
+    bskyClient.setResult({ok: true, notifications: [stale]});
+    let fetchCalls = 0;
+    const fetchImpl = async () => {
+      fetchCalls++;
+      return new Response(null, {status: 200});
+    };
+    const {logger} = makeLogger();
+    const params = {
+      botId: 'b',
+      botHandle: 'b.bsky.social',
+      bskyClient: bskyClient as unknown as BskyClient,
+      store,
+      ntfyUrl: 'https://ntfy.example/topic',
+      logger,
+      fetchImpl,
+    };
+
+    // Run it twice, simulating two separate 5-minute checks — the old bug would have
+    // recorded it as seen after a first successful send, then re-sent it once that record
+    // was pruned. With the age cutoff, it's never sent in the first place, on either call.
+    await checkBotNotifications(params);
+    await checkBotNotifications(params);
+
+    assert.equal(fetchCalls, 0, 'a 90h-old notification must never be pushed, on any call');
+    assert.equal(store.seenValueExists(stale.uri, 'notified_items'), false);
+  } finally {
+    store.close();
+    rmSync(dir, {recursive: true, force: true});
+  }
 });

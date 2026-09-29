@@ -10,6 +10,13 @@ const NTFY_TIMEOUT_MS = 10_000;
 const NOTIFIED_TABLE = 'notified_items' as const;
 const BODY_TRUNCATE_LENGTH = 200;
 
+// A notification older than this is not worth pushing — it's either already handled or long
+// past the point where a same-day operator response matters (see design spec's "catch a
+// reclamation quickly" framing). Must stay well inside cleanupOldSeenValues' 96h prune window
+// (checked below) so a notification can never be pruned from notified_items while it's still
+// within this cutoff — that interaction is exactly what caused the old repeating-resend bug.
+const MAX_NOTIFICATION_AGE_MS = 24 * 3600 * 1000;
+
 const REASON_TAGS: Record<string, string> = {
   reply: 'speech_balloon',
   mention: 'loudspeaker',
@@ -79,6 +86,8 @@ export async function checkBotNotifications(params: CheckBotNotificationsParams)
   }
 
   for (const notification of result.notifications ?? []) {
+    const ageMs = Date.now() - new Date(notification.indexedAt).getTime();
+    if (ageMs > MAX_NOTIFICATION_AGE_MS) continue;
     if (store.seenValueExists(notification.uri, NOTIFIED_TABLE)) continue;
 
     const message = buildNtfyMessage(botHandle, notification);
