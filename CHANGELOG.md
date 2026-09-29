@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.13.0] - 2026-09-29
+
+### Added
+- **Fleet broadcast tool**: `fleet/broadcast.ts` (`yarn fleet:broadcast`) lets the operator post
+  the same maintenance/support message + link to every fleet account at once, without flooding
+  the Bluesky API - it writes one row into each target bot's existing posting queue (the same
+  `queue_items` table and `BotStore.enqueue()` method regular RSS items use), and each bot's
+  already-running fleet process posts it on its own next drain tick, at its own already-tuned
+  pace. Edit `MESSAGE`/`LINK`/`EXCLUDE_BOT_IDS` directly in the file, then run
+  `yarn fleet:broadcast` (previews and asks for a typed confirmation), `--dry-run` (preview
+  only), or `--yes` (skip confirmation). Re-running with unchanged text is a safe no-op per bot.
+  An Open Graph card is scraped once (not once per account) and attached when the link has a
+  usable title. See `documentation/fleet.md`'s "Broadcast messages" section.
+
+---
+
 ## [2.12.0] - 2026-09-29
 
 ### Added
