@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {createInterface} from 'node:readline/promises';
+import {RichText} from '@atproto/api';
 import og from 'open-graph-scraper';
 import type {BotSpec} from './configLoader.ts';
 import {loadFleet} from './configLoader.ts';
@@ -57,6 +58,26 @@ export function buildBroadcastEmbed(
     imageUrl: ogResult.ogImage?.[0]?.url,
     imageAlt: undefined,
   };
+}
+
+/**
+ * The actual text to post: the message plus the link, always - never relying on the embed
+ * card alone to carry the link, since the embed can be (and often is) absent when the Open
+ * Graph scrape fails or the page has no title. RichText.detectFacets() auto-links the URL
+ * from this text at post time (existing BskyClient.post() behavior, unchanged).
+ */
+export function buildBroadcastContent(message: string, link: string): string {
+  return `${message}\n\n${link}`;
+}
+
+/**
+ * Whether content fits Bluesky's 300-grapheme post limit (the same constraint
+ * fleet/feedReader.ts's own 300-char truncation exists for) - checked here so an over-length
+ * broadcast is caught before confirmation/writes, not discovered as 60 silent per-bot
+ * "skipped" outcomes after the fact.
+ */
+export function isWithinPostLimit(content: string): boolean {
+  return new RichText({text: content}).graphemeLength <= 300;
 }
 
 export type EnqueueBroadcastOutcome = 'enqueued' | 'duplicate';
@@ -132,13 +153,21 @@ async function main(): Promise<void> {
   const embed = buildBroadcastEmbed(ogResult, LINK);
   const dedupeKey = broadcastDedupeKey(MESSAGE, LINK);
   const title = `Broadcast: ${MESSAGE.slice(0, 40)}`;
+  const content = buildBroadcastContent(MESSAGE, LINK);
+  if (!isWithinPostLimit(content)) {
+    console.error(
+      `Message + link is over Bluesky's 300-grapheme limit (${new RichText({text: content}).graphemeLength} graphemes) - shorten MESSAGE before running.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   console.log(`Message: ${MESSAGE}`);
   console.log(`Link: ${LINK}`);
   console.log(
     embed
-      ? `Embed: "${embed.title}"${embed.imageUrl ? ' (with image)' : ' (no image)'}`
-      : 'No embed (Open Graph scrape failed or produced no title) - link will still be clickable.',
+      ? `Embed: "${embed.title}"${embed.imageUrl ? ' (with image)' : ' (no image)'} -> ${embed.uri}`
+      : 'No embed (Open Graph scrape failed or produced no title) - link is still included in the message text.',
   );
   console.log(`Targets (${targets.length}): ${targets.map(b => b.botId).join(', ')}`);
 
@@ -164,7 +193,7 @@ async function main(): Promise<void> {
     let store: BotStore | undefined;
     try {
       store = new BotStore(bot.dbPath);
-      const outcome = enqueueBroadcast(store, {title, message: MESSAGE, embed, dedupeKey});
+      const outcome = enqueueBroadcast(store, {title, message: content, embed, dedupeKey});
       (outcome === 'enqueued' ? enqueued : duplicate).push(bot.botId);
     } catch (error) {
       failed.push(bot.botId);
@@ -178,7 +207,7 @@ async function main(): Promise<void> {
     `\nEnqueued: ${enqueued.length}${enqueued.length ? ` (${enqueued.join(', ')})` : ''}`,
   );
   console.log(
-    `Already queued: ${duplicate.length}${duplicate.length ? ` (${duplicate.join(', ')})` : ''}`,
+    `\nAlready present (queued, published, or skipped previously): ${duplicate.length}${duplicate.length ? ` (${duplicate.join(', ')})` : ''}`,
   );
   console.log(`Failed: ${failed.length}${failed.length ? ` (${failed.join(', ')})` : ''}`);
 }

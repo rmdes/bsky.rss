@@ -7,6 +7,8 @@ import {
   broadcastDedupeKey,
   targetBots,
   buildBroadcastEmbed,
+  buildBroadcastContent,
+  isWithinPostLimit,
   enqueueBroadcast,
 } from './broadcast.ts';
 import {BotStore} from './botStore.ts';
@@ -97,6 +99,19 @@ test('buildBroadcastEmbed returns undefined when the Open Graph result has no ti
     buildBroadcastEmbed({ogDescription: 'no title here'}, 'https://example.com'),
     undefined,
   );
+});
+
+test('buildBroadcastContent always includes the link, regardless of embed presence', () => {
+  assert.equal(
+    buildBroadcastContent('Hello world', 'https://example.com'),
+    'Hello world\n\nhttps://example.com',
+  );
+});
+
+test('isWithinPostLimit accepts a short message, rejects one over 300 graphemes', () => {
+  assert.equal(isWithinPostLimit('short message'), true);
+  assert.equal(isWithinPostLimit('x'.repeat(301)), false);
+  assert.equal(isWithinPostLimit('x'.repeat(300)), true);
 });
 
 function makeStore(): {store: BotStore; dir: string} {
