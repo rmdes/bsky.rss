@@ -266,6 +266,35 @@ minimum pick a private, hard-to-guess topic name rather than a short/predictable
 `NTFY_URL`, `NTFY_TOKEN` is optional - omit it for a topic that allows unauthenticated
 publishing.
 
+## Broadcast messages
+
+`fleet/broadcast.ts` (`yarn fleet:broadcast`) posts the same maintenance/support message and
+link to every fleet account at once - for something like "we're aware of an issue with X feed"
+or "brief downtime expected tonight." Edit the `MESSAGE`, `LINK`, and (optionally)
+`EXCLUDE_BOT_IDS` constants directly at the top of `fleet/broadcast.ts`, then run:
+
+```bash
+yarn fleet:broadcast              # preview, then asks you to type BROADCAST to confirm
+yarn fleet:broadcast --dry-run    # preview only, never writes anything
+yarn fleet:broadcast --yes        # skips the confirmation prompt
+```
+
+It doesn't post anything itself - it writes one row into each target bot's existing queue
+(the same `queue_items` table and `BotStore.enqueue()` method regular RSS items use), and that
+bot's already-running fleet process posts it on its own next drain tick, at its own
+already-tuned pace. This means the fleet process needs to actually be running for the broadcast
+to go out, and posting isn't instant - expect it within each bot's normal drain interval, not
+immediately when the script exits. `DRY_RUN=true` on the fleet container is respected exactly
+like any other post (logged, not actually published), with no special-casing needed here.
+
+Re-running the script with the exact same `MESSAGE`/`LINK` is safe - each bot's queue dedupes
+by a hash of the message+link, so nothing gets posted twice. Editing the text is treated as a
+genuinely new broadcast.
+
+An Open Graph card for `LINK` is scraped once (not once per account) and attached if the page
+has a usable title; if the scrape fails or the link has no title, the message still posts as
+plain text with the link auto-detected into a clickable link, same as any other post.
+
 ## Legacy import
 
 `fleet/importLegacyFleet.ts` migrates an existing per-bot legacy deployment
