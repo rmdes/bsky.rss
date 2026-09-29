@@ -6,6 +6,7 @@ import {spawn, spawnSync} from 'node:child_process';
 import http from 'node:http';
 import {test, type TestContext} from 'node:test';
 import {Logger, type LogRecord} from '../shared/logging/logger.ts';
+import {shouldAssignNotifier} from './runFleet.ts';
 
 function fetchHealth(port: number): Promise<{status: number; ready: boolean}> {
   return new Promise((resolve, reject) => {
@@ -168,4 +169,12 @@ test('shutdown during activation suppresses the contradictory Fleet started summ
     records.map(record => record.message),
     ['Fleet started: 2 active, 1 failed'],
   );
+});
+
+test('shouldAssignNotifier claims an identifier the first time, refuses every time after', () => {
+  const claimed = new Set<string>();
+  assert.equal(shouldAssignNotifier(claimed, 'euwatch.live'), true);
+  claimed.add('euwatch.live');
+  assert.equal(shouldAssignNotifier(claimed, 'euwatch.live'), false);
+  assert.equal(shouldAssignNotifier(claimed, 'other.bsky.social'), true);
 });
