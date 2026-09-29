@@ -378,8 +378,14 @@ test('listSeenValues returns every seen value with its recorded timestamp', t =>
 test('notified_items is a separate table from seen_items, addressed via the table parameter', () => {
   const {store, dir} = makeStore();
   store.writeSeenValue('at://did:plc:abc/app.bsky.feed.post/xyz', 'notified_items');
-  assert.equal(store.seenValueExists('at://did:plc:abc/app.bsky.feed.post/xyz', 'notified_items'), true);
-  assert.equal(store.seenValueExists('at://did:plc:abc/app.bsky.feed.post/xyz', 'seen_items'), false);
+  assert.equal(
+    store.seenValueExists('at://did:plc:abc/app.bsky.feed.post/xyz', 'notified_items'),
+    true,
+  );
+  assert.equal(
+    store.seenValueExists('at://did:plc:abc/app.bsky.feed.post/xyz', 'seen_items'),
+    false,
+  );
   cleanup(store, dir);
 });
 
