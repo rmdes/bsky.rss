@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {existsSync} from 'node:fs';
 import {createInterface} from 'node:readline/promises';
 import {RichText} from '@atproto/api';
 import og from 'open-graph-scraper';
@@ -78,6 +79,20 @@ export function buildBroadcastContent(message: string, link: string): string {
  */
 export function isWithinPostLimit(content: string): boolean {
   return new RichText({text: content}).graphemeLength <= 300;
+}
+
+/**
+ * Whether a bot's dbPath already exists on disk. Refusing to enqueue when it doesn't prevents
+ * BotStore's constructor from silently creating a fresh, empty database at a wrong path (e.g. a
+ * FLEET_DATA_ROOT that doesn't match the real deployment's) instead of writing into the real,
+ * already-running fleet's database - observed live: a mismatched FLEET_DATA_ROOT one segment
+ * off from the real deployment's path created 60 orphaned databases nothing ever drained,
+ * while the script reported "Enqueued: 60" as if it had worked. A bot that's part of an
+ * actively-running fleet always has this file already, since its own BotWorker created it on
+ * first activation - only a misconfigured path hits this.
+ */
+export function hasExistingDatabase(dbPath: string): boolean {
+  return existsSync(dbPath);
 }
 
 export type EnqueueBroadcastOutcome = 'enqueued' | 'duplicate';
@@ -195,6 +210,15 @@ async function main(): Promise<void> {
   for (const bot of targets) {
     let store: BotStore | undefined;
     try {
+      if (!hasExistingDatabase(bot.dbPath)) {
+        failed.push(bot.botId);
+        console.error(
+          `${bot.botId}: ${bot.dbPath} does not exist - refusing to create a fresh database. ` +
+            'Check FLEET_DATA_ROOT matches the real deployment (the same value its running ' +
+            "compose file's FLEET_DATA_ROOT resolves to on the host, not just the container).",
+        );
+        continue;
+      }
       store = new BotStore(bot.dbPath);
       const outcome = enqueueBroadcast(store, {title, message: content, embed, dedupeKey});
       (outcome === 'enqueued' ? enqueued : duplicate).push(bot.botId);

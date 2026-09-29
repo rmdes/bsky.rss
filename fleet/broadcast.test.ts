@@ -9,6 +9,7 @@ import {
   buildBroadcastEmbed,
   buildBroadcastContent,
   isWithinPostLimit,
+  hasExistingDatabase,
   enqueueBroadcast,
 } from './broadcast.ts';
 import {BotStore} from './botStore.ts';
@@ -119,6 +120,17 @@ function makeStore(): {store: BotStore; dir: string} {
   const store = new BotStore(join(dir, 'state.sqlite'));
   return {store, dir};
 }
+
+test('hasExistingDatabase returns true for a real file, false for a path that does not exist', () => {
+  const {store, dir} = makeStore();
+  try {
+    assert.equal(hasExistingDatabase(join(dir, 'state.sqlite')), true);
+    assert.equal(hasExistingDatabase(join(dir, 'does-not-exist.sqlite')), false);
+  } finally {
+    store.close();
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
 
 test('enqueueBroadcast writes a real queued row and reports "enqueued"', () => {
   const {store, dir} = makeStore();

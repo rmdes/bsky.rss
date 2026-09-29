@@ -300,9 +300,19 @@ yarn install
 git pull
 FLEET_CONFIG_ROOT=/path/to/your/deployment/config \
 FLEET_SECRETS_PATH=/path/to/your/deployment/secrets/bsky-fleet.json \
-FLEET_DATA_ROOT=/path/to/your/deployment/data \
+FLEET_DATA_ROOT=/path/to/your/deployment/data/fleet \
 yarn fleet:broadcast
 ```
+
+**Getting `FLEET_DATA_ROOT` right matters - the container's env var and the host path are not
+the same string.** Check the running deployment's `docker-compose.yml` for its actual
+`FLEET_DATA_ROOT` value (e.g. `/build/data/fleet` - note the `/fleet` suffix many deployments
+have) and its volume mount (e.g. `./data:/build/data`), then combine them for the host-side
+path (`<host dir>/data/fleet`, not just `<host dir>/data`). A wrong path here used to fail
+silently - `BotStore` would create a brand-new empty database at the wrong location and the
+script would report success. `hasExistingDatabase` now refuses to write when the target
+database doesn't already exist (a bot in an actively-running fleet always has one), so a wrong
+path now shows up as `Failed`, not a false "Enqueued."
 
 This writes directly into the same SQLite files the already-running fleet container reads (WAL
 mode already handles concurrent access safely) - no container restart or `docker exec` needed.
