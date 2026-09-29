@@ -279,6 +279,33 @@ yarn fleet:broadcast --dry-run    # preview only, never writes anything
 yarn fleet:broadcast --yes        # skips the confirmation prompt
 ```
 
+### Running it against a real deployment
+
+Production runs from a pulled image with no source checkout (see "Docker (Recommended for
+self-hosting)" above) - this script needs a real TypeScript checkout to edit and run, so keep a
+separate git clone of this repo on the deployment host purely for running admin scripts like
+this one. It doesn't replace or interfere with the docker-compose deployment; it just needs to
+point at the same `config`/`secrets`/`data` directories the running container already mounts:
+
+```bash
+# One-time setup on the deployment host:
+git clone https://github.com/rmdes/bsky.rss.git ~/bsky.rss-admin
+cd ~/bsky.rss-admin
+yarn install
+
+# Before each broadcast: pull the latest script, edit MESSAGE/LINK, then run it pointed at
+# the real deployment's config/secrets/data (adjust the paths to match your deployment
+# directory's actual layout):
+git pull
+FLEET_CONFIG_ROOT=/path/to/your/deployment/config \
+FLEET_SECRETS_PATH=/path/to/your/deployment/secrets/bsky-fleet.json \
+FLEET_DATA_ROOT=/path/to/your/deployment/data \
+yarn fleet:broadcast
+```
+
+This writes directly into the same SQLite files the already-running fleet container reads (WAL
+mode already handles concurrent access safely) - no container restart or `docker exec` needed.
+
 It doesn't post anything itself - it writes one row into each target bot's existing queue
 (the same `queue_items` table and `BotStore.enqueue()` method regular RSS items use), and that
 bot's already-running fleet process posts it on its own next drain tick, at its own
@@ -290,6 +317,13 @@ like any other post (logged, not actually published), with no special-casing nee
 Re-running the script with the exact same `MESSAGE`/`LINK` is safe - each bot's queue dedupes
 by a hash of the message+link, so nothing gets posted twice. Editing the text is treated as a
 genuinely new broadcast.
+
+If a target bot's fleet process doesn't drain the broadcast within its configured
+`maxItemAgeMinutes` (see the `freshness` section of `fleet.json` - 120 minutes in the example
+config), the item is silently marked skipped and never posts on that bot. A re-run reports it as
+"already present," which only means a row with this exact message+link still exists - not that
+it posted. To force a genuine resend, change the message text (even trivially) so it hashes to a
+new dedupeKey.
 
 An Open Graph card for `LINK` is scraped once (not once per account) and attached if the page
 has a usable title; if the scrape fails or the link has no title, the message still posts as
