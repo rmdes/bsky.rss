@@ -20,6 +20,22 @@ import health from '../app/utils/healthHandler.ts';
 import type {FreshnessConfig} from './freshnessPolicy.ts';
 import type {BotSpec} from './configLoader.ts';
 
+/**
+ * Whether this identifier should get the real ntfyUrl (true) or undefined (false) — the
+ * first bot config that successfully activates for a given identity claims notifications
+ * for the whole account; every sibling config sharing that identity must not also poll and
+ * push for it (see documentation/specs/2026-08-09-fleet-identity-dedup-design.md for why
+ * several production identities have multiple bot configs). Pure and side-effect-free —
+ * committing the identifier as claimed is the caller's job, only after activation actually
+ * succeeds.
+ */
+export function shouldAssignNotifier(
+  alreadyClaimed: ReadonlySet<string>,
+  identifier: string,
+): boolean {
+  return !alreadyClaimed.has(identifier);
+}
+
 async function buildWorker(
   spec: BotSpec,
   sharedLimiters: SharedLimiters,
@@ -30,6 +46,7 @@ async function buildWorker(
   freshnessConfig: FreshnessConfig,
   perBotQueueMaxLength: number,
   identityStore: BotStore,
+  ntfyUrl: string | undefined,
 ): Promise<BotWorker> {
   const store = new BotStore(spec.dbPath);
   try {
@@ -59,6 +76,8 @@ async function buildWorker(
       perBotQueueMaxLength,
       operations,
       logger,
+      ntfyUrl,
+      botHandle: spec.identifier,
     });
     await worker.start();
     return worker;
@@ -100,6 +119,7 @@ async function main(): Promise<void> {
   const lockFilePath = process.env.FLEET_LOCK_PATH ?? './data/fleet/fleet.pid';
   const shutdownPerBotTimeoutMs = Number(process.env.FLEET_SHUTDOWN_PER_BOT_TIMEOUT_MS ?? '10000');
   const shutdownOverallTimeoutMs = Number(process.env.FLEET_SHUTDOWN_OVERALL_TIMEOUT_MS ?? '30000');
+  const ntfyUrl = process.env.NTFY_URL;
 
   acquireLock(lockFilePath);
   process.on('exit', () => releaseLock(lockFilePath));
@@ -111,6 +131,12 @@ async function main(): Promise<void> {
     logger.summary('CONFIG', 'Config invalid', error.botId);
     logger.debug('CONFIG', formatDebugError(error.error), error.botId);
   }
+
+  if (!ntfyUrl) {
+    logger.summary('FLEET', 'NTFY_URL not set - reply/mention/quote notifications disabled');
+  }
+
+  const notifiedIdentities = new Set<string>();
 
   const identityStores = new Map<string, BotStore>();
   function getIdentityStore(identifier: string): BotStore {
@@ -132,6 +158,7 @@ async function main(): Promise<void> {
     activateBot: spec => {
       const botOperations = operations.get(spec.botId);
       if (!botOperations) throw new Error(`Missing operational state for ${spec.botId}`);
+      const assignNotifier = shouldAssignNotifier(notifiedIdentities, spec.identifier);
       return buildWorker(
         spec,
         sharedLimiters,
@@ -142,7 +169,11 @@ async function main(): Promise<void> {
         fleetConfig.freshness,
         fleetConfig.perBotQueueMaxLength,
         getIdentityStore(spec.identifier),
-      );
+        assignNotifier ? ntfyUrl : undefined,
+      ).then(worker => {
+        if (assignNotifier) notifiedIdentities.add(spec.identifier);
+        return worker;
+      });
     },
   });
   const operationsRuntime = new FleetOperationsRuntime({

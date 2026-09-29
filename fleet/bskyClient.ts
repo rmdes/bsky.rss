@@ -5,6 +5,7 @@ import {
   AtpSessionEvent,
   AtpSessionData,
   AppBskyFeedPost,
+  AppBskyNotificationListNotifications,
   type Facet,
 } from '@atproto/api';
 import {XRPCError, ResponseType} from '@atproto/xrpc';
@@ -57,6 +58,13 @@ export interface PostResult {
   uri?: string;
   ratelimit?: boolean;
   deferralReason?: 'upload-failure';
+  retryAfterSeconds?: number;
+}
+
+export interface ListNotificationsResult {
+  ok: boolean;
+  notifications?: AppBskyNotificationListNotifications.Notification[];
+  ratelimit?: boolean;
   retryAfterSeconds?: number;
 }
 
@@ -269,6 +277,21 @@ export class BskyClient {
       return {ok: false, ratelimit, retryAfterSeconds};
     } finally {
       this.logDuration('Create record', createStartedAt);
+    }
+  }
+
+  async listNotifications(reasons: string[], limit = 50): Promise<ListNotificationsResult> {
+    try {
+      const result = await this.agent.app.bsky.notification.listNotifications({reasons, limit});
+      return {ok: true, notifications: result.data.notifications};
+    } catch (error) {
+      this.logger.debug(
+        'NOTIFY',
+        `listNotifications failed\n${formatDebugError(error)}`,
+        this.botId,
+      );
+      const {ratelimit, retryAfterSeconds} = classifyPostError(error);
+      return {ok: false, ratelimit, retryAfterSeconds};
     }
   }
 

@@ -220,6 +220,30 @@ The log CLI only reads status and override data, or changes the override
 document; it does not restart the fleet, reload configuration, or control
 processes.
 
+### Reply/mention/quote notifications
+
+Set `NTFY_URL` to a full ntfy topic URL (for example
+`https://ntfy.rmendes.net/skyfleet`) to get a push notification on your phone
+whenever any fleet account receives a reply, @-mention, or quote-post on
+Bluesky. Each bot checks its own notifications once every 5 minutes, staggered
+the same way bot activation already is, using its existing authenticated
+session - no extra login or credential handling.
+
+Each notification is sent once, ever - a per-bot record of already-sent
+notification URIs persists in that bot's own `state.sqlite`, so a fleet
+restart never resends anything. A failed push (network error, ntfy
+unreachable) is retried on the next 5-minute check rather than lost.
+
+Only the first bot config for a given Bluesky identity actually checks and pushes - if several
+bot configs share one identity (some do; see the identity-dedup design doc), the others stay
+inert for this feature, so a shared account's replies aren't pushed once per config. A
+notification older than 24 hours when first seen is deliberately never pushed at all, even the
+first time `NTFY_URL` is enabled - recent enough to matter for a same-day response is the bar,
+not "found it eventually."
+
+`NTFY_URL` is entirely optional. Leave it unset and fleet posting behaves
+identically; nothing in the posting pipeline depends on it.
+
 ## Legacy import
 
 `fleet/importLegacyFleet.ts` migrates an existing per-bot legacy deployment

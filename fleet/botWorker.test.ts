@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {BotWorker, type BotWorkerOptions} from './botWorker.ts';
 import {Scheduler} from './scheduler.ts';
 import type {FeedReader, ParsedItem} from './feedReader.ts';
-import type {BskyClient, PostResult, ResolvedEmbed} from './bskyClient.ts';
+import type {BskyClient, PostResult, ResolvedEmbed, ListNotificationsResult} from './bskyClient.ts';
 import type {BotStore, QueueItemRow} from './botStore.ts';
 import {BotOperations} from './botOperations.ts';
 import {Logger, type LogLevel, type LogRecord} from '../shared/logging/logger.ts';
@@ -31,13 +31,22 @@ class FakeFeedReader {
 
 class FakeBskyClient {
   public posted: {content: string; rkey: string; embed?: ResolvedEmbed}[] = [];
+  public notificationChecks = 0;
   private nextResult: PostResult = {ok: true, uri: 'at://fake/1'};
+  private notificationsResult: ListNotificationsResult = {ok: true, notifications: []};
   setNextResult(result: PostResult): void {
     this.nextResult = result;
+  }
+  setNotificationsResult(result: ListNotificationsResult): void {
+    this.notificationsResult = result;
   }
   async post(params: {content: string; rkey: string; embed?: ResolvedEmbed}): Promise<PostResult> {
     this.posted.push(params);
     return this.nextResult;
+  }
+  async listNotifications(): Promise<ListNotificationsResult> {
+    this.notificationChecks++;
+    return this.notificationsResult;
   }
 }
 
@@ -110,6 +119,8 @@ function makeWorker(
     logger?: Logger;
     logLevel?: LogLevel;
     botId?: string;
+    ntfyUrl?: string;
+    botHandle?: string;
   },
 ) {
   const botId = overrides?.botId ?? 'test-bot';
@@ -139,6 +150,8 @@ function makeWorker(
     perBotQueueMaxLength: 500,
     operations,
     logger,
+    ntfyUrl: overrides?.ntfyUrl,
+    botHandle: overrides?.botHandle,
   });
   t.after(() => worker.stop());
   return {
@@ -844,6 +857,111 @@ test('shutdown does not wait past its timeout even if the in-flight drain never 
   });
 
   void worker.drainOnce(); // fire and forget - will hang forever on the never-resolving post()
+  const start = Date.now();
+  await worker.shutdown(200);
+  const elapsed = Date.now() - start;
+  assert.ok(elapsed < 500, `shutdown must not wait past its timeout, took ${elapsed}ms`);
+});
+
+test('checkNotificationsOnce calls through to bskyClient.listNotifications when ntfyUrl is configured', async t => {
+  const {worker, bskyClient} = makeWorker(t, {
+    ntfyUrl: 'https://ntfy.example/topic',
+    botHandle: 'bot.bsky.social',
+  });
+  await worker.start();
+  await worker.checkNotificationsOnce();
+  assert.equal(bskyClient.notificationChecks, 1);
+});
+
+test('checkNotificationsOnce is a no-op when ntfyUrl is not configured', async t => {
+  const {worker, bskyClient} = makeWorker(t);
+  await worker.start();
+  await worker.checkNotificationsOnce();
+  assert.equal(bskyClient.notificationChecks, 0);
+});
+
+test('start() creates a notification-check interval only when ntfyUrl is configured', async t => {
+  const withNtfy = makeWorker(t, {
+    ntfyUrl: 'https://ntfy.example/topic',
+    botHandle: 'bot.bsky.social',
+  });
+  await withNtfy.worker.start();
+  assert.notEqual(
+    (withNtfy.worker as unknown as {notificationIntervalHandle: unknown})
+      .notificationIntervalHandle,
+    null,
+  );
+
+  const withoutNtfy = makeWorker(t);
+  await withoutNtfy.worker.start();
+  assert.equal(
+    (withoutNtfy.worker as unknown as {notificationIntervalHandle: unknown})
+      .notificationIntervalHandle,
+    null,
+  );
+});
+
+test('shutdown does not hang when a notification-check interval is active', async t => {
+  const {worker} = makeWorker(t, {
+    ntfyUrl: 'https://ntfy.example/topic',
+    botHandle: 'bot.bsky.social',
+  });
+  await worker.start();
+  const start = Date.now();
+  await worker.shutdown(1000);
+  assert.ok(Date.now() - start < 1000);
+});
+
+test('shutdown waits for an in-flight notification check before closing the store', async t => {
+  let resolveCheck: () => void;
+  const slowCheckPromise = new Promise<void>(resolve => {
+    resolveCheck = resolve;
+  });
+  const bskyClient = {
+    post: async () => ({ok: true, uri: 'at://fake/1'}),
+    listNotifications: async () => {
+      await slowCheckPromise;
+      return {ok: true, notifications: []};
+    },
+  };
+  let storeClosed = false;
+  const store = new FakeBotStore();
+  store.close = () => {
+    storeClosed = true;
+  };
+  const {worker} = makeWorker(t, {
+    bskyClient: bskyClient as unknown as FakeBskyClient,
+    store,
+    ntfyUrl: 'https://ntfy.example/topic',
+    botHandle: 'bot.bsky.social',
+  });
+  await worker.start();
+
+  const checkPromise = worker.checkNotificationsOnce();
+  const shutdownPromise = worker.shutdown(5000);
+
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(storeClosed, false, 'store must not close while a notification check is in flight');
+
+  resolveCheck!();
+  await checkPromise;
+  await shutdownPromise;
+  assert.equal(storeClosed, true);
+});
+
+test('shutdown does not wait past its timeout even if the in-flight notification check never finishes', async t => {
+  const bskyClient = {
+    post: async () => ({ok: true, uri: 'at://fake/1'}),
+    listNotifications: () => new Promise<never>(() => {}), // never resolves
+  };
+  const {worker} = makeWorker(t, {
+    bskyClient: bskyClient as unknown as FakeBskyClient,
+    ntfyUrl: 'https://ntfy.example/topic',
+    botHandle: 'bot.bsky.social',
+  });
+  await worker.start();
+
+  void worker.checkNotificationsOnce(); // fire and forget — hangs forever
   const start = Date.now();
   await worker.shutdown(200);
   const elapsed = Date.now() - start;
