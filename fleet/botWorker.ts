@@ -29,6 +29,7 @@ export interface BotWorkerOptions {
 export class BotWorker {
   readonly botId: string;
   private queueRunning = false;
+  private notificationRunning = false;
   private intervalHandle: NodeJS.Timeout | null = null;
   private notificationIntervalHandle: NodeJS.Timeout | null = null;
 
@@ -62,14 +63,20 @@ export class BotWorker {
 
   async checkNotificationsOnce(): Promise<void> {
     if (!this.options.ntfyUrl) return;
-    await checkBotNotifications({
-      botId: this.botId,
-      botHandle: this.options.botHandle ?? this.botId,
-      bskyClient: this.options.bskyClient,
-      store: this.options.store,
-      ntfyUrl: this.options.ntfyUrl,
-      logger: this.options.logger,
-    });
+    if (this.notificationRunning) return;
+    this.notificationRunning = true;
+    try {
+      await checkBotNotifications({
+        botId: this.botId,
+        botHandle: this.options.botHandle ?? this.botId,
+        bskyClient: this.options.bskyClient,
+        store: this.options.store,
+        ntfyUrl: this.options.ntfyUrl,
+        logger: this.options.logger,
+      });
+    } finally {
+      this.notificationRunning = false;
+    }
   }
 
   stop(): void {
@@ -81,16 +88,19 @@ export class BotWorker {
     this.options.feedReader.stop();
     if (this.intervalHandle) clearInterval(this.intervalHandle);
     if (this.notificationIntervalHandle) clearInterval(this.notificationIntervalHandle);
-    await this.waitForDrainToFinish(timeoutMs);
+    await Promise.all([
+      this.waitForFlagToClear(() => this.queueRunning, timeoutMs),
+      this.waitForFlagToClear(() => this.notificationRunning, timeoutMs),
+    ]);
     this.options.store.close();
   }
 
-  private waitForDrainToFinish(timeoutMs: number): Promise<void> {
-    if (!this.queueRunning) return Promise.resolve();
+  private waitForFlagToClear(isRunning: () => boolean, timeoutMs: number): Promise<void> {
+    if (!isRunning()) return Promise.resolve();
     return new Promise(resolve => {
       const start = Date.now();
       const check = setInterval(() => {
-        if (!this.queueRunning || Date.now() - start >= timeoutMs) {
+        if (!isRunning() || Date.now() - start >= timeoutMs) {
           clearInterval(check);
           resolve();
         }

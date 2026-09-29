@@ -911,3 +911,59 @@ test('shutdown does not hang when a notification-check interval is active', asyn
   await worker.shutdown(1000);
   assert.ok(Date.now() - start < 1000);
 });
+
+test('shutdown waits for an in-flight notification check before closing the store', async t => {
+  let resolveCheck: () => void;
+  const slowCheckPromise = new Promise<void>(resolve => {
+    resolveCheck = resolve;
+  });
+  const bskyClient = {
+    post: async () => ({ok: true, uri: 'at://fake/1'}),
+    listNotifications: async () => {
+      await slowCheckPromise;
+      return {ok: true, notifications: []};
+    },
+  };
+  let storeClosed = false;
+  const store = new FakeBotStore();
+  store.close = () => {
+    storeClosed = true;
+  };
+  const {worker} = makeWorker(t, {
+    bskyClient: bskyClient as unknown as FakeBskyClient,
+    store,
+    ntfyUrl: 'https://ntfy.example/topic',
+    botHandle: 'bot.bsky.social',
+  });
+  await worker.start();
+
+  const checkPromise = worker.checkNotificationsOnce();
+  const shutdownPromise = worker.shutdown(5000);
+
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(storeClosed, false, 'store must not close while a notification check is in flight');
+
+  resolveCheck!();
+  await checkPromise;
+  await shutdownPromise;
+  assert.equal(storeClosed, true);
+});
+
+test('shutdown does not wait past its timeout even if the in-flight notification check never finishes', async t => {
+  const bskyClient = {
+    post: async () => ({ok: true, uri: 'at://fake/1'}),
+    listNotifications: () => new Promise<never>(() => {}), // never resolves
+  };
+  const {worker} = makeWorker(t, {
+    bskyClient: bskyClient as unknown as FakeBskyClient,
+    ntfyUrl: 'https://ntfy.example/topic',
+    botHandle: 'bot.bsky.social',
+  });
+  await worker.start();
+
+  void worker.checkNotificationsOnce(); // fire and forget — hangs forever
+  const start = Date.now();
+  await worker.shutdown(200);
+  const elapsed = Date.now() - start;
+  assert.ok(elapsed < 500, `shutdown must not wait past its timeout, took ${elapsed}ms`);
+});
