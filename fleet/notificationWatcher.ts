@@ -109,5 +109,10 @@ export async function checkBotNotifications(params: CheckBotNotificationsParams)
       continue;
     }
     store.writeSeenValue(notification.uri, NOTIFIED_TABLE);
+    logger.verbose(
+      'NOTIFY',
+      `Pushed notification (${notification.reason} from @${notification.author.handle})`,
+      botId,
+    );
   }
 }

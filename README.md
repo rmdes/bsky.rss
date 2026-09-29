@@ -178,6 +178,8 @@ If you want to run many bots (different accounts, different feeds) at once, flee
 
 Fleet mode gives each bot its own config, its own SQLite-backed dedup/session state, and a staggered login schedule, while sharing fleet-wide rate limits (Open Graph scraping, image processing) across all bots so N bots polling concurrently doesn't spawn unbounded work.
 
+It can also push a phone notification (via your own [ntfy](https://ntfy.sh) server) whenever any account gets a reply, @-mention, or quote-post on Bluesky - operator tooling for catching a reclamation or a dispute quickly, without checking every account by hand. Optional, off by default; see `documentation/fleet.md`'s "Reply/mention/quote notifications" section.
+
 Two ways to get started:
 
 - **Deploying, not building** - use the [`bsky-rss-fleet-template`](https://github.com/rmdes/bsky-rss-fleet-template) repo. It's a `docker-compose.yml` and example config tree that pulls the prebuilt image from `ghcr.io/rmdes/bsky.rss`, no source checkout needed.

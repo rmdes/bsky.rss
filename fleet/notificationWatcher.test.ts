@@ -134,7 +134,7 @@ test('checkBotNotifications posts to ntfy and records the uri only after a succe
     calls.push({url: String(input), init: init ?? {}});
     return new Response(null, {status: 200});
   };
-  const {logger} = makeLogger();
+  const {logger, records} = makeLogger();
 
   await checkBotNotifications({
     botId: 'b',
@@ -149,6 +149,20 @@ test('checkBotNotifications posts to ntfy and records the uri only after a succe
   assert.equal(calls.length, 1);
   assert.equal(calls[0]!.url, 'https://ntfy.example/topic');
   assert.equal(store.seenValueExists(notification.uri, 'notified_items'), true);
+  assert.ok(
+    records.some(
+      r =>
+        r.level === 'verbose' &&
+        r.message ===
+          `Pushed notification (${notification.reason} from @${notification.author.handle})`,
+    ),
+    'a successful push must log one verbose confirmation line, mentioning the reason and replier',
+  );
+  assert.equal(
+    records.filter(r => r.level === 'summary').length,
+    0,
+    'a successful push must not log at summary level',
+  );
 });
 
 test('one failed ntfy POST does not block the rest of the batch, and is not recorded', async () => {

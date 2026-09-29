@@ -156,7 +156,7 @@ fleet-wide startup log level. It defaults to `summary`.
   summary every five minutes. It omits per-item queue, post, duplicate, and
   Open Graph lines.
 - `verbose` includes `summary` and adds queued, duplicate, policy-skipped,
-  successful-post, and Open Graph fallback events.
+  successful-post, Open Graph fallback, and pushed-notification events.
 - `debug` includes `verbose` and adds sanitized external error detail and stack
   traces, transient durations, and shared-limiter wait/acquire/release
   activity. Credential-bearing URL userinfo, Authorization/Bearer material,
@@ -234,6 +234,15 @@ notification URIs persists in that bot's own `state.sqlite`, so a fleet
 restart never resends anything. A failed push (network error, ntfy
 unreachable) is retried on the next 5-minute check rather than lost.
 
+The push itself: title `New {reply|mention|quote} on @{bot's handle}`, body
+`{replier's handle}: "{their text, truncated}"`, tagged with an emoji
+matching the type (speech balloon / loudspeaker / repeat), tapping it opens
+the new reply/mention/quote directly, and - when there's a specific post it's
+about - a second button opens that original post. At `FLEET_LOG_LEVEL=verbose`
+or higher, each push also logs a `NOTIFY` line
+(`Pushed notification (reply from @handle)`); nothing is logged at `summary`
+for a successful push, only for a rate limit or a send failure.
+
 Only the first bot config for a given Bluesky identity actually checks and pushes - if several
 bot configs share one identity (some do; see the identity-dedup design doc), the others stay
 inert for this feature, so a shared account's replies aren't pushed once per config. A
@@ -243,6 +252,10 @@ not "found it eventually."
 
 `NTFY_URL` is entirely optional. Leave it unset and fleet posting behaves
 identically; nothing in the posting pipeline depends on it.
+
+A public ntfy topic (e.g. `ntfy.sh/<name>`) is writable and readable by anyone who guesses
+its name, and reply text flows into the push body - pick a private, hard-to-guess topic name,
+or self-host ntfy with authentication, rather than a short/predictable one.
 
 ## Legacy import
 
