@@ -21,6 +21,9 @@ services:
       # the fleet - see documentation/fleet.md's "Reply/mention/quote notifications"
       # section. Leave commented out to disable; fleet posting is unaffected either way.
       # - NTFY_URL=https://ntfy.sh/your-private-topic-name
+      # Optional: only needed if that topic requires auth (recommended - see fleet.md's
+      # security note). An ntfy access token, sent as "Authorization: Bearer <token>".
+      # - NTFY_TOKEN=tk_your_access_token_here
       # rappel.conso.gouv.fr doesn't send its own intermediate cert (a real
       # server misconfiguration, verified directly) - see certs/README.md
       - NODE_EXTRA_CA_CERTS=/build/certs/sectigo-public-server-authentication-ca-ov-r36.pem

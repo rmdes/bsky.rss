@@ -32,6 +32,7 @@ class FakeFeedReader {
 class FakeBskyClient {
   public posted: {content: string; rkey: string; embed?: ResolvedEmbed}[] = [];
   public notificationChecks = 0;
+  public isDryRun = false;
   private nextResult: PostResult = {ok: true, uri: 'at://fake/1'};
   private notificationsResult: ListNotificationsResult = {ok: true, notifications: []};
   setNextResult(result: PostResult): void {
@@ -120,6 +121,7 @@ function makeWorker(
     logLevel?: LogLevel;
     botId?: string;
     ntfyUrl?: string;
+    ntfyToken?: string;
     botHandle?: string;
   },
 ) {
@@ -151,6 +153,7 @@ function makeWorker(
     operations,
     logger,
     ntfyUrl: overrides?.ntfyUrl,
+    ntfyToken: overrides?.ntfyToken,
     botHandle: overrides?.botHandle,
   });
   t.after(() => worker.stop());
@@ -966,4 +969,35 @@ test('shutdown does not wait past its timeout even if the in-flight notification
   await worker.shutdown(200);
   const elapsed = Date.now() - start;
   assert.ok(elapsed < 500, `shutdown must not wait past its timeout, took ${elapsed}ms`);
+});
+
+test('checkNotificationsOnce guards against overlapping calls — a second call while one is in flight is a no-op', async t => {
+  let resolveCheck: () => void;
+  const slowCheckPromise = new Promise<void>(resolve => {
+    resolveCheck = resolve;
+  });
+  let listCalls = 0;
+  const bskyClient = {
+    post: async () => ({ok: true, uri: 'at://fake/1'}),
+    listNotifications: async () => {
+      listCalls++;
+      await slowCheckPromise;
+      return {ok: true, notifications: []};
+    },
+  };
+  const {worker} = makeWorker(t, {
+    bskyClient: bskyClient as unknown as FakeBskyClient,
+    ntfyUrl: 'https://ntfy.example/topic',
+    botHandle: 'bot.bsky.social',
+  });
+  await worker.start();
+
+  const first = worker.checkNotificationsOnce();
+  const second = worker.checkNotificationsOnce(); // fires while the first is still in flight
+
+  resolveCheck!();
+  await first;
+  await second;
+
+  assert.equal(listCalls, 1, 'a second call while one is in flight must not start a new check');
 });

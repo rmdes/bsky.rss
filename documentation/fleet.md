@@ -253,9 +253,18 @@ not "found it eventually."
 `NTFY_URL` is entirely optional. Leave it unset and fleet posting behaves
 identically; nothing in the posting pipeline depends on it.
 
-A public ntfy topic (e.g. `ntfy.sh/<name>`) is writable and readable by anyone who guesses
-its name, and reply text flows into the push body - pick a private, hard-to-guess topic name,
-or self-host ntfy with authentication, rather than a short/predictable one.
+In `DRY_RUN` mode, notifications are still checked and logged (at `verbose`, prefixed
+`[dry-run] would push notification (...)`), but never actually pushed to ntfy and never
+recorded as sent - so a later real run still pushes them for real. This matters if a staging
+fleet shares the same `NTFY_URL` as production: without `DRY_RUN=true` on the staging side,
+you'd get duplicate real pushes for the same replies.
+
+A public ntfy topic (e.g. `ntfy.sh/<name>`) is writable and readable by anyone who guesses its
+name, and reply text flows into the push body - set `NTFY_TOKEN` to an ntfy access token
+(`tk_...`, sent as `Authorization: Bearer <token>`) for a topic that requires auth, or at
+minimum pick a private, hard-to-guess topic name rather than a short/predictable one. Like
+`NTFY_URL`, `NTFY_TOKEN` is optional - omit it for a topic that allows unauthenticated
+publishing.
 
 ## Legacy import
 

@@ -147,6 +147,13 @@ export class BskyClient {
     });
   }
 
+  // Read-only external side effects outside the posting pipeline (e.g. notificationWatcher.ts's
+  // ntfy push) need to respect dry-run too, without duplicating a separate dryRun flag through
+  // every layer that already holds a BskyClient reference.
+  get isDryRun(): boolean {
+    return this.dryRun;
+  }
+
   async login(identifier: string, password: string): Promise<void> {
     const persisted = this.store.readSession<AtpSessionData>();
     if (persisted) {

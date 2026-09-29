@@ -47,6 +47,7 @@ async function buildWorker(
   perBotQueueMaxLength: number,
   identityStore: BotStore,
   ntfyUrl: string | undefined,
+  ntfyToken: string | undefined,
 ): Promise<BotWorker> {
   const store = new BotStore(spec.dbPath);
   try {
@@ -77,6 +78,7 @@ async function buildWorker(
       operations,
       logger,
       ntfyUrl,
+      ntfyToken,
       botHandle: spec.identifier,
     });
     await worker.start();
@@ -120,6 +122,7 @@ async function main(): Promise<void> {
   const shutdownPerBotTimeoutMs = Number(process.env.FLEET_SHUTDOWN_PER_BOT_TIMEOUT_MS ?? '10000');
   const shutdownOverallTimeoutMs = Number(process.env.FLEET_SHUTDOWN_OVERALL_TIMEOUT_MS ?? '30000');
   const ntfyUrl = process.env.NTFY_URL;
+  const ntfyToken = process.env.NTFY_TOKEN;
 
   acquireLock(lockFilePath);
   process.on('exit', () => releaseLock(lockFilePath));
@@ -170,6 +173,7 @@ async function main(): Promise<void> {
         fleetConfig.perBotQueueMaxLength,
         getIdentityStore(spec.identifier),
         assignNotifier ? ntfyUrl : undefined,
+        ntfyToken,
       ).then(worker => {
         if (assignNotifier) notifiedIdentities.add(spec.identifier);
         return worker;

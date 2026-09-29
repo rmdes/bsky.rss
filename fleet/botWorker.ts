@@ -23,6 +23,7 @@ export interface BotWorkerOptions {
   operations: BotOperations;
   logger: Logger;
   ntfyUrl?: string;
+  ntfyToken?: string;
   botHandle?: string;
 }
 
@@ -72,6 +73,7 @@ export class BotWorker {
         bskyClient: this.options.bskyClient,
         store: this.options.store,
         ntfyUrl: this.options.ntfyUrl,
+        ntfyToken: this.options.ntfyToken,
         logger: this.options.logger,
       });
     } finally {

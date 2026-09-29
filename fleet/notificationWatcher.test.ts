@@ -31,6 +31,7 @@ function makeNotification(overrides: Partial<Notification> = {}): Notification {
 class FakeBskyClient {
   private result: ListNotificationsResult = {ok: true, notifications: []};
   public calls = 0;
+  public isDryRun = false;
   setResult(result: ListNotificationsResult): void {
     this.result = result;
   }
@@ -163,6 +164,59 @@ test('checkBotNotifications posts to ntfy and records the uri only after a succe
     0,
     'a successful push must not log at summary level',
   );
+});
+
+test('checkBotNotifications sends an Authorization: Bearer header when an ntfyToken is configured', async () => {
+  const bskyClient = new FakeBskyClient();
+  const notification = makeNotification();
+  bskyClient.setResult({ok: true, notifications: [notification]});
+  const store = new FakeStore();
+  const calls: {url: string; init: RequestInit}[] = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    calls.push({url: String(input), init: init ?? {}});
+    return new Response(null, {status: 200});
+  };
+  const {logger} = makeLogger();
+
+  await checkBotNotifications({
+    botId: 'b',
+    botHandle: 'b.bsky.social',
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
+    ntfyUrl: 'https://ntfy.example/topic',
+    ntfyToken: 'tk_test_token_value',
+    logger,
+    fetchImpl,
+  });
+
+  const headers = calls[0]!.init.headers as Record<string, string>;
+  assert.equal(headers['Authorization'], 'Bearer tk_test_token_value');
+});
+
+test('checkBotNotifications omits the Authorization header when no ntfyToken is configured', async () => {
+  const bskyClient = new FakeBskyClient();
+  const notification = makeNotification();
+  bskyClient.setResult({ok: true, notifications: [notification]});
+  const store = new FakeStore();
+  const calls: {url: string; init: RequestInit}[] = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    calls.push({url: String(input), init: init ?? {}});
+    return new Response(null, {status: 200});
+  };
+  const {logger} = makeLogger();
+
+  await checkBotNotifications({
+    botId: 'b',
+    botHandle: 'b.bsky.social',
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
+    ntfyUrl: 'https://ntfy.example/topic',
+    logger,
+    fetchImpl,
+  });
+
+  const headers = calls[0]!.init.headers as Record<string, string>;
+  assert.equal('Authorization' in headers, false);
 });
 
 test('one failed ntfy POST does not block the rest of the batch, and is not recorded', async () => {
@@ -369,4 +423,92 @@ test('a real BotStore: a notification stale enough to be near the 96h prune wind
     store.close();
     rmSync(dir, {recursive: true, force: true});
   }
+});
+
+test('a notification with an unparseable indexedAt is skipped, not treated as fresh', async () => {
+  const bskyClient = new FakeBskyClient();
+  const badDate = makeNotification({
+    uri: 'at://did:plc:replier/app.bsky.feed.post/bad-date',
+    indexedAt: 'not-a-real-date',
+  });
+  bskyClient.setResult({ok: true, notifications: [badDate]});
+  const store = new FakeStore();
+  let fetchCalls = 0;
+  const fetchImpl: typeof fetch = async () => {
+    fetchCalls++;
+    return new Response(null, {status: 200});
+  };
+  const {logger} = makeLogger();
+
+  await checkBotNotifications({
+    botId: 'b',
+    botHandle: 'b.bsky.social',
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
+    ntfyUrl: 'https://ntfy.example/topic',
+    logger,
+    fetchImpl,
+  });
+
+  assert.equal(
+    fetchCalls,
+    0,
+    'an unparseable timestamp must fail closed (skip), not fail open (send)',
+  );
+  assert.equal(store.seenValueExists(badDate.uri, 'notified_items'), false);
+});
+
+test('in dry-run mode, checkBotNotifications logs what it would push without a real ntfy POST or recording it as sent', async () => {
+  const bskyClient = new FakeBskyClient();
+  bskyClient.isDryRun = true;
+  const notification = makeNotification();
+  bskyClient.setResult({ok: true, notifications: [notification]});
+  const store = new FakeStore();
+  let fetchCalls = 0;
+  const fetchImpl: typeof fetch = async () => {
+    fetchCalls++;
+    return new Response(null, {status: 200});
+  };
+  const {logger, records} = makeLogger();
+
+  await checkBotNotifications({
+    botId: 'b',
+    botHandle: 'b.bsky.social',
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
+    ntfyUrl: 'https://ntfy.example/topic',
+    logger,
+    fetchImpl,
+  });
+
+  assert.equal(fetchCalls, 0, 'dry-run must never hit the real ntfy endpoint');
+  assert.equal(
+    store.seenValueExists(notification.uri, 'notified_items'),
+    false,
+    'dry-run must not record as sent, so a later real (non-dry-run) run still pushes it for real',
+  );
+  assert.ok(
+    records.some(r => r.level === 'verbose' && /\[dry-run\]/.test(r.message)),
+    'dry-run should still log what it would have pushed',
+  );
+});
+
+test('atUriToBskyUrl rejects a malformed AT-URI rather than building a header-breaking URL', () => {
+  assert.equal(atUriToBskyUrl('at://did:plc:abc/coll/rk,ey'), undefined);
+  assert.equal(atUriToBskyUrl('at://did:plc:abc/coll/rk;ey'), undefined);
+  assert.equal(atUriToBskyUrl('at://did:plc:abc/coll/rk\r\nX-Injected: evil'), undefined);
+  assert.equal(atUriToBskyUrl('not-an-at-uri-at-all'), undefined);
+});
+
+test('buildNtfyMessage omits X-Click and X-Actions for notifications with malformed AT-URIs, instead of embedding a broken header', () => {
+  const notification = makeNotification({
+    uri: 'at://did:plc:replier/app.bsky.feed.post/rk,ey',
+    reasonSubject: 'at://did:plc:bot/app.bsky.feed.post/rk;ey',
+  });
+  const message = buildNtfyMessage('bot.skyfleet.blue', notification);
+  assert.equal('X-Click' in message.headers, false);
+  assert.equal('X-Actions' in message.headers, false);
+  // The rest of the message is still built normally - a malformed URI in one notification
+  // shouldn't suppress the whole push, just the two header fields that depend on it.
+  assert.equal(message.headers['X-Title'], 'New reply on @bot.skyfleet.blue');
 });
