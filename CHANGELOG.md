@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.0] - 2026-09-29
+
+### Added
+- **Fleet mention/reply/quote notifications**: fleet mode can now push a phone notification
+  (via your own [ntfy](https://ntfy.sh) server) the first time any of the fleet's accounts
+  gets a reply, @-mention, or quote-post on Bluesky - operator tooling for catching a
+  reclamation or a factual dispute quickly, without checking every account by hand. Set
+  `NTFY_URL` to enable (optional `NTFY_TOKEN` for an auth-protected topic, sent as
+  `Authorization: Bearer <token>`); leave both unset and fleet posting is entirely
+  unaffected. Each bot checks its own notifications every 5 minutes, staggered the same way
+  bot activation already is, using its existing authenticated session. Persisted per-bot so
+  a restart never resends; deduped per Bluesky identity so an account shared across several
+  bot configs isn't pushed once per config; anything older than 24 hours when first seen is
+  never pushed at all. See `documentation/fleet.md`'s "Reply/mention/quote notifications"
+  section.
+
+### Fixed
+- A dedup/retention interaction that could re-push the same old notification roughly every
+  96 hours on a quiet account, and would otherwise flood the operator's phone with the
+  entire historical backlog the first time `NTFY_URL` was enabled - closed by the 24-hour
+  age cutoff above.
+- An unparseable notification timestamp now fails closed (skipped) rather than open
+  (previously would have been treated as fresh and pushed).
+- A malformed AT-URI is no longer trusted directly into an ntfy header (defense against a
+  broken or injected header value); the affected header field is omitted instead.
+
+---
+
 ## [2.11.5] - 2026-09-28
 
 ### Fixed
