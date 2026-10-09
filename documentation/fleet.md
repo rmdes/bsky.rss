@@ -522,10 +522,13 @@ reproducible rollback) means every later release needs that tag bumped by
 hand before `docker compose pull` has anything new to fetch - `pull` only
 re-resolves whatever tag the compose file already names.
 
-`deploy/fleet/` and `deploy/canary/` track that compose file *in this repo*,
-with its image tag bumped in the same commit that bumps `package.json`'s
-version for every release. Point your deployment directory's git checkout at
-this, and upgrading becomes:
+`deploy/fleet/` and `deploy/canary/` track that compose file *in this repo*.
+Cutting a release runs `yarn bump-version <X.Y.Z>` (`scripts/bump-version.sh`),
+which updates `package.json`'s version and both compose files' image tags
+together in one step - they can't drift apart, since nothing commits one
+without the other. (It doesn't touch `CHANGELOG.md`; that entry is still
+written by hand.) Point your deployment directory's git checkout at this,
+and upgrading becomes:
 
 ```bash
 cd /home/skyfleet-next   # wherever your deployment's git checkout lives

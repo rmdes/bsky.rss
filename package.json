@@ -10,6 +10,7 @@
   "scripts": {
     "build:dev": "docker rmi -f bsky.rss && docker build . -t bsky.rss",
     "release": "sh release.sh",
+    "bump-version": "bash scripts/bump-version.sh",
     "start": "NODE_NO_WARNINGS=1 tsx ./app/index.ts",
     "dev": "tsx --watch ./app/index.ts",
     "dev:app": "tsx --watch ./app/index.ts",
