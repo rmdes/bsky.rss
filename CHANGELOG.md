@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.13.1] - 2026-10-09
+
+### Fixed
+- **Fleet notifications: silent ntfy failures now visible**: a failed ntfy push (bad auth,
+  network error) previously only logged at `debug` level, so a real outage went unnoticed in
+  default logs. Found live: an expired `NTFY_TOKEN` caused every push to fail for 3 days with
+  nothing in the fleet's normal logs. Now logged at `summary` level.
+- **Security**: resolved all 56 Dependabot alerts (2 critical, 29 high, 18 moderate, 7 low).
+  All flagged packages were transitive. Removed the unmaintained `underscore-cli` devDependency
+  (used only to read `package.json`'s version in `release.sh`, replaced with
+  `node -p "require('./package.json').version"`), which alone pulled in `underscore` (critical
+  prototype pollution) plus an old `node-gyp`/`cacache`/`tar`/`glob` chain. Forced `node-gyp` to
+  `^13.1.0` (drops the `cacache`/`make-fetch-happen`/`http-cache-semantics`/`socks`/`ip` chain
+  entirely) and `tmp` to `^0.2.7` (permanently pinned otherwise by `external-editor`'s `0.x.x`
+  caret range) via `resolutions`. Also fixed two more findings surfaced by `yarn npm audit`
+  that Dependabot didn't flag (`ajv`, `cross-spawn` ReDoS).
+
+---
+
 ## [2.13.0] - 2026-09-29
 
 ### Added
