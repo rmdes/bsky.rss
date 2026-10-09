@@ -17,9 +17,7 @@ then
 fi
 
 # Read package.json version
-versionInit=$(cat ./package.json | yarn run underscore select '.version')
-versionNoQuote=${versionInit//\"/}
-version=$(echo $versionNoQuote | sed 's/[][]//g')
+version=$(node -p "require('./package.json').version")
 branch="$(git rev-parse --abbrev-ref HEAD)"
 
 # Create builder
