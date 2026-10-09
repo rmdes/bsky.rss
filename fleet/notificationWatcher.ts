@@ -134,11 +134,12 @@ export async function checkBotNotifications(params: CheckBotNotificationsParams)
         headers,
       });
       if (!response.ok) {
-        logger.debug('NOTIFY', `ntfy POST failed with status ${response.status}`, botId);
+        logger.summary('NOTIFY', `ntfy POST failed with status ${response.status}`, botId);
         continue;
       }
     } catch (error) {
-      logger.debug('NOTIFY', `ntfy POST failed\n${formatDebugError(error)}`, botId);
+      logger.summary('NOTIFY', 'ntfy POST failed', botId);
+      logger.debug('NOTIFY', formatDebugError(error), botId);
       continue;
     }
     store.writeSeenValue(notification.uri, NOTIFIED_TABLE);

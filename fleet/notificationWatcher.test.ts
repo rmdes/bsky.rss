@@ -247,6 +247,50 @@ test('one failed ntfy POST does not block the rest of the batch, and is not reco
   assert.equal(store.seenValueExists(succeeding.uri, 'notified_items'), true);
 });
 
+test('a non-ok ntfy POST response is logged at summary level, not just debug', async () => {
+  // Found live: NTFY_TOKEN expired and every push got a 401 for 3 days with nothing in the
+  // default-level logs, because this failure only logged at debug - see notificationWatcher.ts.
+  const bskyClient = new FakeBskyClient();
+  bskyClient.setResult({ok: true, notifications: [makeNotification()]});
+  const store = new FakeStore();
+  const fetchImpl = async () => new Response(null, {status: 401});
+  const {logger, records} = makeLogger();
+
+  await checkBotNotifications({
+    botId: 'b',
+    botHandle: 'b.bsky.social',
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
+    ntfyUrl: 'https://ntfy.example/topic',
+    logger,
+    fetchImpl,
+  });
+
+  assert.ok(records.some(r => r.level === 'summary' && /ntfy POST failed/i.test(r.message)));
+});
+
+test('an ntfy POST that throws is logged at summary level, not just debug', async () => {
+  const bskyClient = new FakeBskyClient();
+  bskyClient.setResult({ok: true, notifications: [makeNotification()]});
+  const store = new FakeStore();
+  const fetchImpl = async () => {
+    throw new Error('network unreachable');
+  };
+  const {logger, records} = makeLogger();
+
+  await checkBotNotifications({
+    botId: 'b',
+    botHandle: 'b.bsky.social',
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
+    ntfyUrl: 'https://ntfy.example/topic',
+    logger,
+    fetchImpl,
+  });
+
+  assert.ok(records.some(r => r.level === 'summary' && /ntfy POST failed/i.test(r.message)));
+});
+
 test('a failed send is retried on the next call (its uri was never recorded)', async () => {
   const bskyClient = new FakeBskyClient();
   const notification = makeNotification();
