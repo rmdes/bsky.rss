@@ -1,0 +1,23 @@
+services:
+  bsky-rss-fleet:
+    restart: unless-stopped
+    image: ghcr.io/rmdes/bsky.rss:2.13.1
+    container_name: bsky-rss-fleet
+    command: ["node", "--import", "tsx", "fleet/runFleet.ts"]
+    stop_grace_period: 45s
+    env_file:
+      - .env
+    environment:
+      - DRY_RUN=false
+      - FLEET_CONFIG_ROOT=/build/config
+      - FLEET_SECRETS_PATH=/build/secrets/bsky-fleet.json
+      - FLEET_DATA_ROOT=/build/data/fleet
+      - FLEET_LOCK_PATH=/build/data/fleet/fleet.pid
+      - FLEET_LOG_LEVEL=verbose
+      # rappel.conso.gouv.fr doesn't send its own intermediate cert (a real
+      # server misconfiguration, verified directly) - see certs/README.md
+      - NODE_EXTRA_CA_CERTS=/build/certs/sectigo-public-server-authentication-ca-ov-r36.pem
+    volumes:
+      - ./config:/build/config:ro
+      - ./secrets:/build/secrets:ro
+      - ./data:/build/data

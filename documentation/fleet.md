@@ -513,6 +513,56 @@ If anything goes wrong after cutover, see **Rollback** above: stop the fleet
 daemon first, then run the exporter to write the fleet's state back into the
 legacy file shapes so the legacy containers can be brought back up.
 
+## Upgrading a running deployment
+
+`docker-compose.fleet.example.yml` (above) is the one-time bootstrap template
+for a brand-new deployment - copy it once, pin a version, done. It does
+**not** solve staying current: pinning an exact tag (recommended, for
+reproducible rollback) means every later release needs that tag bumped by
+hand before `docker compose pull` has anything new to fetch - `pull` only
+re-resolves whatever tag the compose file already names.
+
+`deploy/fleet/` and `deploy/canary/` track that compose file *in this repo*,
+with its image tag bumped in the same commit that bumps `package.json`'s
+version for every release. Point your deployment directory's git checkout at
+this, and upgrading becomes:
+
+```bash
+cd /home/skyfleet-next   # wherever your deployment's git checkout lives
+git pull
+./deploy/fleet/deploy.sh
+```
+
+`deploy.sh` runs `docker compose -f deploy/fleet/docker-compose.yml
+--project-directory . pull` then `... up -d --force-recreate` -
+`--project-directory .` is what keeps the compose file's relative volume
+paths (`./config`, `./secrets`, `./data`) resolving against your deployment
+root rather than against this tracked file's own directory inside the git
+checkout.
+
+**One-time setup**, turning an existing deployment directory into a git
+checkout without touching its existing `config`/`secrets`/`data`:
+
+```bash
+cd /home/skyfleet-next
+git init
+git remote add origin https://github.com/<your-fork>/bsky.rss.git
+git sparse-checkout init --cone
+git sparse-checkout set deploy/fleet
+git fetch origin main --depth 1
+git checkout main
+mv docker-compose.yml docker-compose.yml.bak   # superseded by deploy/fleet/docker-compose.yml
+cp deploy/fleet/.env.example deploy/fleet/.env  # then fill in NTFY_URL/NTFY_TOKEN if you use them
+```
+
+(Canary: same steps, `deploy/canary` in place of `deploy/fleet`.)
+
+Secrets never ride along: `NTFY_URL`/`NTFY_TOKEN` live in `deploy/fleet/.env`
+(gitignored, referenced via the compose file's `env_file:`), never in the
+tracked `docker-compose.yml` - `config/`, `secrets/`, and `data/` stay
+completely outside git's tracked paths, since `sparse-checkout set
+deploy/fleet` only ever tracks that one subdirectory.
+
 ## Backing up the live deployment
 
 `/home/skyfleet-next` (or wherever your fleet's config/secrets/data lives)

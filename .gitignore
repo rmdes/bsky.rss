@@ -7,8 +7,8 @@ CLAUDE.md
 data/db.txt
 data/debug_errors.txt
 data/persist.json
-docker-compose.yml
-docker-compose.yml.bak
+/docker-compose.yml
+/docker-compose.yml.bak
 
 # Fleet runtime config (real bot secrets) and per-bot session/dedupe state
 config/
@@ -16,6 +16,10 @@ data/fleet/
 
 # Operator's real broadcast text (copy fleet/broadcast.sh.example to create this)
 fleet/broadcast.sh
+
+# Real deployment secrets (copy deploy/*/.env.example to create these on the VM)
+deploy/fleet/.env
+deploy/canary/.env
 
 # Logs
 logs
@@ -156,7 +160,6 @@ data/config.json
 data/persist.json
 
 package-lock.json
-docker-compose.yml
 
 # Yarn 3 files
 .pnp.*

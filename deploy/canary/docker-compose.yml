@@ -1,0 +1,8 @@
+services:
+  seismes-fr-test:
+    container_name: seismes-fr-test
+    image: ghcr.io/rmdes/bsky.rss:2.13.1
+    env_file:
+      - .env
+    volumes:
+      - ./data:/build/data
