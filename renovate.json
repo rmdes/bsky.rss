@@ -42,6 +42,17 @@
       "description": "Pin GitHub Actions to commit SHA for security",
       "matchManagers": ["github-actions"],
       "pinDigests": true
+    },
+    {
+      "description": "ajv is a CVE-floor resolution for ESLint, which needs ajv 6 (eslint/lib/shared/ajv.js loads the draft-04 schema)",
+      "matchPackageNames": ["ajv"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "Hold TypeScript below 7 until typescript-eslint's peer range allows it (currently <6.1.0)",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
     }
   ],
   "vulnerabilityAlerts": {
@@ -51,6 +62,7 @@
   },
   "timezone": "UTC",
   "schedule": ["at any time"],
+  "minimumReleaseAge": "1 day",
   "labels": ["dependencies"],
   "commitMessagePrefix": "chore(deps):",
   "prConcurrentLimit": 5,
