@@ -11,6 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.13.2] - 2026-10-30
+
+### Security
+- Resolved 8 of 9 open Dependabot alerts, lockfile-only (all transitive, all within existing
+  semver ranges): `undici` 7.30.0 → 7.30.1 (via `cheerio`/`open-graph-scraper`) and 8.11.2 →
+  8.12.3 (via `node-gyp`) for a content-encoding DoS, an EventSource memory DoS, and an SRI
+  bypass; `follow-redirects` 1.16.0 → 1.16.2 (via `axios`) for credential headers leaking on
+  cross-origin redirects. The ninth (`zod` < 4.6.6, via `jimp`) was dismissed as unreachable:
+  jimp only uses zod to validate plugin arguments, never feed-derived data, and no patched 3.x
+  exists.
+
+### Changed
+- `@atproto/api` 0.23.0 → 0.29.6, `@atproto/xrpc` 0.8.15 → 0.8.16, `@types/node` 24.19.1 → 24.19.2.
+- Renovate: waits one day before proposing a new version (matching yarn's 24h
+  `npmMinimalAgeGate`, which made it open PRs it couldn't build a lockfile for), never proposes
+  `ajv` majors (ESLint needs ajv 6), and holds `typescript` below 7 until `typescript-eslint`
+  supports it.
+
+### Added
+- `deploy/fleet/` and `deploy/canary/` track the live deployments' compose files in-repo, and
+  `yarn bump-version <X.Y.Z>` updates `package.json` plus both compose image tags in one step.
+  Upgrading a deployment is now `git pull && ./deploy/<fleet|canary>/deploy.sh` (see
+  `documentation/fleet.md`, "Upgrading a running deployment").
+
+---
+
 ## [2.13.1] - 2026-10-09
 
 ### Fixed

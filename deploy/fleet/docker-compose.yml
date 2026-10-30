@@ -1,7 +1,7 @@
 services:
   bsky-rss-fleet:
     restart: unless-stopped
-    image: ghcr.io/rmdes/bsky.rss:2.13.1
+    image: ghcr.io/rmdes/bsky.rss:2.13.2
     container_name: bsky-rss-fleet
     command: ["node", "--import", "tsx", "fleet/runFleet.ts"]
     stop_grace_period: 45s
