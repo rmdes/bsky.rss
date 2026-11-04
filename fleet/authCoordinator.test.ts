@@ -88,8 +88,10 @@ test('waits at least staggerSeconds between activations', async () => {
   await coordinator.start();
   const elapsedMs = Date.now() - start;
 
+  // libuv schedules timers against a millisecond-truncated loop time, so a 50ms wait can
+  // measure as 49ms (seen in CI). 2ms of slack still catches a skipped wait.
   assert.ok(
-    elapsedMs >= staggerSeconds * 1000,
+    elapsedMs >= staggerSeconds * 1000 - 2,
     `expected at least ${staggerSeconds * 1000}ms, got ${elapsedMs}ms`,
   );
 });

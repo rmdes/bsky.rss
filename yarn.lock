@@ -1269,7 +1269,7 @@ __metadata:
     gts: "npm:7.0.0"
     html-entities: "npm:2.6.0"
     jimp: "npm:^1.6.1"
-    open-graph-scraper: "npm:6.12.0"
+    open-graph-scraper: "npm:6.13.0"
     tsx: "npm:4.23.15"
     typescript: "npm:6.0.3"
   languageName: unknown
@@ -2572,7 +2572,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"iconv-lite@npm:^0.7.2":
+"iconv-lite@npm:^0.7.3":
   version: 0.7.3
   resolution: "iconv-lite@npm:0.7.3"
   dependencies:
@@ -3180,15 +3180,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"open-graph-scraper@npm:6.12.0":
-  version: 6.12.0
-  resolution: "open-graph-scraper@npm:6.12.0"
+"open-graph-scraper@npm:6.13.0":
+  version: 6.13.0
+  resolution: "open-graph-scraper@npm:6.13.0"
   dependencies:
     chardet: "npm:^2.2.0"
     cheerio: "npm:^1.2.0"
-    iconv-lite: "npm:^0.7.2"
-    undici: "npm:^7.28.0"
-  checksum: 10c0/1b5785bb88be71542db575e605a8f8c2638d67a7dc4a28c88654d0d7d3d6a38495bdd0e5798c795a4788ab0927f81754b96d9d9dcf8a53532be14ebe664c0f49
+    iconv-lite: "npm:^0.7.3"
+    undici: "npm:^7.30.1"
+  checksum: 10c0/65d757bf73a4cf4dd38057a25ddcd6ee71a0ee4feb25c8f025b836a69d80ebe0b06446705cc78f12880ff7ff2b5dbca8e5a44f94d3a13e88768dbf3ccf30cd54
   languageName: node
   linkType: hard
 
@@ -3991,7 +3991,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"undici@npm:^7.19.0, undici@npm:^7.28.0":
+"undici@npm:^7.19.0, undici@npm:^7.30.1":
   version: 7.30.1
   resolution: "undici@npm:7.30.1"
   checksum: 10c0/c838089b010e8e28a9a5358d4bf4621e0c8d7bb70058b23e819667349c4c0b6791a7c8bc9bbe94ff0923db132faae0d9d9592b9743eda4f2b49466fa57482213

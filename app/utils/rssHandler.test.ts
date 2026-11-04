@@ -4,6 +4,7 @@ import fs, {mkdtempSync, rmSync} from 'fs';
 import path from 'path';
 import {tmpdir} from 'os';
 import {createServer} from 'node:http';
+import type og from 'open-graph-scraper';
 import {Logger} from '../../shared/logging/logger.ts';
 import {createDbHandler, type DbHandler} from './dbHandler.ts';
 import {createBskyHandler} from './bskyHandler.ts';
@@ -712,10 +713,10 @@ describe('rssHandler', () => {
     // Rewritten to drive real handleItem embed construction end-to-end, following the
     // "Cross-poll deduplication" tests' pattern below (real feed server + createRssHandler
     // + a fake queue) - handleItem isn't exported, and its embed-building only runs
-    // inside the Open Graph fetch path (`og()`, imported directly rather than injected,
-    // so it can't be swapped for a mock the way db/queue can). A real local HTTP server
-    // standing in for the target page lets these hit the genuine code path without
-    // reaching the public internet.
+    // inside the Open Graph fetch path. open-graph-scraper >= 6.13 refuses non-public
+    // hosts, so it can no longer read a page from a local test server: the success case
+    // injects a stand-in for it (createRssHandler's fetchOpenGraph), while the og:image
+    // fetch still goes through axios against a real local server.
     //
     // Narrower variants from the original block (the 'image' embedType, and the
     // "no description"/"no image" cases as isolated concerns) are not each given their
@@ -724,26 +725,29 @@ describe('rssHandler', () => {
     // disproportionate infrastructure for what this file is testing. The two tests below
     // already assert embed.image is undefined as a natural consequence of the OG image
     // fetch failing, covering that case without a dedicated test.
-    it('queues a card embed built from real Open Graph title/description data, end-to-end', async () => {
-      let ogPort = 0;
-      const ogServer = createServer((req, res) => {
-        if (req.url === '/broken.jpg') {
-          res.writeHead(404);
-          res.end('not an image');
-          return;
-        }
-        res.writeHead(200, {'Content-Type': 'text/html'});
-        res.end(
-          '<!DOCTYPE html><html><head>' +
-            '<meta property="og:title" content="Open Graph Title" />' +
-            '<meta property="og:description" content="Open Graph description" />' +
-            `<meta property="og:image" content="http://127.0.0.1:${ogPort}/broken.jpg" />` +
-            '</head><body></body></html>',
-        );
+    it('queues a card embed built from Open Graph title/description data, end-to-end', async () => {
+      const ogServer = createServer((_req, res) => {
+        res.writeHead(404);
+        res.end('not an image');
       });
       await new Promise<void>(resolve => ogServer.listen(0, resolve));
-      ogPort = (ogServer.address() as {port: number}).port;
+      const ogPort = (ogServer.address() as {port: number}).port;
       const articleUrl = `http://127.0.0.1:${ogPort}/article`;
+
+      const ogCalls: Parameters<typeof og>[0][] = [];
+      const fakeOpenGraph: typeof og = async options => {
+        ogCalls.push(options);
+        return {
+          error: false,
+          html: '',
+          response: {},
+          result: {
+            ogTitle: 'Open Graph Title',
+            ogDescription: 'Open Graph description',
+            ogImage: [{url: `http://127.0.0.1:${ogPort}/broken.jpg`}],
+          },
+        };
+      };
 
       const feedBody =
         '<?xml version="1.0"?><rss version="2.0"><channel>' +
@@ -788,7 +792,7 @@ describe('rssHandler', () => {
         runQueue: async (): Promise<QueueItems[]> => queued,
         computeDelay: () => 0,
       };
-      const testRssHandler = createRssHandler(fakeQueue, db, testLogger);
+      const testRssHandler = createRssHandler(fakeQueue, db, testLogger, fakeOpenGraph);
 
       try {
         const reader = await testRssHandler.init({
@@ -802,6 +806,13 @@ describe('rssHandler', () => {
         feedServer.close();
         ogServer.close();
       }
+
+      assert.strictEqual(ogCalls.length, 1);
+      assert.strictEqual(ogCalls[0]?.url, articleUrl);
+      assert.strictEqual(
+        (ogCalls[0]?.fetchOptions?.headers as Record<string, string>)['user-agent'],
+        'bsky.rss/test',
+      );
 
       assert.strictEqual(queued.length, 1);
       const embed = queued[0]?.embed;
