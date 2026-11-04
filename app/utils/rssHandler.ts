@@ -12,7 +12,14 @@ import {
 } from '../../shared/feedSource/markdownLinks.ts';
 import type {Logger} from '../../shared/logging/index.ts';
 
-export function createRssHandler(queue: QueueHandler, db: DbHandler, logger: Logger) {
+// fetchOpenGraph is injectable only so tests can stand in for it: open-graph-scraper >= 6.13
+// refuses non-public hosts, so a local test server can no longer serve it a page.
+export function createRssHandler(
+  queue: QueueHandler,
+  db: DbHandler,
+  logger: Logger,
+  fetchOpenGraph: typeof og = og,
+) {
   let reader: FeedSource | null = null;
   let lastDate: string = '';
   // Tracks the newest date seen *within the batch currently being processed*, committed
@@ -118,7 +125,7 @@ export function createRssHandler(queue: QueueHandler, db: DbHandler, logger: Log
       const userAgent = config.ogUserAgent || defaultUserAgent;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const openGraphData: any = await og({
+      const openGraphData: any = await fetchOpenGraph({
         url,
         timeout: 10000,
         fetchOptions: {
