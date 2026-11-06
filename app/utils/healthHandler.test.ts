@@ -6,7 +6,8 @@ import {sleep} from './test-helpers.ts';
 import healthHandler from './healthHandler.ts';
 
 describe('healthHandler', () => {
-  const TEST_PORT = 8080; // Use default port
+  // Same default as the handler; set HEALTH_CHECK_PORT when 8080 is taken locally.
+  const TEST_PORT = Number(process.env.HEALTH_CHECK_PORT ?? 8080);
 
   before(async () => {
     // Start server once for all tests
@@ -61,18 +62,20 @@ describe('healthHandler', () => {
       assert(data.version);
     });
 
-    it('should return 503 when last activity is too old', async () => {
+    it('should return 503 when last activity is too old', async t => {
+      // Mock only Date: the HTTP server and fetch keep their real timers.
+      t.mock.timers.enable({apis: ['Date'], now: Date.now()});
       healthHandler.markReady();
-      // Don't update activity - wait for it to be stale
-      // Health check considers > 600000ms (10 min) as unhealthy
+      healthHandler.updateActivity();
+      t.mock.timers.tick(600000); // 10 minutes with no activity
 
-      // We can't wait 10 minutes in a test, so we'll just verify
-      // the response structure includes timeSinceActivity
       const response = await fetch(`http://localhost:${TEST_PORT}/health`);
       const data = await response.json();
 
-      assert(data.timeSinceActivity);
-      assert(data.lastActivity);
+      assert.strictEqual(response.status, 503);
+      assert.strictEqual(data.status, 'unhealthy');
+      assert.strictEqual(data.stale, true);
+      assert.strictEqual(data.timeSinceActivity, '600s');
     });
 
     it('should include uptime in response', async () => {
@@ -200,6 +203,11 @@ describe('healthHandler', () => {
       assert(Object.hasOwn(data, 'timeSinceActivity'));
       assert(Object.hasOwn(data, 'uptime'));
       assert(Object.hasOwn(data, 'version'));
+      assert.strictEqual(data.stale, false);
+      for (const key of ['rss', 'heapUsed', 'heapTotal', 'external']) {
+        assert(Number.isInteger(data.memory[key]), `memory.${key} should be whole MB`);
+      }
+      assert(data.memory.rss > 0);
     });
   });
 });

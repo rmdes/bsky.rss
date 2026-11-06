@@ -34,17 +34,28 @@ export function start() {
   server = http.createServer((req, res) => {
     if (req.url === '/health' || req.url === '/') {
       const timeSinceActivity = Date.now() - lastActivityTime;
-      const status = isReady && timeSinceActivity < 600000 ? 200 : 503;
+      const stale = timeSinceActivity >= 600000;
+      const status = isReady && !stale ? 200 : 503;
+      const toMb = (bytes: number) => Math.round(bytes / 1024 / 1024);
+      const mem = process.memoryUsage();
 
       res.writeHead(status, {'Content-Type': 'application/json'});
       res.end(
         JSON.stringify({
           status: status === 200 ? 'healthy' : 'unhealthy',
           ready: isReady,
+          stale,
           lastActivity: new Date(lastActivityTime).toISOString(),
           timeSinceActivity: `${Math.round(timeSinceActivity / 1000)}s`,
           uptime: process.uptime(),
           version: packageJson.version,
+          // MB, so a leak shows up as steady growth across polls
+          memory: {
+            rss: toMb(mem.rss),
+            heapUsed: toMb(mem.heapUsed),
+            heapTotal: toMb(mem.heapTotal),
+            external: toMb(mem.external),
+          },
         }),
       );
     } else {

@@ -110,15 +110,19 @@ You should see:
 {
   "status": "healthy",
   "ready": true,
+  "stale": false,
   "lastActivity": "2026-08-06T12:34:56.789Z",
+  "timeSinceActivity": "5s",
   "uptime": 123.45,
-  "version": "2.2.0"
+  "version": "2.13.2",
+  "memory": {"rss": 150, "heapUsed": 45, "heapTotal": 75, "external": 2}
 }
 ```
 
 **Status meanings:**
 - ✅ `"status": "healthy"` - Bot is running and active
-- ❌ `"status": "unhealthy"` - Bot hasn't run in 10+ minutes (check logs)
+- ❌ `"status": "unhealthy"` - Bot hasn't run in 10+ minutes (`"stale": true`) or hasn't finished starting (`"ready": false`); check logs
+- `memory` is process memory in MB; steady `rss` growth across checks points to a leak
 
 ### Check the Logs
 
