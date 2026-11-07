@@ -7,7 +7,10 @@ WORKDIR /build
 COPY package.json yarn.lock ./
 COPY .yarn ./.yarn
 COPY .yarnrc.yml ./
-RUN YARN_ENABLE_IMMUTABLE_INSTALLS=true yarn workspaces focus --production \
+# node:26 images ship neither yarn nor corepack, so run the repo's pinned yarn release
+# (yarnPath in .yarnrc.yml) directly.
+RUN YARN_ENABLE_IMMUTABLE_INSTALLS=true \
+    node "$(sed -n 's/^yarnPath: //p' .yarnrc.yml)" workspaces focus --production \
  && rm -rf /root/.yarn
 
 COPY . .

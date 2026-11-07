@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.14.1] - 2026-11-07
+
+### Fixed
+- **Docker image build on Node 26**: `node:26` images no longer ship `yarn` or `corepack`, so
+  the `v2.14.0` image build failed (`yarn: not found`) and no 2.14.0 image was published. The
+  Dockerfile now runs the repo's pinned Yarn release (`yarnPath` in `.yarnrc.yml`) with `node`
+  directly. 2.14.1 is otherwise identical to 2.14.0; upgrade straight from 2.13.2.
+
+---
+
 ## [2.14.0] - 2026-11-07
 
 ### Changed
