@@ -1,4 +1,4 @@
-FROM node:24-alpine
+FROM node:26-alpine
 
 LABEL org.opencontainers.image.description="A configurable RSS poster for Bluesky"
 LABEL org.opencontainers.image.source="https://github.com/rmdes/bsky.rss"
