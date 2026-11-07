@@ -41,8 +41,8 @@
     "deps:audit": "yarn npm audit"
   },
   "dependencies": {
-    "@atproto/api": "0.30.0",
-    "@atproto/xrpc": "0.8.16",
+    "@atproto/api": "0.30.3",
+    "@atproto/xrpc": "0.8.18",
     "axios": "1.21.0",
     "dotenv": "^18.0.0",
     "feedsmith": "^3.0.0",
