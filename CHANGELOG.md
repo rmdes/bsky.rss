@@ -11,6 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.14.0] - 2026-11-07
+
+### Changed
+- **Runtime: Node.js 24 → 26.** The Docker image is now `node:26-alpine`, and
+  `.node-version` pins 26. CI (`pr-checks.yml`, `release-image.yml`) now reads its Node
+  version from `.node-version` instead of a hardcoded 24, so the image, CI and local fnm
+  can't drift apart.
+- `@atproto/api` 0.29.6 → 0.30.3, `@atproto/xrpc` 0.8.16 → 0.8.18, `axios` 1.20.0 → 1.21.0,
+  `@types/node` 24 → 26.
+
+### Added
+- `/health` reports `stale` (no activity for 10 minutes, the same condition that already
+  returned 503) and `memory` (`rss`, `heapUsed`, `heapTotal`, `external`, in MB), so a leak
+  shows up as steady growth across checks.
+- `.env.example` documenting every environment variable the code reads, `.node-version`,
+  and `SECURITY.md` (vulnerabilities are reported through GitHub private vulnerability
+  reporting).
+
+### Security
+- `open-graph-scraper` 6.12.0 → 6.13.0: Open Graph lookups (single-bot mode) now refuse
+  hosts resolving to private, loopback, link-local or reserved addresses, including on
+  redirects, so a feed item can't make the bot fetch internal services.
+- Dismissed Dependabot alert for `minimatch` (dev-only via ESLint, not in the image).
+
+### Fixed
+- Health tests honour `HEALTH_CHECK_PORT`; the stale-activity test now actually checks the
+  503; `authCoordinator`'s stagger test no longer flakes on millisecond timer rounding.
+
+---
+
 ## [2.13.2] - 2026-10-30
 
 ### Security
