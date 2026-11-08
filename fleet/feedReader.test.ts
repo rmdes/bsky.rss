@@ -20,7 +20,7 @@ import {SharedLimiters} from './sharedLimiters.ts';
 import {BotOperations} from './botOperations.ts';
 import {Logger, type LogRecord} from '../shared/logging/logger.ts';
 import {Jimp, JimpMime} from 'jimp';
-import {Jimp as WebpJimp} from '../shared/feedSource/jimp.ts';
+import {WEBP_4X4} from '../shared/feedSource/test-helpers.ts';
 
 // handleItem is private; these tests drive it directly to exercise item-processing
 // behavior without going through a real feed poll.
@@ -1121,9 +1121,7 @@ test('resolveEmbedImage succeeds when the response is within maxImageDownloadByt
 });
 
 test('resolveEmbedImage decodes a WebP image and returns a JPEG buffer', async t => {
-  const webp = await new WebpJimp({width: 2, height: 2, color: 0x00ff00ff}).getBuffer('image/webp');
-
-  const {server, port} = await startFixedResponseServer(webp);
+  const {server, port} = await startFixedResponseServer(WEBP_4X4);
   t.after(() => server.close());
 
   const dir = mkdtempSync(join(tmpdir(), 'feedreader-test-'));
