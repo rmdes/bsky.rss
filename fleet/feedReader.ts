@@ -10,6 +10,7 @@ import {computeDedupeKey} from './dedupeKey.ts';
 import {SharedLimiters} from './sharedLimiters.ts';
 import {BotOperations, classifyFeedFailure} from './botOperations.ts';
 import {Logger, formatDebugError} from '../shared/logging/logger.ts';
+import {retryOnce} from '../shared/http/retryOnce.ts';
 import {createFeedSource} from '../shared/feedSource/index.ts';
 import type {FeedSource, NormalizedItem} from '../shared/feedSource/index.ts';
 import {absolutizeImageUrl, isYouTubeUrl, youtubeThumbnail} from '../shared/feedSource/imageUrl.ts';
@@ -277,16 +278,19 @@ export class FeedReader {
     try {
       return await this.sharedLimiters.withImageLimit(
         async () => {
-          const response = await axios.get(imageUrl, {
-            headers: {
-              'User-Agent': this.config.ogUserAgent ?? 'bsky.rss/1.0 (Open Graph Scraper)',
-            },
-            responseType: 'arraybuffer',
-            maxContentLength: this.sharedLimiters.maxImageDownloadBytes,
-            timeout: this.sharedLimiters.httpTimeoutMs,
-            httpAgent,
-            httpsAgent,
-          });
+          // Only the download is retried: a decode failure would fail the same way twice.
+          const response = await retryOnce(() =>
+            axios.get(imageUrl, {
+              headers: {
+                'User-Agent': this.config.ogUserAgent ?? 'bsky.rss/1.0 (Open Graph Scraper)',
+              },
+              responseType: 'arraybuffer',
+              maxContentLength: this.sharedLimiters.maxImageDownloadBytes,
+              timeout: this.sharedLimiters.httpTimeoutMs,
+              httpAgent,
+              httpsAgent,
+            }),
+          );
 
           // Validate buffer size before processing to prevent OOM
           const buffer = Buffer.from(response.data);

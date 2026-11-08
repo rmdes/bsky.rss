@@ -17,6 +17,7 @@ import {
   youtubeThumbnail,
 } from '../../shared/feedSource/imageUrl.ts';
 import type {Logger} from '../../shared/logging/index.ts';
+import {retryOnce} from '../../shared/http/retryOnce.ts';
 
 // fetchOpenGraph is injectable only so tests can stand in for it: open-graph-scraper >= 6.13
 // refuses non-public hosts, so a local test server can no longer serve it a page.
@@ -389,13 +390,16 @@ export function createRssHandler(
     let image: Buffer | undefined = undefined;
 
     try {
-      const fetchBuffer = await axios.get(imageUrl, {
-        headers: {
-          'User-Agent': config.ogUserAgent,
-        },
-        responseType: 'arraybuffer',
-        timeout: 10_000, // ms; axios has no timeout by default, so a stalled server hung the item
-      });
+      // Only the download is retried: a decode failure would fail the same way twice.
+      const fetchBuffer = await retryOnce(() =>
+        axios.get(imageUrl, {
+          headers: {
+            'User-Agent': config.ogUserAgent,
+          },
+          responseType: 'arraybuffer',
+          timeout: 10_000, // ms; axios has no timeout by default, so a stalled server hung the item
+        }),
+      );
       image = await resizeImageToBuffer(fetchBuffer.data);
     } catch (error) {
       // Image fetch/resize failures are non-fatal; caller falls back to no image

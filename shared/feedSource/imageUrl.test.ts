@@ -101,6 +101,14 @@ test('youtubeThumbnail returns undefined on non-200, bad JSON, missing or non-ht
   assert.equal(await youtubeThumbnail(url, {...options, fetchFn: throwing}), undefined);
 });
 
+test('absolutizeImageUrl rejects a bare site root, which is a home page, not an image', () => {
+  assert.equal(absolutizeImageUrl('/', 'https://www.ansa.it/sito/notizie/x.html'), undefined);
+  assert.equal(absolutizeImageUrl('https://www.ansa.it/', page), undefined);
+  assert.equal(absolutizeImageUrl('https://www.ansa.it', page), undefined);
+  // A root path with a query can still be an image endpoint.
+  assert.equal(absolutizeImageUrl('/?img=42', page), 'https://cvefeed.io/?img=42');
+});
+
 test('absolutizeImageUrl keeps an absolute URL even when the base is invalid or missing', () => {
   const absolute = 'https://cdn.example/a.jpg';
   assert.equal(absolutizeImageUrl(absolute, 'not a url'), absolute);

@@ -15,6 +15,15 @@ import {createRssHandler, type RssHandler} from './rssHandler.ts';
 
 const testLogger = new Logger({defaultLevel: 'summary', sink: () => undefined});
 
+// Waits until done() is true (or timeoutMs passes) instead of a fixed sleep: an item whose
+// image download fails now takes ~1.5s longer, because the download is retried once.
+async function waitUntil(done: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!done() && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+}
+
 /**
  * Tests for rssHandler module
  *
@@ -802,7 +811,7 @@ describe('rssHandler', () => {
           fetch_url: new URL(`http://127.0.0.1:${feedPort}/feed.xml`),
         });
         await testRssHandler.start();
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await waitUntil(() => queued.length > 0); // og:image 404s, so its download retries
         reader.stop();
       } finally {
         feedServer.close();
@@ -915,7 +924,11 @@ describe('rssHandler', () => {
           fetch_url: new URL(`http://127.0.0.1:${feedPort}/feed.xml`),
         });
         await testRssHandler.start();
-        await new Promise(resolve => setTimeout(resolve, 500));
+        if (options.expectQueued === false) {
+          await new Promise(resolve => setTimeout(resolve, 500)); // nothing to wait for
+        } else {
+          await waitUntil(() => queued.length > 0);
+        }
         reader.stop();
       } finally {
         feedServer.close();
@@ -985,6 +998,35 @@ describe('rssHandler', () => {
           },
         );
         assert(embed?.image, 'og:image should resolve against the final page and download');
+      } finally {
+        imgServer.close();
+      }
+    });
+
+    it('retries an image download once when the first attempt fails (flaky CDN edge)', async () => {
+      const jpeg = await new Jimp({width: 2, height: 2, color: 0xff0000ff}).getBuffer(
+        JimpMime.jpeg,
+      );
+      let requests = 0;
+      const imgServer = createServer((_req, res) => {
+        requests++;
+        if (requests === 1) {
+          res.writeHead(404, {'cache-control': 'no-store'});
+          res.end();
+          return;
+        }
+        res.writeHead(200, {'Content-Type': 'image/jpeg'});
+        res.end(jpeg);
+      });
+      await new Promise<void>(resolve => imgServer.listen(0, resolve));
+      const imgPort = (imgServer.address() as {port: number}).port;
+      try {
+        const {embed} = await runOembedCase(
+          'https://example.test/article',
+          `http://127.0.0.1:${imgPort}/card.jpg`,
+        );
+        assert(embed?.image, 'the retried download should be attached');
+        assert.strictEqual(requests, 2);
       } finally {
         imgServer.close();
       }
