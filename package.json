@@ -43,6 +43,8 @@
   "dependencies": {
     "@atproto/api": "0.30.3",
     "@atproto/xrpc": "0.8.18",
+    "@jimp/core": "1.6.1",
+    "@jsquash/webp": "1.5.0",
     "axios": "1.21.0",
     "dotenv": "^18.0.0",
     "feedsmith": "^3.0.0",

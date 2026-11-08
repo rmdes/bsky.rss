@@ -1,4 +1,5 @@
-import {Jimp, JimpMime} from 'jimp';
+import {JimpMime} from 'jimp';
+import {Jimp} from '../../shared/feedSource/jimp.ts';
 import axios from 'axios';
 import type {QueueHandler} from './queueHandler.ts';
 import type {DbHandler} from './dbHandler.ts';
@@ -10,15 +11,18 @@ import {
   extractMarkdownLinks,
   finalizeMarkdownLinks,
 } from '../../shared/feedSource/markdownLinks.ts';
+import {isYouTubeUrl, resolveImageUrl, youtubeThumbnail} from '../../shared/feedSource/imageUrl.ts';
 import type {Logger} from '../../shared/logging/index.ts';
 
 // fetchOpenGraph is injectable only so tests can stand in for it: open-graph-scraper >= 6.13
 // refuses non-public hosts, so a local test server can no longer serve it a page.
+// fetchYouTubeOembed is injectable for the same reason: tests must not reach youtube.com.
 export function createRssHandler(
   queue: QueueHandler,
   db: DbHandler,
   logger: Logger,
   fetchOpenGraph: typeof og = og,
+  fetchYouTubeOembed: typeof fetch = fetch,
 ) {
   let reader: FeedSource | null = null;
   let lastDate: string = '';
@@ -143,9 +147,9 @@ export function createRssHandler(
 
       if (!openGraphData.error) {
         if (image === undefined && openGraphData.ogImage) {
-          const imageUrl: string = openGraphData.ogImage[0].url;
+          const imageUrl = resolveImageUrl(openGraphData.ogImage[0]?.url, url);
 
-          if (imageUrl !== '' && imageUrl !== undefined) {
+          if (imageUrl !== undefined) {
             image = await fetchImage(imageUrl);
 
             if (image === undefined) {
@@ -206,6 +210,21 @@ export function createRssHandler(
           imageAlt: imageAlt,
           type: config.embedType,
         };
+      }
+
+      // YouTube shows scrapers a consent page (no og:image); its oEmbed endpoint has the thumbnail.
+      if (embed && embed.image === undefined && isYouTubeUrl(url)) {
+        const thumbnail = await youtubeThumbnail(url, {
+          userAgent,
+          timeoutMs: 10000,
+          fetchFn: fetchYouTubeOembed,
+        });
+        if (thumbnail) {
+          embed.image = await fetchImage(thumbnail);
+          if (!embed.image) {
+            logger.debug('FETCH', `Error fetching image for ${item.title} (${thumbnail})`);
+          }
+        }
       }
     }
 
