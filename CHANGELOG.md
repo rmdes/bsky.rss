@@ -11,6 +11,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.15.0] - 2026-11-08
+
+### Added
+- **Link-card images are recovered in more cases** (both modes):
+  - Relative image URLs are made absolute: a relative `og:image` against the page Open Graph
+    actually landed on after redirects, a relative `enclosure`/`media:content` against the item's
+    link (or the feed URL).
+  - WebP images are decoded (posted as JPEG), with a pixel-size cap checked before decoding.
+  - YouTube links fall back to YouTube's oEmbed thumbnail whenever the card would otherwise have no
+    image, including when the image URL fails to download.
+
+### Fixed
+- **Single-bot mode could hang an item for hours**: the Open Graph `timeout` was passed as
+  `10000`, which open-graph-scraper reads as seconds (~2.8 h); now 10 s. Single-bot image
+  downloads had no timeout at all; now 10 s.
+- Stale items are dropped before any Open Graph, image or oEmbed request, also with
+  `removeDuplicate` on.
+- Fleet YouTube oEmbed lookups share the Open Graph concurrency limit and log why they failed;
+  unread error responses no longer hold connections.
+- The WebP decoder releases its WASM memory after a large image instead of keeping its peak size.
+- `jimp` and `@jimp/core` are pinned to the same version (grouped in Renovate).
+
+### CI
+- PR checks build the Docker image and start it: both real entry points plus a WebP decode.
+- Releases run the same check on amd64 and arm64 before pushing, verify `package.json` matches the
+  tag up front, and only the newest tag moves `:latest`.
+
+---
+
 ## [2.14.1] - 2026-11-07
 
 ### Fixed
