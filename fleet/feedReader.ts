@@ -1,4 +1,5 @@
-import {Jimp, JimpMime} from 'jimp';
+import {JimpMime} from 'jimp';
+import {Jimp} from '../shared/feedSource/jimp.ts';
 import axios from 'axios';
 import http from 'node:http';
 import https from 'node:https';

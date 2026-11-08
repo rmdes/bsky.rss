@@ -834,6 +834,25 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@jimp/wasm-webp@npm:1.6.1":
+  version: 1.6.1
+  resolution: "@jimp/wasm-webp@npm:1.6.1"
+  dependencies:
+    "@jsquash/webp": "npm:^1.4.0"
+    zod: "npm:^3.23.8"
+  checksum: 10c0/23c6aac33e591278f56a6e70f3268aa491a9ec992dd9a04c506d91df0c6449b0e4dd5cda3a0b4a7fb309f41aa45eef6a14e0cd20b618bc257bef343d0998d682
+  languageName: node
+  linkType: hard
+
+"@jsquash/webp@npm:^1.4.0":
+  version: 1.5.0
+  resolution: "@jsquash/webp@npm:1.5.0"
+  dependencies:
+    wasm-feature-detect: "npm:^1.2.11"
+  checksum: 10c0/f76f776ad5e70bef9286ebecad124f5fcee744aa92239bbd518e267291af760f5319d06041026ad969c3a4f0547f878f3ba48fa45c9f56cfa22d583bd54e5963
+  languageName: node
+  linkType: hard
+
 "@nodable/entities@npm:^3.0.0":
   version: 3.0.0
   resolution: "@nodable/entities@npm:3.0.0"
@@ -1261,6 +1280,8 @@ __metadata:
   dependencies:
     "@atproto/api": "npm:0.30.3"
     "@atproto/xrpc": "npm:0.8.18"
+    "@jimp/core": "npm:1.6.1"
+    "@jimp/wasm-webp": "npm:1.6.1"
     "@types/node": "npm:26.6.6"
     axios: "npm:1.21.0"
     dotenv: "npm:^18.0.0"
@@ -4037,6 +4058,13 @@ __metadata:
     spdx-correct: "npm:^3.0.0"
     spdx-expression-parse: "npm:^3.0.0"
   checksum: 10c0/7b91e455a8de9a0beaa9fe961e536b677da7f48c9a493edf4d4d4a87fd80a7a10267d438723364e432c2fcd00b5650b5378275cded362383ef570276e6312f4f
+  languageName: node
+  linkType: hard
+
+"wasm-feature-detect@npm:^1.2.11":
+  version: 1.9.0
+  resolution: "wasm-feature-detect@npm:1.9.0"
+  checksum: 10c0/d902be44b57fa963d8ff284cb86332f38c3c9b4af04e6c057b09904cf091a8da1c81ec9da7cd57cdf75afe45eeec449f11344fc66b62ea55314837041550f08f
   languageName: node
   linkType: hard
 

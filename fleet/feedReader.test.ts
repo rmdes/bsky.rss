@@ -20,6 +20,7 @@ import {SharedLimiters} from './sharedLimiters.ts';
 import {BotOperations} from './botOperations.ts';
 import {Logger, type LogRecord} from '../shared/logging/logger.ts';
 import {Jimp, JimpMime} from 'jimp';
+import {Jimp as WebpJimp} from '../shared/feedSource/jimp.ts';
 
 // handleItem is private; these tests drive it directly to exercise item-processing
 // behavior without going through a real feed poll.
@@ -1117,4 +1118,42 @@ test('resolveEmbedImage succeeds when the response is within maxImageDownloadByt
 
   const result = await reader.resolveEmbedImage(`http://127.0.0.1:${port}/image.jpg`);
   assert.ok(result, 'a within-cap image should resolve to a Buffer, not undefined');
+});
+
+test('resolveEmbedImage decodes a WebP image and returns a JPEG buffer', async t => {
+  const webp = await new WebpJimp({width: 2, height: 2, color: 0x00ff00ff}).getBuffer('image/webp');
+
+  const {server, port} = await startFixedResponseServer(webp);
+  t.after(() => server.close());
+
+  const dir = mkdtempSync(join(tmpdir(), 'feedreader-test-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const store = new BotStore(join(dir, 'state.sqlite'));
+  t.after(() => store.close());
+  const identityStore = new BotStore(join(dir, 'identity.sqlite'));
+  t.after(() => identityStore.close());
+
+  const sharedLimiters = new SharedLimiters({
+    maxConcurrentOpenGraphFetches: 1,
+    maxConcurrentImageJobs: 1,
+    maxImageDownloadBytes: 10_000_000,
+    httpTimeoutMs: 5000,
+  });
+
+  const reader = new FeedReader(
+    'test-bot',
+    'test-bot',
+    new URL(`http://127.0.0.1:${port}/feed.xml`),
+    5,
+    {string: '$title'},
+    store,
+    identityStore,
+    sharedLimiters,
+    createRuntime(),
+  );
+
+  const result = await reader.resolveEmbedImage(`http://127.0.0.1:${port}/image.webp`);
+  assert.ok(result, 'a WebP image should resolve to a Buffer, not undefined');
+  assert.equal(result[0], 0xff); // re-encoded as JPEG
+  assert.equal(result[1], 0xd8);
 });
