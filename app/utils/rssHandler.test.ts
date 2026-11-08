@@ -5,6 +5,8 @@ import path from 'path';
 import {tmpdir} from 'os';
 import {createServer} from 'node:http';
 import type og from 'open-graph-scraper';
+import {JimpMime} from 'jimp';
+import {Jimp} from '../../shared/feedSource/jimp.ts';
 import {Logger} from '../../shared/logging/logger.ts';
 import {createDbHandler, type DbHandler} from './dbHandler.ts';
 import {createBskyHandler} from './bskyHandler.ts';
@@ -822,6 +824,121 @@ describe('rssHandler', () => {
       assert.strictEqual(embed.title, 'Open Graph Title');
       assert.strictEqual(embed.description, 'Open Graph description');
       assert.strictEqual(embed.image, undefined); // og:image pointed at a 404 - fetch failed, non-fatal
+    });
+
+    // The oEmbed wiring tests below use a local http server for the og:image, and stub the
+    // oEmbed fetch with a non-https thumbnail_url: youtubeThumbnail only accepts https, so a
+    // local https server (self-signed cert) is impractical. The stub therefore proves the
+    // fallback ran and asked for the right oEmbed URL; embed.image stays undefined.
+    async function runOembedCase(articleUrl: string, ogImageUrl: string | undefined) {
+      const oembedCalls: string[] = [];
+      const fetchYouTubeOembed: typeof fetch = async input => {
+        oembedCalls.push(String(input));
+        return new Response(JSON.stringify({thumbnail_url: 'http://127.0.0.1:1/t.jpg'}), {
+          status: 200,
+        });
+      };
+      const fakeOpenGraph: typeof og = async () => ({
+        error: false,
+        html: '',
+        response: {},
+        result: {ogTitle: 'T', ...(ogImageUrl ? {ogImage: [{url: ogImageUrl}]} : {})},
+      });
+      const feedBody =
+        '<?xml version="1.0"?><rss version="2.0"><channel>' +
+        '<title>T</title><description>D</description><link>https://example.com</link>' +
+        `<item><title>Item</title><link>${articleUrl}</link><guid>${articleUrl}</guid>` +
+        '<pubDate>Wed, 05 Aug 2026 09:00:00 GMT</pubDate></item></channel></rss>';
+      const feedServer = createServer((_req, res) => {
+        res.writeHead(200, {'Content-Type': 'application/rss+xml'});
+        res.end(feedBody);
+      });
+      await new Promise<void>(resolve => feedServer.listen(0, resolve));
+      const feedPort = (feedServer.address() as {port: number}).port;
+      fs.writeFileSync(
+        path.join(testDataDir, 'config.json'),
+        JSON.stringify({
+          string: '$title',
+          publishEmbed: true,
+          embedType: 'card',
+          languages: ['en'],
+          truncate: true,
+          runInterval: 60,
+          dateField: '',
+          imageField: '',
+          ogUserAgent: 'bsky.rss/test',
+          descriptionClearHTML: true,
+          removeDuplicate: false,
+        }),
+        'utf8',
+      );
+      fs.writeFileSync(path.join(testDataDir, 'last.txt'), '2026-08-01T00:00:00.000Z', 'utf8');
+      const queued: QueueItems[] = [];
+      const fakeQueue: QueueHandler = {
+        writeQueue: async (item: QueueItems) => {
+          queued.push(item);
+          return queued;
+        },
+        start: async () => {},
+        runQueue: async (): Promise<QueueItems[]> => queued,
+        computeDelay: () => 0,
+      };
+      const testRssHandler = createRssHandler(
+        fakeQueue,
+        db,
+        testLogger,
+        fakeOpenGraph,
+        fetchYouTubeOembed,
+      );
+      try {
+        const reader = await testRssHandler.init({
+          fetch_interval: 60,
+          fetch_url: new URL(`http://127.0.0.1:${feedPort}/feed.xml`),
+        });
+        await testRssHandler.start();
+        await new Promise(resolve => setTimeout(resolve, 500));
+        reader.stop();
+      } finally {
+        feedServer.close();
+      }
+      assert.strictEqual(queued.length, 1);
+      return {oembedCalls, embed: queued[0]?.embed};
+    }
+
+    it('asks YouTube oEmbed for a thumbnail when a YouTube link has no og:image', async () => {
+      const link = 'https://www.youtube.com/watch?v=abc';
+      const {oembedCalls, embed} = await runOembedCase(link, undefined);
+      assert.deepStrictEqual(oembedCalls, [
+        `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(link)}`,
+      ]);
+      assert.strictEqual(embed?.image, undefined); // stub's thumbnail is non-https, rejected
+    });
+
+    it('skips oEmbed when a YouTube link already has a working og:image', async () => {
+      const jpeg = await new Jimp({width: 2, height: 2, color: 0xff0000ff}).getBuffer(
+        JimpMime.jpeg,
+      );
+      const imgServer = createServer((_req, res) => {
+        res.writeHead(200, {'Content-Type': 'image/jpeg'});
+        res.end(jpeg);
+      });
+      await new Promise<void>(resolve => imgServer.listen(0, resolve));
+      const imgPort = (imgServer.address() as {port: number}).port;
+      try {
+        const {oembedCalls, embed} = await runOembedCase(
+          'https://www.youtube.com/watch?v=abc',
+          `http://127.0.0.1:${imgPort}/og.jpg`,
+        );
+        assert.strictEqual(oembedCalls.length, 0);
+        assert(embed?.image, 'og:image should have been fetched');
+      } finally {
+        imgServer.close();
+      }
+    });
+
+    it('does not call oEmbed for a non-YouTube link', async () => {
+      const {oembedCalls} = await runOembedCase('https://example.test/article', undefined);
+      assert.strictEqual(oembedCalls.length, 0);
     });
 
     it("falls back to the item's own title/description when the Open Graph fetch fails, end-to-end", async () => {

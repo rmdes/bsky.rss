@@ -50,11 +50,13 @@ const fixedNow = new Date('2026-08-03T12:00:00.000Z');
 function createRuntime(
   botId = 'test-bot',
   fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>,
+  fetchYouTubeOembed?: typeof fetch,
 ): {
   operations: BotOperations;
   logger: Logger;
   records: LogRecord[];
   fetchOpenGraph?: typeof fetchOpenGraph;
+  fetchYouTubeOembed?: typeof fetch;
 } {
   const records: LogRecord[] = [];
   return {
@@ -66,6 +68,7 @@ function createRuntime(
     }),
     records,
     fetchOpenGraph,
+    fetchYouTubeOembed,
   };
 }
 
@@ -77,6 +80,7 @@ function createInstrumentedReader(
     identityStore?: BotStore;
     config?: Record<string, unknown>;
     fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>;
+    fetchYouTubeOembed?: typeof fetch;
   } = {},
 ) {
   const botId = options.botId ?? 'test-bot';
@@ -87,7 +91,7 @@ function createInstrumentedReader(
   t.after(() => store.close());
   const identityStore = options.identityStore ?? new BotStore(join(dir, 'identity.sqlite'));
   if (!options.identityStore) t.after(() => identityStore.close());
-  const runtime = createRuntime(botId, options.fetchOpenGraph);
+  const runtime = createRuntime(botId, options.fetchOpenGraph, options.fetchYouTubeOembed);
   const reader = new FeedReader(
     botId,
     identifier,
@@ -947,6 +951,87 @@ test('a relative og:image is resolved against the page URL', async t => {
   );
 
   assert.equal(emitted[0]?.embed?.imageUrl, 'https://example.test/static/card.webp');
+});
+
+const youtubeThumb = 'https://i.ytimg.com/vi/abc/hqdefault.jpg';
+
+function oembedStub() {
+  const calls: string[] = [];
+  const fetchYouTubeOembed: typeof fetch = async input => {
+    calls.push(String(input));
+    return new Response(JSON.stringify({thumbnail_url: youtubeThumb}), {status: 200});
+  };
+  return {calls, fetchYouTubeOembed};
+}
+
+async function queuedImageUrl(
+  t: {after(callback: () => void): void},
+  link: string,
+  fetchOpenGraph: () => Promise<unknown>,
+  fetchYouTubeOembed: typeof fetch,
+): Promise<string | undefined> {
+  const {reader} = createInstrumentedReader(t, {
+    config: {publishEmbed: true, embedType: 'card'},
+    fetchOpenGraph,
+    fetchYouTubeOembed,
+  });
+  const emitted: ParsedItem[] = [];
+  reader.onItem(item => emitted.push(item));
+  await handleItem(
+    reader,
+    normalizedItem({id: link, title: 'RSS title', link, date: '2026-08-03T12:01:00.000Z'}),
+  );
+  return emitted[0]?.embed?.imageUrl;
+}
+
+test('a YouTube link with no og:image gets the oEmbed thumbnail', async t => {
+  const {calls, fetchYouTubeOembed} = oembedStub();
+  const imageUrl = await queuedImageUrl(
+    t,
+    'https://www.youtube.com/watch?v=abc',
+    async () => ({ogTitle: 'Consent'}),
+    fetchYouTubeOembed,
+  );
+  assert.equal(imageUrl, youtubeThumb);
+  assert.equal(calls.length, 1);
+});
+
+test('a YouTube link with an og:image keeps it and skips oEmbed', async t => {
+  const {calls, fetchYouTubeOembed} = oembedStub();
+  const imageUrl = await queuedImageUrl(
+    t,
+    'https://www.youtube.com/watch?v=abc',
+    async () => ({ogTitle: 'T', ogImage: [{url: '/og.jpg'}]}),
+    fetchYouTubeOembed,
+  );
+  assert.equal(imageUrl, 'https://www.youtube.com/og.jpg');
+  assert.equal(calls.length, 0);
+});
+
+test('a YouTube link whose Open Graph fetch rejects still gets the oEmbed thumbnail', async t => {
+  const {calls, fetchYouTubeOembed} = oembedStub();
+  const imageUrl = await queuedImageUrl(
+    t,
+    'https://www.youtube.com/watch?v=abc',
+    async () => {
+      throw new Error('og down');
+    },
+    fetchYouTubeOembed,
+  );
+  assert.equal(imageUrl, youtubeThumb);
+  assert.equal(calls.length, 1);
+});
+
+test('a non-YouTube link with no image does not call oEmbed', async t => {
+  const {calls, fetchYouTubeOembed} = oembedStub();
+  const imageUrl = await queuedImageUrl(
+    t,
+    'https://example.test/article',
+    async () => ({ogTitle: 'T'}),
+    fetchYouTubeOembed,
+  );
+  assert.equal(imageUrl, undefined);
+  assert.equal(calls.length, 0);
 });
 
 test('a javascript: og:image is dropped, not queued', async t => {

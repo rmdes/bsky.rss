@@ -16,11 +16,13 @@ import type {Logger} from '../../shared/logging/index.ts';
 
 // fetchOpenGraph is injectable only so tests can stand in for it: open-graph-scraper >= 6.13
 // refuses non-public hosts, so a local test server can no longer serve it a page.
+// fetchYouTubeOembed is injectable for the same reason: tests must not reach youtube.com.
 export function createRssHandler(
   queue: QueueHandler,
   db: DbHandler,
   logger: Logger,
   fetchOpenGraph: typeof og = og,
+  fetchYouTubeOembed: typeof fetch = fetch,
 ) {
   let reader: FeedSource | null = null;
   let lastDate: string = '';
@@ -212,7 +214,11 @@ export function createRssHandler(
 
       // YouTube shows scrapers a consent page (no og:image); its oEmbed endpoint has the thumbnail.
       if (embed && embed.image === undefined && isYouTubeUrl(url)) {
-        const thumbnail = await youtubeThumbnail(url, {userAgent, timeoutMs: 10000});
+        const thumbnail = await youtubeThumbnail(url, {
+          userAgent,
+          timeoutMs: 10000,
+          fetchFn: fetchYouTubeOembed,
+        });
         if (thumbnail) {
           embed.image = await fetchImage(thumbnail);
           if (!embed.image) {

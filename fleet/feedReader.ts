@@ -53,6 +53,8 @@ export interface FeedReaderRuntime {
   operations: BotOperations;
   logger: Logger;
   fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>;
+  // Injectable only so tests can stand in for YouTube's oEmbed endpoint; default is global fetch.
+  fetchYouTubeOembed?: typeof fetch;
 }
 
 type OpenGraphFetchOutcome = {ok: true; result: unknown} | {ok: false; error: unknown};
@@ -490,6 +492,7 @@ export class FeedReader {
         embed.imageUrl = await youtubeThumbnail(url, {
           userAgent: this.config.ogUserAgent || defaultUserAgent,
           timeoutMs: this.sharedLimiters.httpTimeoutMs,
+          fetchFn: this.runtime.fetchYouTubeOembed,
         });
       }
     }
