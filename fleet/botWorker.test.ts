@@ -27,6 +27,10 @@ class FakeFeedReader {
     this.resolvedImageUrls.push(imageUrl);
     return Buffer.from('fake-image');
   }
+  // The YouTube fallback inside the real resolveCardImage is covered in feedReader.test.ts.
+  async resolveCardImage(embed: {imageUrl?: string}): Promise<Buffer | undefined> {
+    return embed.imageUrl ? this.resolveEmbedImage(embed.imageUrl) : undefined;
+  }
 }
 
 class FakeBskyClient {
@@ -278,7 +282,7 @@ test("rkey passed to BskyClient.post matches the item's dedupeKey exactly", asyn
   assert.equal(bskyClient.posted[0]!.rkey, 'exact-key-xyz');
 });
 
-test("an embed's imageUrl is resolved via FeedReader.resolveEmbedImage before posting", async t => {
+test("an embed's imageUrl is resolved via FeedReader.resolveCardImage before posting", async t => {
   const {worker, bskyClient, feedReader} = makeWorker(t);
   await worker.start();
   const fr = feedReader as FakeFeedReader;

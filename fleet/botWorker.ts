@@ -151,9 +151,7 @@ export class BotWorker {
   private async resolveEmbed(row: QueueItemRow): Promise<ResolvedEmbed | undefined> {
     if (!row.embedJson) return undefined;
     const parsed = JSON.parse(row.embedJson) as ParsedEmbed;
-    const image = parsed.imageUrl
-      ? await this.options.feedReader.resolveEmbedImage(parsed.imageUrl)
-      : undefined;
+    const image = await this.options.feedReader.resolveCardImage(parsed);
     return {
       uri: parsed.uri,
       title: parsed.title,

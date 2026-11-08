@@ -216,9 +216,14 @@ This guide shows you how to deploy apps to production...
 - `og:image` - Card preview image
 - `og:url` - Link destination
 
-Card images are recovered where possible: relative `og:image` URLs are resolved against the page,
-WebP `og:image`s are accepted (still posted as JPEG), and YouTube links with no image fall back to
-YouTube's oEmbed thumbnail.
+Card images are recovered where possible:
+- Relative image URLs are made absolute. A relative `og:image` resolves against the page Open
+  Graph actually landed on (after redirects, so links through a redirector such as feedburner or
+  t.co still work). A relative `enclosure`/`media:content` URL from the feed resolves against the
+  item's link, or the feed's own URL when the item has none.
+- WebP images are accepted (still posted as JPEG).
+- YouTube links fall back to YouTube's oEmbed thumbnail whenever the card would otherwise have no
+  image: no image URL at all, or one that fails to download. Both modes behave the same way.
 
 **Use cases:**
 - News articles (rich previews)

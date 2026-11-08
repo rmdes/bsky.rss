@@ -12,7 +12,7 @@ import {BotOperations, classifyFeedFailure} from './botOperations.ts';
 import {Logger, formatDebugError} from '../shared/logging/logger.ts';
 import {createFeedSource} from '../shared/feedSource/index.ts';
 import type {FeedSource, NormalizedItem} from '../shared/feedSource/index.ts';
-import {isYouTubeUrl, resolveImageUrl, youtubeThumbnail} from '../shared/feedSource/imageUrl.ts';
+import {absolutizeImageUrl, isYouTubeUrl, youtubeThumbnail} from '../shared/feedSource/imageUrl.ts';
 import {
   extractMarkdownLinks,
   finalizeMarkdownLinks,
@@ -56,6 +56,9 @@ export interface FeedReaderRuntime {
   // Injectable only so tests can stand in for YouTube's oEmbed endpoint; default is global fetch.
   fetchYouTubeOembed?: typeof fetch;
 }
+
+const DEFAULT_OG_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 type OpenGraphFetchOutcome = {ok: true; result: unknown} | {ok: false; error: unknown};
 
@@ -382,6 +385,15 @@ export class FeedReader {
     this.identityStore.writeSeenValue(dedupeKey);
 
     const lastCursor = this.store.readCursor();
+    // Before any Open Graph/image/oEmbed fetch: a stale item is dropped either way.
+    if (isPastCursor(useDate, lastCursor)) {
+      this.runtime.logger.verbose(
+        'FEED',
+        `Skipping stale item: ${item.title} (${itemUrl ?? 'no URL'})`,
+        this.botId,
+      );
+      return;
+    }
     let embed: ParsedEmbed | undefined;
 
     if (this.config.publishEmbed) {
@@ -400,15 +412,6 @@ export class FeedReader {
           return;
         }
         this.store.writeSeenValue(url);
-      } else {
-        if (isPastCursor(useDate, lastCursor)) {
-          this.runtime.logger.verbose(
-            'FEED',
-            `Skipping stale item: ${item.title} (${url})`,
-            this.botId,
-          );
-          return;
-        }
       }
 
       let imageUrl: string | undefined = item.imageUrl;
@@ -425,11 +428,9 @@ export class FeedReader {
         imageAlt = parseString(this.config.imageAlt, item, false, false, false).text;
       }
 
-      const defaultUserAgent =
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
       const openGraphFetch = await this.fetchOpenGraph(
         url,
-        this.config.ogUserAgent || defaultUserAgent,
+        this.config.ogUserAgent || DEFAULT_OG_USER_AGENT,
       );
 
       if (openGraphFetch.ok) {
@@ -438,10 +439,15 @@ export class FeedReader {
           ogDescription?: string;
           ogUrl?: string;
           ogTitle?: string;
+          // The page actually fetched, after redirects (see fetchOpenGraph).
+          pageUrl?: string;
         };
         this.runtime.operations.recordOpenGraphSuccess();
         if (!imageUrl) {
-          imageUrl = resolveImageUrl(openGraphResult.ogImage?.[0]?.url, url);
+          imageUrl = absolutizeImageUrl(
+            openGraphResult.ogImage?.[0]?.url,
+            openGraphResult.pageUrl || url,
+          );
         }
         if (!description) {
           description = openGraphResult.ogDescription ?? item.description ?? item.content;
@@ -488,22 +494,10 @@ export class FeedReader {
       }
 
       // YouTube shows scrapers a consent page (no og:image); its oEmbed endpoint has the thumbnail.
+      // An image URL that fails to download is covered at post time by resolveCardImage.
       if (embed && !embed.imageUrl && isYouTubeUrl(url)) {
-        embed.imageUrl = await youtubeThumbnail(url, {
-          userAgent: this.config.ogUserAgent || defaultUserAgent,
-          timeoutMs: this.sharedLimiters.httpTimeoutMs,
-          fetchFn: this.runtime.fetchYouTubeOembed,
-        });
+        embed.imageUrl = await this.youtubeThumbnailUrl(url);
       }
-    }
-
-    if (isPastCursor(useDate, lastCursor)) {
-      this.runtime.logger.verbose(
-        'FEED',
-        `Skipping stale item: ${item.title} (${itemUrl ?? 'no URL'})`,
-        this.botId,
-      );
-      return;
     }
 
     const title =
@@ -530,6 +524,55 @@ export class FeedReader {
     } as ParsedItem);
   }
 
+  /**
+   * Downloads the card image for a queued embed. If that fails and the card links to YouTube,
+   * falls back to the oEmbed thumbnail, matching single-bot mode, which falls back whenever the
+   * image bytes can't be fetched (not only when there was no image URL).
+   */
+  async resolveCardImage(embed: ParsedEmbed): Promise<Buffer | undefined> {
+    const image = embed.imageUrl ? await this.resolveEmbedImage(embed.imageUrl) : undefined;
+    if (image || !isYouTubeUrl(embed.uri)) return image;
+    const thumbnail = await this.youtubeThumbnailUrl(embed.uri);
+    // Already tried: the parse-time fallback may have put this very thumbnail in imageUrl.
+    if (!thumbnail || thumbnail === embed.imageUrl) return undefined;
+    return this.resolveEmbedImage(thumbnail);
+  }
+
+  // Shares the Open Graph concurrency limit: it's the same kind of per-item link lookup.
+  private async youtubeThumbnailUrl(url: string): Promise<string | undefined> {
+    const startedAt = Date.now();
+    try {
+      return await this.sharedLimiters.withOgLimit(
+        () =>
+          youtubeThumbnail(url, {
+            userAgent: this.config.ogUserAgent || DEFAULT_OG_USER_AGENT,
+            timeoutMs: this.sharedLimiters.httpTimeoutMs,
+            fetchFn: this.runtime.fetchYouTubeOembed,
+            onFailure: reason =>
+              this.runtime.logger.debug(
+                'FETCH',
+                `No YouTube thumbnail for ${url}: ${reason}`,
+                this.botId,
+              ),
+          }),
+        {logger: this.runtime.logger, botId: this.botId},
+      );
+    } catch (error) {
+      this.runtime.logger.debug(
+        'FETCH',
+        `YouTube thumbnail lookup failed\n${formatDebugError(error)}`,
+        this.botId,
+      );
+      return undefined;
+    } finally {
+      this.runtime.logger.debug(
+        'TIMING',
+        `YouTube oEmbed lookup completed in ${Math.max(0, Date.now() - startedAt)}ms`,
+        this.botId,
+      );
+    }
+  }
+
   private async fetchOpenGraph(url: string, userAgent: string): Promise<OpenGraphFetchOutcome> {
     const startedAt = Date.now();
     try {
@@ -549,7 +592,11 @@ export class FeedReader {
               },
             },
           });
-          return response.error ? {error: response.error} : response.result;
+          // pageUrl: open-graph-scraper follows redirects hop by hop, so response.url is the
+          // page actually fetched; a relative og:image belongs to it, not to the feed's link.
+          return response.error
+            ? {error: response.error}
+            : {...response.result, pageUrl: (response.response as {url?: string}).url};
         },
         {logger: this.runtime.logger, botId: this.botId},
       );

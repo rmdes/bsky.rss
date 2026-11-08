@@ -108,7 +108,7 @@ function createInstrumentedReader(
     }),
     runtime,
   );
-  return {reader, runtime};
+  return {reader, runtime, store};
 }
 
 test('removeHTMLTags strips tags and collapses whitespace', () => {
@@ -1032,6 +1032,122 @@ test('a non-YouTube link with no image does not call oEmbed', async t => {
   );
   assert.equal(imageUrl, undefined);
   assert.equal(calls.length, 0);
+});
+
+test('a relative og:image resolves against the page Open Graph landed on, not the pre-redirect link', async t => {
+  const imageUrl = await queuedImageUrl(
+    t,
+    'https://feeds.example.test/~r/article',
+    async () => ({
+      ogTitle: 'T',
+      ogImage: [{url: '/img/card.jpg'}],
+      pageUrl: 'https://site.example.test/post',
+    }),
+    oembedStub().fetchYouTubeOembed,
+  );
+  assert.equal(imageUrl, 'https://site.example.test/img/card.jpg');
+});
+
+test('a stale item is skipped before any Open Graph or oEmbed request', async t => {
+  let openGraphCalls = 0;
+  const {calls, fetchYouTubeOembed} = oembedStub();
+  const {reader, store} = createInstrumentedReader(t, {
+    // removeDuplicate used to skip the early staleness check entirely.
+    config: {publishEmbed: true, embedType: 'card', removeDuplicate: true},
+    fetchOpenGraph: async () => {
+      openGraphCalls++;
+      return {ogTitle: 'T'};
+    },
+    fetchYouTubeOembed,
+  });
+  store.writeCursor(new Date('2026-08-03T12:00:00.000Z'));
+  const emitted: ParsedItem[] = [];
+  reader.onItem(item => emitted.push(item));
+
+  const link = 'https://www.youtube.com/watch?v=old';
+  await handleItem(
+    reader,
+    normalizedItem({id: link, title: 'old', link, date: '2026-08-01T00:00:00.000Z'}),
+  );
+
+  assert.equal(openGraphCalls, 0);
+  assert.equal(calls.length, 0);
+  assert.equal(emitted.length, 0);
+});
+
+test('the oEmbed lookup runs under the shared Open Graph limit and logs why it failed', async t => {
+  const fetchYouTubeOembed: typeof fetch = async () => new Response('{}', {status: 500});
+  const {reader, runtime} = createInstrumentedReader(t, {
+    config: {publishEmbed: true, embedType: 'card'},
+    fetchOpenGraph: async () => ({ogTitle: 'Consent'}),
+    fetchYouTubeOembed,
+  });
+  const limiters = (reader as unknown as {sharedLimiters: SharedLimiters}).sharedLimiters;
+  const withOgLimit = limiters.withOgLimit.bind(limiters);
+  let limited = 0;
+  limiters.withOgLimit = (fn, debug) => {
+    limited++;
+    return withOgLimit(fn, debug);
+  };
+
+  const link = 'https://www.youtube.com/watch?v=abc';
+  await handleItem(
+    reader,
+    normalizedItem({id: link, title: 'T', link, date: '2026-08-03T12:01:00.000Z'}),
+  );
+
+  assert.equal(limited, 2); // the Open Graph fetch, then the oEmbed lookup
+  assert.ok(
+    runtime.records.some(
+      r => r.message.includes('No YouTube thumbnail') && r.message.includes('HTTP 500'),
+    ),
+  );
+});
+
+test('resolveCardImage falls back to the YouTube thumbnail when the stored image fails to download', async t => {
+  const {calls, fetchYouTubeOembed} = oembedStub();
+  const {reader} = createInstrumentedReader(t, {fetchYouTubeOembed});
+  const downloads: string[] = [];
+  reader.resolveEmbedImage = async url => {
+    downloads.push(url);
+    return url === youtubeThumb ? Buffer.from('thumb') : undefined;
+  };
+
+  const image = await reader.resolveCardImage({
+    uri: 'https://www.youtube.com/watch?v=abc',
+    title: 'T',
+    imageUrl: 'https://dead.example.test/x.jpg',
+  });
+
+  assert.equal(image?.toString(), 'thumb');
+  assert.deepEqual(downloads, ['https://dead.example.test/x.jpg', youtubeThumb]);
+  assert.equal(calls.length, 1);
+});
+
+test('resolveCardImage does not retry a failed thumbnail or look up non-YouTube cards', async t => {
+  const {calls, fetchYouTubeOembed} = oembedStub();
+  const {reader} = createInstrumentedReader(t, {fetchYouTubeOembed});
+  const downloads: string[] = [];
+  reader.resolveEmbedImage = async url => {
+    downloads.push(url);
+    return undefined;
+  };
+
+  const youtube = await reader.resolveCardImage({
+    uri: 'https://www.youtube.com/watch?v=abc',
+    title: 'T',
+    imageUrl: youtubeThumb,
+  });
+  const other = await reader.resolveCardImage({
+    uri: 'https://example.test/article',
+    title: 'T',
+    imageUrl: 'https://example.test/x.jpg',
+  });
+
+  assert.equal(youtube, undefined);
+  assert.equal(other, undefined);
+  assert.deepEqual(downloads, [youtubeThumb, 'https://example.test/x.jpg']);
+  assert.equal(calls.length, 1); // only the YouTube card asked oEmbed
 });
 
 test('a javascript: og:image is dropped, not queued', async t => {
