@@ -100,14 +100,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Loads the modules most likely to break in a new base image, without starting any bot.
+      # Starts both real entry points and decodes a WebP, without running any bot.
       - name: Smoke-test image
-        run: |
-          docker run --rm bsky-rss:ci node --import tsx -e "
-            await import('@atproto/api');
-            await import('jimp');
-            await import('open-graph-scraper');
-            const {BotStore} = await import('./fleet/botStore.ts');
-            new BotStore(':memory:');
-            console.log('image OK on', process.version);
-          "
+        run: .github/scripts/smoke-image.sh bsky-rss:ci
