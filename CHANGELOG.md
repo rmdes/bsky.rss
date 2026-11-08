@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.15.1] - 2026-11-08
+
+### Fixed
+- **Link-card images missing intermittently** (seen on ~3.5% of Middle East Eye posts): some
+  CDNs answer an image request with a slow, uncached 404 although the image exists, then serve
+  the next identical request from cache. Image downloads (both modes) now retry once after 1.5 s.
+  The decode is not retried.
+- An `og:image` that resolves to a bare site root (`/`, as on ansa.it) is ignored instead of
+  downloading the home page as an "image".
+
+---
+
 ## [2.15.0] - 2026-11-08
 
 ### Added
