@@ -40,9 +40,27 @@ jobs:
 
       - name: Extract version from tag
         id: version
+        env:
+          # Through env, never inlined into the script: inputs.tag is free text.
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
-          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # A tag on the wrong commit fails here, in seconds, before any build.
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$PKG_VERSION" != "$VERSION" ]; then
+            echo "::error::package.json is $PKG_VERSION but the tag is $TAG"
+            exit 1
+          fi
+          # Only the newest release moves :latest, so re-running an old tag can't roll it back.
+          NEWEST="$(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' | sort -V | tail -n 1)"
+          {
+            echo "tags<<EOF"
+            echo "ghcr.io/rmdes/bsky.rss:$VERSION"
+            if [ "$TAG" = "$NEWEST" ]; then echo "ghcr.io/rmdes/bsky.rss:latest"; fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "newest tag is $NEWEST; tagging latest: $([ "$TAG" = "$NEWEST" ] && echo yes || echo no)"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
@@ -57,8 +75,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build amd64 locally and check it starts before anything is pushed: a broken
-      # image (e.g. node:26 dropping yarn) or a tag on the wrong commit stops here.
+      # Build each platform locally and start it before anything is pushed: a broken image
+      # (e.g. node:26 dropping yarn) never gets a version tag. arm64 runs under QEMU. The
+      # push step below reuses these layers from the builder's cache.
       - name: Build amd64 for smoke test
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -66,24 +85,24 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
-          tags: bsky-rss:smoke
+          tags: bsky-rss:smoke-amd64
+          cache-from: type=gha
 
-      - name: Smoke-test image
-        env:
-          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          docker run --rm -e EXPECTED_VERSION bsky-rss:smoke node --import tsx -e "
-            await import('@atproto/api');
-            await import('jimp');
-            await import('open-graph-scraper');
-            const {BotStore} = await import('./fleet/botStore.ts');
-            new BotStore(':memory:');
-            const pkg = await import('./package.json', {with: {type: 'json'}});
-            if (pkg.default.version !== process.env.EXPECTED_VERSION) {
-              throw new Error('package.json is ' + pkg.default.version + ', tag says ' + process.env.EXPECTED_VERSION);
-            }
-            console.log('image OK on', process.version, 'version', pkg.default.version);
-          "
+      - name: Smoke-test amd64
+        run: .github/scripts/smoke-image.sh bsky-rss:smoke-amd64 linux/amd64
+
+      - name: Build arm64 for smoke test
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: linux/arm64
+          push: false
+          load: true
+          tags: bsky-rss:smoke-arm64
+          cache-from: type=gha
+
+      - name: Smoke-test arm64
+        run: .github/scripts/smoke-image.sh bsky-rss:smoke-arm64 linux/arm64
 
       - name: Build and push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -91,6 +110,5 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ghcr.io/rmdes/bsky.rss:${{ steps.version.outputs.version }}
-            ghcr.io/rmdes/bsky.rss:latest
+          tags: ${{ steps.version.outputs.tags }}
+          cache-from: type=gha
