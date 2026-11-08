@@ -1369,6 +1369,48 @@ test('resolveEmbedImage succeeds when the response is within maxImageDownloadByt
   assert.ok(result, 'a within-cap image should resolve to a Buffer, not undefined');
 });
 
+test('resolveEmbedImage retries once when the first download fails (flaky CDN edge)', async t => {
+  // Mirrors middleeasteye.net: the first request gets a 404 although the image exists, the next
+  // identical request gets it from cache.
+  const jpeg = await new Jimp({width: 2, height: 2, color: 0xff0000ff}).getBuffer(JimpMime.jpeg);
+  let requests = 0;
+  const server = createServer((_req, res) => {
+    requests++;
+    if (requests === 1) {
+      res.writeHead(404, {'cache-control': 'no-store'});
+      res.end();
+      return;
+    }
+    res.writeHead(200, {'Content-Type': 'image/jpeg'});
+    res.end(jpeg);
+  });
+  await new Promise<void>(resolve => server.listen(0, resolve));
+  t.after(() => server.close());
+  const port = (server.address() as {port: number}).port;
+  const {reader} = createInstrumentedReader(t);
+
+  const result = await reader.resolveEmbedImage(`http://127.0.0.1:${port}/image.jpg`);
+
+  assert.ok(result, 'the retried download should resolve to a Buffer');
+  assert.equal(requests, 2);
+});
+
+test('resolveEmbedImage gives up after one retry for an image that is really gone', async t => {
+  let requests = 0;
+  const server = createServer((_req, res) => {
+    requests++;
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise<void>(resolve => server.listen(0, resolve));
+  t.after(() => server.close());
+  const port = (server.address() as {port: number}).port;
+  const {reader} = createInstrumentedReader(t);
+
+  assert.equal(await reader.resolveEmbedImage(`http://127.0.0.1:${port}/gone.jpg`), undefined);
+  assert.equal(requests, 2);
+});
+
 test('resolveEmbedImage decodes a WebP image and returns a JPEG buffer', async t => {
   const {server, port} = await startFixedResponseServer(WEBP_4X4);
   t.after(() => server.close());

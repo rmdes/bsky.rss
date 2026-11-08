@@ -16,9 +16,13 @@ export function absolutizeImageUrl(
   // Parse an absolute value on its own first: new URL(value, base) throws on an invalid base
   // even when value needs no base at all.
   const resolved = URL.parse(value) ?? (baseUrl ? URL.parse(value, baseUrl) : null);
-  return resolved && (resolved.protocol === 'http:' || resolved.protocol === 'https:')
-    ? resolved.href
-    : undefined;
+  if (!resolved || (resolved.protocol !== 'http:' && resolved.protocol !== 'https:')) {
+    return undefined;
+  }
+  // A bare site root ("/" from og:image content="/" or "") is a home page, never an image
+  // (seen on ansa.it); downloading it only wastes a request.
+  if (resolved.pathname === '/' && !resolved.search) return undefined;
+  return resolved.href;
 }
 
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com']);
