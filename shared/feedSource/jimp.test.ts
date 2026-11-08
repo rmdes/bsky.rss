@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {JimpMime} from 'jimp';
-import {Jimp, webpDimensions} from './jimp.ts';
+import {Jimp, resetWebpDecoder, webpDimensions, WEBP_DECODER_RESET_BYTES} from './jimp.ts';
 import {WEBP_4X4} from './test-helpers.ts';
 
 test('the shared Jimp decodes WebP and re-encodes it as JPEG', async () => {
@@ -22,6 +22,22 @@ test('decoding two WebP images in a row both succeed (cached decoder is reused)'
     assert.equal(decoded.bitmap.width, 4);
     assert.equal(decoded.bitmap.height, 4);
   }
+});
+
+test('decoding keeps working after the WebP decoder instance is dropped', async () => {
+  // A large decode drops the instance so its grown WASM memory can be freed; the next decode
+  // must transparently instantiate a fresh one from the cached compiled module.
+  for (let i = 0; i < 2; i++) {
+    resetWebpDecoder();
+    const decoded = await Jimp.read(WEBP_4X4);
+    assert.equal(decoded.bitmap.width, 4);
+  }
+});
+
+test('the decoder reset threshold sits well below the decoded-size cap', () => {
+  // Every image big enough to grow the heap noticeably triggers a reset; tiny ones reuse it.
+  assert.ok(WEBP_DECODER_RESET_BYTES >= 4 * 4 * 4);
+  assert.ok(WEBP_DECODER_RESET_BYTES < 100_000_000);
 });
 
 function forgedWebp(chunk: 'VP8L' | 'VP8X', width: number, height: number): Buffer {

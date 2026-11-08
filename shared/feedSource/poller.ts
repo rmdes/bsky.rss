@@ -1,6 +1,7 @@
 import axios from 'axios';
 import {parseRawFeed} from './parse.ts';
 import {normalizeFeed} from './normalize.ts';
+import {absolutizeImageUrl} from './imageUrl.ts';
 import {FeedSourceError} from './types.ts';
 import type {
   FeedSource,
@@ -63,7 +64,13 @@ export function createPoller(
       let items: NormalizedItem[];
       try {
         const body = await fetchBody(String(feedUrl), fetchTimeoutMs);
-        items = normalizeFeed(parseRawFeed(body), config);
+        // A feed-provided image URL can be relative. Resolve it against the item's own link
+        // first: for feeds served through an aggregator (FreshRSS), the image belongs to the
+        // original site, not the host serving the feed.
+        items = normalizeFeed(parseRawFeed(body), config).map(item => ({
+          ...item,
+          imageUrl: absolutizeImageUrl(item.imageUrl, item.link ?? String(feedUrl)),
+        }));
       } catch (error) {
         cb.onError(
           error instanceof FeedSourceError

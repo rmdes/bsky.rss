@@ -189,3 +189,44 @@ test('createFeedSource.stop() prevents further polls', async t => {
   await new Promise(resolve => setTimeout(resolve, 50));
   assert.equal(pollCount, countAfterStop);
 });
+
+test('relative feed-provided image URLs resolve against the item link, else the feed URL', async t => {
+  const feed = `<?xml version="1.0"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel>
+<title>T</title><link>https://site.example.test/</link><description>D</description>
+<item><title>linked</title><link>https://site.example.test/posts/a</link>
+  <media:content url="/images/a.jpg" medium="image"/></item>
+<item><title>unlinked</title><guid isPermaLink="false">b</guid>
+  <media:content url="img/b.jpg" medium="image"/></item>
+<item><title>absolute</title><link>https://site.example.test/posts/c</link>
+  <media:content url="https://cdn.example.test/c.jpg" medium="image"/></item>
+</channel></rss>`;
+  // Served by an aggregator host, as FreshRSS feeds are: the item link must win.
+  const source = createFeedSource(
+    new URL('https://reader.example.test/feeds/x.xml'),
+    60,
+    {imageField: 'media:content'},
+    {fetchBody: async () => feed},
+  );
+  t.after(() => source.stop());
+
+  const items: NormalizedItem[] = [];
+  await new Promise<void>(resolve => {
+    source.start({
+      onItems: () => resolve(),
+      onItem: async item => {
+        items.push(item);
+      },
+      onError: err => assert.fail(`unexpected error: ${err.message}`),
+    });
+  });
+
+  assert.deepEqual(
+    items.map(item => item.imageUrl),
+    [
+      'https://site.example.test/images/a.jpg',
+      'https://reader.example.test/feeds/img/b.jpg',
+      'https://cdn.example.test/c.jpg',
+    ],
+  );
+});

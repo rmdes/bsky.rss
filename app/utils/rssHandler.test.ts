@@ -811,6 +811,8 @@ describe('rssHandler', () => {
 
       assert.strictEqual(ogCalls.length, 1);
       assert.strictEqual(ogCalls[0]?.url, articleUrl);
+      // Seconds: open-graph-scraper multiplies it by 1000 (10000 here was a ~2.8 h timeout).
+      assert.strictEqual(ogCalls[0]?.timeout, 10);
       assert.strictEqual(
         (ogCalls[0]?.fetchOptions?.headers as Record<string, string>)['user-agent'],
         'bsky.rss/test',
@@ -830,7 +832,17 @@ describe('rssHandler', () => {
     // oEmbed fetch with a non-https thumbnail_url: youtubeThumbnail only accepts https, so a
     // local https server (self-signed cert) is impractical. The stub therefore proves the
     // fallback ran and asked for the right oEmbed URL; embed.image stays undefined.
-    async function runOembedCase(articleUrl: string, ogImageUrl: string | undefined) {
+    async function runOembedCase(
+      articleUrl: string,
+      ogImageUrl: string | undefined,
+      options: {
+        pageUrl?: string; // where Open Graph landed after redirects (response.url)
+        removeDuplicate?: boolean;
+        lastDate?: string;
+        expectQueued?: boolean;
+      } = {},
+    ) {
+      let openGraphCalls = 0;
       const oembedCalls: string[] = [];
       const fetchYouTubeOembed: typeof fetch = async input => {
         oembedCalls.push(String(input));
@@ -838,12 +850,15 @@ describe('rssHandler', () => {
           status: 200,
         });
       };
-      const fakeOpenGraph: typeof og = async () => ({
-        error: false,
-        html: '',
-        response: {},
-        result: {ogTitle: 'T', ...(ogImageUrl ? {ogImage: [{url: ogImageUrl}]} : {})},
-      });
+      const fakeOpenGraph: typeof og = async () => {
+        openGraphCalls++;
+        return {
+          error: false,
+          html: '',
+          response: options.pageUrl ? {url: options.pageUrl} : {},
+          result: {ogTitle: 'T', ...(ogImageUrl ? {ogImage: [{url: ogImageUrl}]} : {})},
+        };
+      };
       const feedBody =
         '<?xml version="1.0"?><rss version="2.0"><channel>' +
         '<title>T</title><description>D</description><link>https://example.com</link>' +
@@ -868,11 +883,15 @@ describe('rssHandler', () => {
           imageField: '',
           ogUserAgent: 'bsky.rss/test',
           descriptionClearHTML: true,
-          removeDuplicate: false,
+          removeDuplicate: options.removeDuplicate ?? false,
         }),
         'utf8',
       );
-      fs.writeFileSync(path.join(testDataDir, 'last.txt'), '2026-08-01T00:00:00.000Z', 'utf8');
+      fs.writeFileSync(
+        path.join(testDataDir, 'last.txt'),
+        options.lastDate ?? '2026-08-01T00:00:00.000Z',
+        'utf8',
+      );
       const queued: QueueItems[] = [];
       const fakeQueue: QueueHandler = {
         writeQueue: async (item: QueueItems) => {
@@ -901,8 +920,8 @@ describe('rssHandler', () => {
       } finally {
         feedServer.close();
       }
-      assert.strictEqual(queued.length, 1);
-      return {oembedCalls, embed: queued[0]?.embed};
+      assert.strictEqual(queued.length, options.expectQueued === false ? 0 : 1);
+      return {oembedCalls, openGraphCalls, embed: queued[0]?.embed};
     }
 
     it('asks YouTube oEmbed for a thumbnail when a YouTube link has no og:image', async () => {
@@ -939,6 +958,67 @@ describe('rssHandler', () => {
     it('does not call oEmbed for a non-YouTube link', async () => {
       const {oembedCalls} = await runOembedCase('https://example.test/article', undefined);
       assert.strictEqual(oembedCalls.length, 0);
+    });
+
+    it('resolves a relative og:image against the page Open Graph landed on after redirects', async () => {
+      const jpeg = await new Jimp({width: 2, height: 2, color: 0xff0000ff}).getBuffer(
+        JimpMime.jpeg,
+      );
+      const imgServer = createServer((req, res) => {
+        if (req.url !== '/img/card.jpg') {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+        res.writeHead(200, {'Content-Type': 'image/jpeg'});
+        res.end(jpeg);
+      });
+      await new Promise<void>(resolve => imgServer.listen(0, resolve));
+      const imgPort = (imgServer.address() as {port: number}).port;
+      try {
+        // The feed links through a redirector; resolving against it would ask the wrong host.
+        const {embed} = await runOembedCase(
+          'https://feeds.example.test/~r/article',
+          '/img/card.jpg',
+          {
+            pageUrl: `http://127.0.0.1:${imgPort}/post`,
+          },
+        );
+        assert(embed?.image, 'og:image should resolve against the final page and download');
+      } finally {
+        imgServer.close();
+      }
+    });
+
+    it('skips a stale item before any Open Graph or oEmbed request, also with removeDuplicate', async () => {
+      const {openGraphCalls, oembedCalls} = await runOembedCase(
+        'https://www.youtube.com/watch?v=old',
+        undefined,
+        // The item is dated 2026-08-05; last.txt is later.
+        {removeDuplicate: true, lastDate: '2026-08-06T00:00:00.000Z', expectQueued: false},
+      );
+      assert.strictEqual(openGraphCalls, 0);
+      assert.strictEqual(oembedCalls.length, 0);
+    });
+
+    it('falls back to the YouTube thumbnail when the og:image fails to download', async () => {
+      // Same trigger as fleet's resolveCardImage: the image bytes, not just the URL, decide.
+      // A real 404 server, not a closed port: some environments drop instead of refusing.
+      const deadServer = createServer((_req, res) => {
+        res.writeHead(404);
+        res.end();
+      });
+      await new Promise<void>(resolve => deadServer.listen(0, resolve));
+      const deadPort = (deadServer.address() as {port: number}).port;
+      try {
+        const {oembedCalls} = await runOembedCase(
+          'https://www.youtube.com/watch?v=abc',
+          `http://127.0.0.1:${deadPort}/dead.jpg`,
+        );
+        assert.strictEqual(oembedCalls.length, 1);
+      } finally {
+        deadServer.close();
+      }
     });
 
     it("falls back to the item's own title/description when the Open Graph fetch fails, end-to-end", async () => {

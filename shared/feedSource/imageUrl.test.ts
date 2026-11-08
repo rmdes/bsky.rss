@@ -1,33 +1,33 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveImageUrl, isYouTubeUrl, youtubeThumbnail} from './imageUrl.ts';
+import {absolutizeImageUrl, isYouTubeUrl, youtubeThumbnail} from './imageUrl.ts';
 
 const page = 'https://cvefeed.io/vuln/detail/CVE-2026-99284';
 
-test('resolveImageUrl keeps absolute http(s) URLs unchanged', () => {
-  assert.equal(resolveImageUrl('https://cdn.example/a.jpg', page), 'https://cdn.example/a.jpg');
-  assert.equal(resolveImageUrl('http://cdn.example/a.jpg', page), 'http://cdn.example/a.jpg');
+test('absolutizeImageUrl keeps absolute http(s) URLs unchanged', () => {
+  assert.equal(absolutizeImageUrl('https://cdn.example/a.jpg', page), 'https://cdn.example/a.jpg');
+  assert.equal(absolutizeImageUrl('http://cdn.example/a.jpg', page), 'http://cdn.example/a.jpg');
 });
 
-test('resolveImageUrl resolves root-, protocol- and path-relative URLs against the page', () => {
+test('absolutizeImageUrl resolves root-, protocol- and path-relative URLs against the page', () => {
   assert.equal(
-    resolveImageUrl('/static/images/x.webp', page),
+    absolutizeImageUrl('/static/images/x.webp', page),
     'https://cvefeed.io/static/images/x.webp',
   );
-  assert.equal(resolveImageUrl('//cdn.example/a.jpg', page), 'https://cdn.example/a.jpg');
-  assert.equal(resolveImageUrl('img/a.png', page), 'https://cvefeed.io/vuln/detail/img/a.png');
+  assert.equal(absolutizeImageUrl('//cdn.example/a.jpg', page), 'https://cdn.example/a.jpg');
+  assert.equal(absolutizeImageUrl('img/a.png', page), 'https://cvefeed.io/vuln/detail/img/a.png');
 });
 
-test('resolveImageUrl trims whitespace', () => {
-  assert.equal(resolveImageUrl('  /a.jpg\n', page), 'https://cvefeed.io/a.jpg');
+test('absolutizeImageUrl trims whitespace', () => {
+  assert.equal(absolutizeImageUrl('  /a.jpg\n', page), 'https://cvefeed.io/a.jpg');
 });
 
-test('resolveImageUrl rejects non-http(s), empty and unparseable input', () => {
-  assert.equal(resolveImageUrl('javascript:alert(1)', page), undefined);
-  assert.equal(resolveImageUrl('data:image/png;base64,AAAA', page), undefined);
-  assert.equal(resolveImageUrl('', page), undefined);
-  assert.equal(resolveImageUrl(undefined, page), undefined);
-  assert.equal(resolveImageUrl('/a.jpg', 'not a url'), undefined);
+test('absolutizeImageUrl rejects non-http(s), empty and unparseable input', () => {
+  assert.equal(absolutizeImageUrl('javascript:alert(1)', page), undefined);
+  assert.equal(absolutizeImageUrl('data:image/png;base64,AAAA', page), undefined);
+  assert.equal(absolutizeImageUrl('', page), undefined);
+  assert.equal(absolutizeImageUrl(undefined, page), undefined);
+  assert.equal(absolutizeImageUrl('/a.jpg', 'not a url'), undefined);
 });
 
 test('isYouTubeUrl accepts watch, shorts, live, youtu.be and m.youtube.com links', () => {
@@ -99,4 +99,46 @@ test('youtubeThumbnail returns undefined on non-200, bad JSON, missing or non-ht
     throw new Error('network down');
   }) as typeof fetch;
   assert.equal(await youtubeThumbnail(url, {...options, fetchFn: throwing}), undefined);
+});
+
+test('absolutizeImageUrl keeps an absolute URL even when the base is invalid or missing', () => {
+  const absolute = 'https://cdn.example/a.jpg';
+  assert.equal(absolutizeImageUrl(absolute, 'not a url'), absolute);
+  assert.equal(absolutizeImageUrl(absolute, undefined), absolute);
+  assert.equal(absolutizeImageUrl('/a.jpg', undefined), undefined);
+});
+
+test('youtubeThumbnail reports why it found no thumbnail', async () => {
+  const url = 'https://youtu.be/lijKRTyrpg0';
+  const reasons: string[] = [];
+  const onFailure = (reason: string) => reasons.push(reason);
+  await youtubeThumbnail(url, {...options, onFailure, fetchFn: stubFetch(404, '{}').fetchFn});
+  await youtubeThumbnail(url, {...options, onFailure, fetchFn: stubFetch(200, '{}').fetchFn});
+  const throwing = (async () => {
+    throw new Error('network down');
+  }) as typeof fetch;
+  await youtubeThumbnail(url, {...options, onFailure, fetchFn: throwing});
+  assert.deepEqual(reasons, [
+    'oEmbed returned HTTP 404',
+    'oEmbed response has no https thumbnail_url',
+    'oEmbed request failed: network down',
+  ]);
+});
+
+test('youtubeThumbnail cancels the body of a non-ok oEmbed response', async () => {
+  let cancelled = false;
+  const body = new ReadableStream({
+    pull(controller) {
+      controller.enqueue(new TextEncoder().encode('{"error":"Unauthorized"}'));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const fetchFn = (async () => new Response(body, {status: 401})) as typeof fetch;
+  assert.equal(
+    await youtubeThumbnail('https://youtu.be/lijKRTyrpg0', {...options, fetchFn}),
+    undefined,
+  );
+  assert.equal(cancelled, true);
 });

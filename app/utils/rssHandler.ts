@@ -11,7 +11,11 @@ import {
   extractMarkdownLinks,
   finalizeMarkdownLinks,
 } from '../../shared/feedSource/markdownLinks.ts';
-import {isYouTubeUrl, resolveImageUrl, youtubeThumbnail} from '../../shared/feedSource/imageUrl.ts';
+import {
+  absolutizeImageUrl,
+  isYouTubeUrl,
+  youtubeThumbnail,
+} from '../../shared/feedSource/imageUrl.ts';
 import type {Logger} from '../../shared/logging/index.ts';
 
 // fetchOpenGraph is injectable only so tests can stand in for it: open-graph-scraper >= 6.13
@@ -88,6 +92,8 @@ export function createRssHandler(
       logger.debug('RSS', 'No date provided by RSS reader for post.');
       return;
     }
+    // Before any Open Graph/image/oEmbed fetch: a stale item is dropped either way.
+    if (new Date(useDate) <= new Date(lastDate)) return;
 
     const parsed = parseString(config.string, item, config.truncate === true);
     let embed: Embed | undefined = undefined;
@@ -100,8 +106,6 @@ export function createRssHandler(
       if (config.removeDuplicate) {
         if (await db.valueExists(url)) return;
         else await db.writeValue(url);
-      } else {
-        if (new Date(useDate) <= new Date(lastDate)) return;
       }
 
       let image: Buffer | undefined = item.imageUrl ? await fetchImage(item.imageUrl) : undefined;
@@ -131,7 +135,7 @@ export function createRssHandler(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const openGraphData: any = await fetchOpenGraph({
         url,
-        timeout: 10000,
+        timeout: 10, // seconds: open-graph-scraper multiplies this by 1000
         fetchOptions: {
           headers: {
             'user-agent': userAgent,
@@ -140,14 +144,23 @@ export function createRssHandler(
           },
         },
       })
-        .then(res => (res.error ? {error: true} : res.result))
+        // pageUrl: the page actually fetched, after redirects (open-graph-scraper follows them
+        // hop by hop, so response.url is the last one); a relative og:image belongs to it.
+        .then(res =>
+          res.error
+            ? {error: true}
+            : {...res.result, pageUrl: (res.response as {url?: string} | undefined)?.url},
+        )
         .catch(() => ({
           error: true,
         }));
 
       if (!openGraphData.error) {
         if (image === undefined && openGraphData.ogImage) {
-          const imageUrl = resolveImageUrl(openGraphData.ogImage[0]?.url, url);
+          const imageUrl = absolutizeImageUrl(
+            openGraphData.ogImage[0]?.url,
+            openGraphData.pageUrl || url,
+          );
 
           if (imageUrl !== undefined) {
             image = await fetchImage(imageUrl);
@@ -218,6 +231,8 @@ export function createRssHandler(
           userAgent,
           timeoutMs: 10000,
           fetchFn: fetchYouTubeOembed,
+          onFailure: reason =>
+            logger.debug('FETCH', `No YouTube thumbnail for ${item.title} (${url}): ${reason}`),
         });
         if (thumbnail) {
           embed.image = await fetchImage(thumbnail);
@@ -227,8 +242,6 @@ export function createRssHandler(
         }
       }
     }
-
-    if (new Date(useDate) <= new Date(lastDate)) return;
 
     title = item.title ?? '';
 
@@ -381,6 +394,7 @@ export function createRssHandler(
           'User-Agent': config.ogUserAgent,
         },
         responseType: 'arraybuffer',
+        timeout: 10_000, // ms; axios has no timeout by default, so a stalled server hung the item
       });
       image = await resizeImageToBuffer(fetchBuffer.data);
     } catch (error) {

@@ -1279,7 +1279,7 @@ __metadata:
     feedsmith: "npm:^3.0.0"
     gts: "npm:7.0.0"
     html-entities: "npm:2.6.0"
-    jimp: "npm:^1.6.1"
+    jimp: "npm:1.6.1"
     open-graph-scraper: "npm:6.13.0"
     tsx: "npm:4.23.15"
     typescript: "npm:6.0.3"
@@ -2755,7 +2755,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"jimp@npm:^1.6.1":
+"jimp@npm:1.6.1":
   version: 1.6.1
   resolution: "jimp@npm:1.6.1"
   dependencies:

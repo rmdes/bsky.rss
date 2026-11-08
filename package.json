@@ -49,7 +49,7 @@
     "dotenv": "^18.0.0",
     "feedsmith": "^3.0.0",
     "html-entities": "2.6.0",
-    "jimp": "^1.6.1",
+    "jimp": "1.6.1",
     "open-graph-scraper": "6.13.0",
     "tsx": "4.23.15"
   },

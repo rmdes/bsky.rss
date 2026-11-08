@@ -27,6 +27,11 @@
       "automerge": true
     },
     {
+      "description": "shared/feedSource/jimp.ts builds Jimp from @jimp/core plus jimp's formats/plugins; both are pinned and must move together",
+      "matchPackageNames": ["jimp", "/^@jimp//"],
+      "groupName": "jimp"
+    },
+    {
       "description": "Update Docker base images weekly",
       "matchDatasources": ["docker"],
       "schedule": ["at any time"],

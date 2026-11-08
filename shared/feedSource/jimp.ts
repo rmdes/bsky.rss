@@ -9,21 +9,42 @@ import {createJimp} from '@jimp/core';
 import {defaultFormats, defaultPlugins} from 'jimp';
 import decodeWebp, {init as initWebpDecoder} from '@jsquash/webp/decode.js';
 
+let compiledDecoder: Promise<WebAssembly.Module> | undefined;
 let decoderReady: Promise<void> | undefined;
 
-function loadWebpDecoder(): Promise<void> {
-  decoderReady ??= (async () => {
+function compileWebpDecoder(): Promise<WebAssembly.Module> {
+  compiledDecoder ??= (async () => {
     const wasmPath = createRequire(import.meta.url).resolve(
       '@jsquash/webp/codec/dec/webp_dec.wasm',
     );
-    await initWebpDecoder(await WebAssembly.compile(await readFile(wasmPath)));
+    return WebAssembly.compile(await readFile(wasmPath));
   })().catch(error => {
-    // Retries read/resolve/compile failures only: jsquash init() stores its emscripten promise without
-    // awaiting it, so an instantiation failure stays cached inside jsquash.
-    decoderReady = undefined;
+    compiledDecoder = undefined;
     throw error;
   });
+  return compiledDecoder;
+}
+
+function loadWebpDecoder(): Promise<void> {
+  decoderReady ??= compileWebpDecoder()
+    .then(module => initWebpDecoder(module))
+    .catch(error => {
+      // Retries read/resolve/compile failures only: jsquash init() stores its emscripten promise
+      // without awaiting it, so an instantiation failure stays cached inside jsquash.
+      decoderReady = undefined;
+      throw error;
+    });
   return decoderReady;
+}
+
+// The decoder's WASM memory grows to fit the largest image it has decoded and never shrinks. After
+// a large decode, drop the instance: the next decode instantiates a fresh, small one from the cached
+// compiled module (jsquash init() replaces its instance), and the old memory can be collected.
+// A decode already in flight keeps its own reference, so this can't break it.
+export const WEBP_DECODER_RESET_BYTES = 16_000_000;
+
+export function resetWebpDecoder(): void {
+  decoderReady = undefined;
 }
 
 // Same limit as fleet's MAX_DECOMPRESSED_SIZE (w*h*4 bytes). jpeg-js refuses oversized images before
@@ -66,6 +87,7 @@ const webp = () => ({
     }
     await loadWebpDecoder();
     const image = await decodeWebp(new Uint8Array(data).buffer);
+    if (width * height * 4 > WEBP_DECODER_RESET_BYTES) resetWebpDecoder();
     return {
       data: Buffer.from(image.data.buffer, image.data.byteOffset, image.data.byteLength),
       width: image.width,
