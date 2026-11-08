@@ -367,7 +367,7 @@ Uses link card instead of image, includes description.
 
 **Why:**
 - `runInterval: 600` - Check every 10 min
-- Link card shows video thumbnail automatically
+- Link card shows video thumbnail automatically (YouTube links get one via oEmbed, no extra config)
 
 ---
 

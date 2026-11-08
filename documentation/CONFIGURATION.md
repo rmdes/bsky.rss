@@ -216,6 +216,10 @@ This guide shows you how to deploy apps to production...
 - `og:image` - Card preview image
 - `og:url` - Link destination
 
+Card images are recovered where possible: relative `og:image` URLs are resolved against the page,
+WebP `og:image`s are accepted (still posted as JPEG), and YouTube links with no image fall back to
+YouTube's oEmbed thumbnail.
+
 **Use cases:**
 - News articles (rich previews)
 - Blog posts (show excerpt)

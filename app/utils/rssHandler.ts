@@ -213,7 +213,12 @@ export function createRssHandler(
       // YouTube shows scrapers a consent page (no og:image); its oEmbed endpoint has the thumbnail.
       if (embed && embed.image === undefined && isYouTubeUrl(url)) {
         const thumbnail = await youtubeThumbnail(url, {userAgent, timeoutMs: 10000});
-        if (thumbnail) embed.image = await fetchImage(thumbnail);
+        if (thumbnail) {
+          embed.image = await fetchImage(thumbnail);
+          if (!embed.image) {
+            logger.debug('FETCH', `Error fetching image for ${item.title} (${thumbnail})`);
+          }
+        }
       }
     }
 
