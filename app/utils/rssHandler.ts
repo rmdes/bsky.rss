@@ -11,6 +11,7 @@ import {
   extractMarkdownLinks,
   finalizeMarkdownLinks,
 } from '../../shared/feedSource/markdownLinks.ts';
+import {isYouTubeUrl, resolveImageUrl, youtubeThumbnail} from '../../shared/feedSource/imageUrl.ts';
 import type {Logger} from '../../shared/logging/index.ts';
 
 // fetchOpenGraph is injectable only so tests can stand in for it: open-graph-scraper >= 6.13
@@ -144,9 +145,9 @@ export function createRssHandler(
 
       if (!openGraphData.error) {
         if (image === undefined && openGraphData.ogImage) {
-          const imageUrl: string = openGraphData.ogImage[0].url;
+          const imageUrl = resolveImageUrl(openGraphData.ogImage[0]?.url, url);
 
-          if (imageUrl !== '' && imageUrl !== undefined) {
+          if (imageUrl !== undefined) {
             image = await fetchImage(imageUrl);
 
             if (image === undefined) {
@@ -207,6 +208,12 @@ export function createRssHandler(
           imageAlt: imageAlt,
           type: config.embedType,
         };
+      }
+
+      // YouTube shows scrapers a consent page (no og:image); its oEmbed endpoint has the thumbnail.
+      if (embed && embed.image === undefined && isYouTubeUrl(url)) {
+        const thumbnail = await youtubeThumbnail(url, {userAgent, timeoutMs: 10000});
+        if (thumbnail) embed.image = await fetchImage(thumbnail);
       }
     }
 

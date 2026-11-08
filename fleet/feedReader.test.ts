@@ -925,6 +925,54 @@ test('a successful Open Graph fetch records success', async t => {
   ]);
 });
 
+test('a relative og:image is resolved against the page URL', async t => {
+  const {reader} = createInstrumentedReader(t, {
+    config: {publishEmbed: true, embedType: 'card'},
+    fetchOpenGraph: async () => ({
+      ogTitle: 'Open Graph title',
+      ogImage: [{url: '/static/card.webp'}],
+    }),
+  });
+  const emitted: ParsedItem[] = [];
+  reader.onItem(item => emitted.push(item));
+
+  await handleItem(
+    reader,
+    normalizedItem({
+      id: 'https://example.test/article',
+      title: 'RSS title',
+      link: 'https://example.test/article',
+      date: '2026-08-03T12:01:00.000Z',
+    }),
+  );
+
+  assert.equal(emitted[0]?.embed?.imageUrl, 'https://example.test/static/card.webp');
+});
+
+test('a javascript: og:image is dropped, not queued', async t => {
+  const {reader} = createInstrumentedReader(t, {
+    config: {publishEmbed: true, embedType: 'card'},
+    fetchOpenGraph: async () => ({
+      ogTitle: 'Open Graph title',
+      ogImage: [{url: 'javascript:alert(1)'}],
+    }),
+  });
+  const emitted: ParsedItem[] = [];
+  reader.onItem(item => emitted.push(item));
+
+  await handleItem(
+    reader,
+    normalizedItem({
+      id: 'https://example.test/article-2',
+      title: 'RSS title',
+      link: 'https://example.test/article-2',
+      date: '2026-08-03T12:01:00.000Z',
+    }),
+  );
+
+  assert.equal(emitted[0]?.embed?.imageUrl, undefined);
+});
+
 test('a rejected Open Graph fetch records fallback without leaking item details to summary logs', async t => {
   // Break caught: a rejected enrichment request must retain today's RSS-derived
   // embed fallback, but leaking its URL/title/error to summary logs exposes noisy

@@ -12,6 +12,7 @@ import {BotOperations, classifyFeedFailure} from './botOperations.ts';
 import {Logger, formatDebugError} from '../shared/logging/logger.ts';
 import {createFeedSource} from '../shared/feedSource/index.ts';
 import type {FeedSource, NormalizedItem} from '../shared/feedSource/index.ts';
+import {isYouTubeUrl, resolveImageUrl, youtubeThumbnail} from '../shared/feedSource/imageUrl.ts';
 import {
   extractMarkdownLinks,
   finalizeMarkdownLinks,
@@ -437,8 +438,8 @@ export class FeedReader {
           ogTitle?: string;
         };
         this.runtime.operations.recordOpenGraphSuccess();
-        if (!imageUrl && openGraphResult.ogImage?.[0]?.url) {
-          imageUrl = openGraphResult.ogImage[0].url;
+        if (!imageUrl) {
+          imageUrl = resolveImageUrl(openGraphResult.ogImage?.[0]?.url, url);
         }
         if (!description) {
           description = openGraphResult.ogDescription ?? item.description ?? item.content;
@@ -482,6 +483,14 @@ export class FeedReader {
           imageAlt,
           type: this.config.embedType,
         };
+      }
+
+      // YouTube shows scrapers a consent page (no og:image); its oEmbed endpoint has the thumbnail.
+      if (embed && !embed.imageUrl && isYouTubeUrl(url)) {
+        embed.imageUrl = await youtubeThumbnail(url, {
+          userAgent: this.config.ogUserAgent || defaultUserAgent,
+          timeoutMs: this.sharedLimiters.httpTimeoutMs,
+        });
       }
     }
 
