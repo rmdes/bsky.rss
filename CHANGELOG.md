@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Per-bot config reload without restarting the fleet.** Changes to a bot's `bot.json`,
+  `config.json`, or secret apply within ~10 s, only to that bot; bots can be added, enabled,
+  disabled, or removed at runtime; `yarn fleet:reload <bot-id> | --all` forces a reload. A bad edit
+  keeps the bot on its previous config. See `documentation/fleet.md`.
+
 ---
 
 ## [2.15.1] - 2026-11-08

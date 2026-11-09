@@ -266,6 +266,28 @@ minimum pick a private, hard-to-guess topic name rather than a short/predictable
 `NTFY_URL`, `NTFY_TOKEN` is optional - omit it for a topic that allows unauthenticated
 publishing.
 
+## Changing one bot without restarting the fleet
+
+The fleet checks `config/bots/` every 10 seconds and applies changes to individual bots:
+
+- **Edit** a bot's `bot.json` or `config.json`, or rotate its secret: that bot restarts with the
+  new config. Nothing else is touched. Its queue, cursor, dedup history, and session are kept.
+- **Add** a bot directory, or set `"enabled": true`: the bot starts.
+- **Set `"enabled": false`** or remove the directory: the bot stops. (A directory has to be missing
+  on two checks in a row before its bot stops, so a `git pull` or editor save can't stop it.)
+
+A bad edit never takes a bot down: invalid JSON or a missing secret is logged
+(`[CONFIG] <bot> reload rejected: ...`) and the bot keeps running its previous config. If the new
+config fails to start (for example a rejected password), the previous config is started again.
+
+To force a reload without editing anything:
+
+    docker exec bsky-rss-fleet node --import tsx fleet/reloadControl.ts <bot-id>
+    docker exec bsky-rss-fleet node --import tsx fleet/reloadControl.ts --all
+
+The outcome appears in the logs and in `yarn fleet:status` (`configLoadedAt`, `lastConfigOutcome`).
+`fleet.json` and environment variables still need a full restart.
+
 ## Broadcast messages
 
 `fleet/broadcast.ts` posts the same maintenance/support message and link to every fleet account
