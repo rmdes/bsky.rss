@@ -42,7 +42,8 @@ export class FleetOperationsRuntime {
   constructor(private readonly options: FleetOperationsRuntimeOptions) {
     this.overrideWatcher = new LogOverrideWatcher({
       path: options.paths.overrides,
-      knownBotIds: new Set(options.operations.keys()),
+      // Live view: runFleet adds and removes bots at runtime (config reload).
+      knownBotIds: {has: botId => options.operations.has(botId)},
       logger: options.logger,
       now: options.now,
     });

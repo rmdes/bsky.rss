@@ -84,6 +84,9 @@ test('reports feed failure transitions and recovers after consecutive failures',
       postDeferred: 0,
       postException: 0,
     },
+    configLoadedAt: null,
+    lastConfigOutcome: null,
+    lastConfigOutcomeAt: null,
   });
 });
 
@@ -123,6 +126,9 @@ test('returns defensive snapshot and counter copies', () => {
     lastFeedFailureCategory: null,
     lastPostSuccessAt: null,
     counters: {...emptyBotCounters(), queued: 1},
+    configLoadedAt: null,
+    lastConfigOutcome: null,
+    lastConfigOutcomeAt: null,
   });
 });
 
@@ -156,9 +162,12 @@ test('classifies expected feed failure shapes without retaining error details', 
   const snapshot = operations.snapshot();
   assert.deepEqual(Object.keys(snapshot).sort(), [
     'botId',
+    'configLoadedAt',
     'consecutiveFeedFailures',
     'counters',
     'feedState',
+    'lastConfigOutcome',
+    'lastConfigOutcomeAt',
     'lastFeedFailureAt',
     'lastFeedFailureCategory',
     'lastFeedSuccessAt',
@@ -166,4 +175,18 @@ test('classifies expected feed failure shapes without retaining error details', 
   ]);
   assert.equal(snapshot.lastFeedFailureCategory, 'http-500');
   assert.equal(JSON.stringify(snapshot).includes('secret.example'), false);
+});
+
+test('records when config was loaded and the last config outcome', () => {
+  let now = new Date('2026-11-09T12:00:00.000Z');
+  const operations = new BotOperations('bot-1', () => now);
+  assert.equal(operations.snapshot().configLoadedAt, null);
+  assert.equal(operations.snapshot().lastConfigOutcome, null);
+  operations.recordConfigLoaded();
+  now = new Date('2026-11-09T12:05:00.000Z');
+  operations.recordConfigOutcome('reload-rejected');
+  const snapshot = operations.snapshot();
+  assert.equal(snapshot.configLoadedAt, '2026-11-09T12:00:00.000Z');
+  assert.equal(snapshot.lastConfigOutcome, 'reload-rejected');
+  assert.equal(snapshot.lastConfigOutcomeAt, '2026-11-09T12:05:00.000Z');
 });

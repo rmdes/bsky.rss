@@ -311,3 +311,19 @@ test('watcher rethrows operational filesystem read failures instead of calling t
     false,
   );
 });
+
+test('readValidOverrides accepts a live bot-id lookup, so bots added after startup qualify', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'overrides-live-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const path = join(dir, 'log-overrides.json');
+  const now = new Date('2026-11-09T12:00:00.000Z');
+  writeOverrides(
+    path,
+    new Map([['new-bot', {level: 'debug', expiresAt: '2026-11-09T13:00:00.000Z'}]]),
+  );
+  const live = new Map<string, unknown>();
+  const knownBotIds = {has: (botId: string) => live.has(botId)};
+  assert.throws(() => readValidOverrides(path, knownBotIds, now));
+  live.set('new-bot', {});
+  assert.equal(readValidOverrides(path, knownBotIds, now).get('new-bot')?.level, 'debug');
+});

@@ -13,6 +13,9 @@ function state(botId: string, counters: Partial<BotCounters>): BotOperationalSna
     lastFeedFailureCategory: null,
     lastPostSuccessAt: null,
     counters: {...emptyBotCounters(), ...counters},
+    configLoadedAt: null,
+    lastConfigOutcome: null,
+    lastConfigOutcomeAt: null,
   };
 }
 

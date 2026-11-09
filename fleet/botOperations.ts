@@ -23,6 +23,13 @@ export interface BotCounters {
   postException: number;
 }
 
+export type ConfigOutcome =
+  | 'started'
+  | 'reloaded'
+  | 'reload-rejected'
+  | 'reload-failed-restored'
+  | 'start-failed';
+
 export interface BotOperationalSnapshot {
   botId: string;
   feedState: FeedState;
@@ -32,6 +39,9 @@ export interface BotOperationalSnapshot {
   lastFeedFailureCategory: FeedFailureCategory | null;
   lastPostSuccessAt: string | null;
   counters: BotCounters;
+  configLoadedAt: string | null;
+  lastConfigOutcome: ConfigOutcome | null;
+  lastConfigOutcomeAt: string | null;
 }
 
 export function emptyBotCounters(): BotCounters {
@@ -60,6 +70,9 @@ export class BotOperations {
   private lastFeedFailureCategory: FeedFailureCategory | null = null;
   private lastPostSuccessAt: string | null = null;
   private readonly counters = emptyBotCounters();
+  private configLoadedAt: string | null = null;
+  private lastConfigOutcome: ConfigOutcome | null = null;
+  private lastConfigOutcomeAt: string | null = null;
 
   constructor(
     private readonly botId: string,
@@ -123,6 +136,15 @@ export class BotOperations {
     this.counters.postException++;
   }
 
+  recordConfigLoaded(): void {
+    this.configLoadedAt = this.now().toISOString();
+  }
+
+  recordConfigOutcome(outcome: ConfigOutcome): void {
+    this.lastConfigOutcome = outcome;
+    this.lastConfigOutcomeAt = this.now().toISOString();
+  }
+
   snapshot(): BotOperationalSnapshot {
     return {
       botId: this.botId,
@@ -133,6 +155,9 @@ export class BotOperations {
       lastFeedFailureCategory: this.lastFeedFailureCategory,
       lastPostSuccessAt: this.lastPostSuccessAt,
       counters: {...this.counters},
+      configLoadedAt: this.configLoadedAt,
+      lastConfigOutcome: this.lastConfigOutcome,
+      lastConfigOutcomeAt: this.lastConfigOutcomeAt,
     };
   }
 }

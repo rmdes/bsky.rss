@@ -62,6 +62,9 @@ function statusFixture(): FleetStatusSnapshot {
       queueDepth: 0,
       effectiveLogLevel: 'summary' as const,
       logOverrideExpiresAt: null,
+      configLoadedAt: null,
+      lastConfigOutcome: null,
+      lastConfigOutcomeAt: null,
     })),
   };
 }

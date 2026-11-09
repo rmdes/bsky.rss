@@ -32,7 +32,7 @@ export function parseDuration(value: string): number {
 
 export function readValidOverrides(
   path: string,
-  knownBotIds: ReadonlySet<string>,
+  knownBotIds: {has(botId: string): boolean},
   now: Date,
 ): ReadonlyMap<string, LogOverride> {
   let source: string;
@@ -92,7 +92,7 @@ export class LogOverrideWatcher {
   constructor(
     private readonly options: {
       path: string;
-      knownBotIds: ReadonlySet<string>;
+      knownBotIds: {has(botId: string): boolean};
       logger: Logger;
       now?: () => Date;
     },

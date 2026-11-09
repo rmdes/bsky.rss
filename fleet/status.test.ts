@@ -73,6 +73,9 @@ function statusFixture(overrides: Partial<FleetStatusSnapshot> = {}): FleetStatu
         queueDepth: 4,
         effectiveLogLevel: 'debug',
         logOverrideExpiresAt: '2026-08-03T12:15:00.000Z',
+        configLoadedAt: null,
+        lastConfigOutcome: null,
+        lastConfigOutcomeAt: null,
       },
     ],
     ...overrides,
@@ -303,6 +306,8 @@ test('bot rows render the exact approved operational-field allowlist', () => {
       'postUncertain=1',
       'postDeferred=2',
       'postException=3',
+      'configLoadedAt=n/a',
+      'lastConfigOutcome=n/a',
       'effectiveLogLevel=debug',
       'logOverrideExpiresAt=2026-08-03T12:15:00.000Z',
     ].join(' · '),
@@ -329,4 +334,36 @@ test('the executable rejects unknown or repeated flags with usage', t => {
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Usage:.*status\.ts \[--bots\]/);
   }
+});
+
+test('readFleetStatus accepts bot states without config-reload fields; status shows n/a for them', t => {
+  const path = join(tempDirectory(t), 'status.json');
+  const fixture = statusFixture();
+  const legacy = {
+    ...fixture,
+    botStates: fixture.botStates.map(bot => {
+      const {configLoadedAt: _a, lastConfigOutcome: _b, lastConfigOutcomeAt: _c, ...rest} = bot;
+      return rest;
+    }),
+  };
+  writeFileSync(path, JSON.stringify(legacy));
+  const output = formatFleetStatus(readFleetStatus(path), {showBots: true, now});
+  assert.match(output, /configLoadedAt=n\/a/);
+  assert.match(output, /lastConfigOutcome=n\/a/);
+});
+
+test('status shows when config was loaded and the last config outcome', () => {
+  const fixture = statusFixture();
+  const snapshot = {
+    ...fixture,
+    botStates: fixture.botStates.map(bot => ({
+      ...bot,
+      configLoadedAt: '2026-11-09T12:00:00.000Z',
+      lastConfigOutcome: 'reloaded' as const,
+      lastConfigOutcomeAt: '2026-11-09T12:05:00.000Z',
+    })),
+  };
+  const output = formatFleetStatus(snapshot, {showBots: true, now});
+  assert.match(output, /configLoadedAt=2026-11-09T12:00:00.000Z/);
+  assert.match(output, /lastConfigOutcome=reloaded@2026-11-09T12:05:00.000Z/);
 });

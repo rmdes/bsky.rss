@@ -152,6 +152,10 @@ function formatBotStatus(bot: FleetBotStatus): string {
     `lastPostSuccess=${bot.lastPostSuccessAt ?? 'n/a'}`,
     `queueDepth=${bot.queueDepth === null ? 'n/a' : formatInteger(bot.queueDepth)}`,
     ...counters,
+    `configLoadedAt=${bot.configLoadedAt ?? 'n/a'}`,
+    `lastConfigOutcome=${
+      bot.lastConfigOutcome ? `${bot.lastConfigOutcome}@${bot.lastConfigOutcomeAt}` : 'n/a'
+    }`,
     `effectiveLogLevel=${bot.effectiveLogLevel}`,
     `logOverrideExpiresAt=${bot.logOverrideExpiresAt ?? 'n/a'}`,
   ].join(' · ');
@@ -256,7 +260,12 @@ function isFleetBotStatus(value: unknown): value is FleetBotStatus {
     hasNumericProperties(value.counters, counterNames) &&
     (value.queueDepth === null || isFiniteNonnegativeNumber(value.queueDepth)) &&
     isLogLevel(value.effectiveLogLevel) &&
-    isNullableTimestamp(value.logOverrideExpiresAt)
+    isNullableTimestamp(value.logOverrideExpiresAt) &&
+    (value.configLoadedAt === undefined || isNullableTimestamp(value.configLoadedAt)) &&
+    (value.lastConfigOutcomeAt === undefined || isNullableTimestamp(value.lastConfigOutcomeAt)) &&
+    (value.lastConfigOutcome === undefined ||
+      value.lastConfigOutcome === null ||
+      typeof value.lastConfigOutcome === 'string')
   );
 }
 
