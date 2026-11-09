@@ -155,7 +155,22 @@ export class BskyClient {
   }
 
   async login(identifier: string, password: string): Promise<void> {
-    const persisted = this.store.readSession<AtpSessionData>();
+    let persisted = this.store.readSession<AtpSessionData>();
+    // After an identifier change the stored session belongs to the old account: resuming it
+    // would keep posting as that account.
+    if (
+      persisted &&
+      persisted.handle !== identifier &&
+      persisted.did !== identifier &&
+      persisted.email !== identifier
+    ) {
+      this.logger.summary(
+        'LOGIN',
+        'Stored session is for a different account; logging in with password',
+        this.botId,
+      );
+      persisted = null;
+    }
     if (persisted) {
       const resumeStartedAt = Date.now();
       try {

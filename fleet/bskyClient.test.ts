@@ -212,7 +212,7 @@ test('resumed-session summary omits the handle and retains the successful short-
     sink: (_line, record) => records.push(record),
   });
   const store = {
-    readSession: () => ({accessJwt: 'secret'}),
+    readSession: () => ({accessJwt: 'secret', handle: 'identifier', did: 'did:plc:x'}),
     writeSession: () => undefined,
   };
   const client = new BskyClient(
@@ -237,6 +237,61 @@ test('resumed-session summary omits the handle and retains the successful short-
   assert.doesNotMatch(records[0]!.message, /resumed-private|secret|identifier|password/);
 });
 
+function makeResumeClient(session: {handle: string; did: string; email?: string}) {
+  const records: LogRecord[] = [];
+  const logger = new Logger({
+    defaultLevel: 'summary',
+    sink: (_line, record) => records.push(record),
+  });
+  const store = {
+    readSession: () => ({accessJwt: 'secret', ...session}),
+    writeSession: () => undefined,
+  };
+  const client = new BskyClient(
+    'test-bot',
+    'https://bsky.social',
+    store as unknown as BotStore,
+    logger,
+  );
+  const calls: string[] = [];
+  (client as unknown as {agent: unknown}).agent = {
+    resumeSession: async () => {
+      calls.push('resume');
+      return {success: true, data: {handle: session.handle}};
+    },
+    login: async ({identifier}: {identifier: string}) => {
+      calls.push(`login ${identifier}`);
+      return {success: true, data: {handle: identifier}};
+    },
+  };
+  return {client, calls, records};
+}
+
+test('a persisted session for another account is not resumed; the password login is used', async () => {
+  const {client, calls, records} = makeResumeClient({
+    handle: 'old.bsky.social',
+    did: 'did:plc:old',
+    email: 'old@example.com',
+  });
+  await client.login('new.bsky.social', 'password');
+  assert.deepEqual(calls, ['login new.bsky.social']);
+  const summaries = records.filter(r => r.level === 'summary');
+  assert.ok(summaries.some(r => r.scope === 'LOGIN' && /different account/i.test(r.message)));
+  assert.ok(summaries.every(r => !/old|new\.bsky|example\.com|did:plc/.test(r.message)));
+});
+
+test('a persisted session matching the identifier by handle, did, or email is resumed', async () => {
+  for (const identifier of ['me.bsky.social', 'did:plc:me', 'me@example.com']) {
+    const {client, calls} = makeResumeClient({
+      handle: 'me.bsky.social',
+      did: 'did:plc:me',
+      email: 'me@example.com',
+    });
+    await client.login(identifier, 'password');
+    assert.deepEqual(calls, ['resume'], identifier);
+  }
+});
+
 test('caught session-resume errors and login durations are debug-only for the selected bot', async () => {
   const records: LogRecord[] = [];
   const logger = new Logger({
@@ -248,7 +303,7 @@ test('caught session-resume errors and login durations are debug-only for the se
   );
   const makeSessionClient = (botId: string, secret: string) => {
     const store = {
-      readSession: () => ({accessJwt: secret}),
+      readSession: () => ({accessJwt: secret, handle: 'id', did: 'did:plc:x'}),
       writeSession: () => undefined,
     };
     const client = new BskyClient(
