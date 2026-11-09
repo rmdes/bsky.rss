@@ -205,11 +205,11 @@ The `set` duration must be a positive whole number followed by `s`, `m`, or
 Overrides expire automatically and return that bot to `FLEET_LOG_LEVEL`.
 Every command validates the document structure first, prunes expired entries,
 then checks active entries against bot IDs from the current `status.json`.
-Consequently, an expired entry for a removed bot is discarded, but an active
-unknown-bot entry invalidates the whole document. Repair/remove that active
-entry manually, or wait for its structurally valid expiry; until then the
-running watcher retains its last valid in-memory overrides. `list` uses the
-same status-backed authority and never treats document keys as bot authority.
+Entries for a bot that is no longer in `status.json` (removed or disabled,
+including at runtime by a config reload) are ignored, so the other bots'
+overrides keep working; `clear <removed-bot>` still removes such a leftover
+entry. `list` uses the same status-backed authority and never treats document
+keys as bot authority.
 
 Malformed JSON or validation content produces one retained-state warning.
 Operational filesystem failures (for example permissions or a directory at

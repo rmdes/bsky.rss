@@ -78,12 +78,31 @@ test('readValidOverrides prunes a structurally valid expired override before bot
   );
 });
 
+test('readValidOverrides skips an unexpired override for an unknown (removed) bot and keeps the rest', t => {
+  const path = join(tempDirectory(t), 'log-overrides.json');
+  const valid = {level: 'verbose', expiresAt: '2026-08-03T12:05:00.000Z'};
+  writeFileSync(path, JSON.stringify({'bot-a': valid, 'removed-bot': valid, 'bot-b': valid}));
+
+  assert.deepEqual(
+    [
+      ...readValidOverrides(
+        path,
+        new Set(['bot-a', 'bot-b']),
+        new Date('2026-08-03T12:00:00.000Z'),
+      ),
+    ],
+    [
+      ['bot-a', valid],
+      ['bot-b', valid],
+    ],
+  );
+});
+
 test('readValidOverrides rejects an entire document when any entry is invalid', t => {
   const path = join(tempDirectory(t), 'log-overrides.json');
   const knownBotIds = new Set(['bot-a', 'bot-b']);
   const valid = {level: 'verbose', expiresAt: '2026-08-03T12:05:00.000Z'};
   const invalidDocuments: unknown[] = [
-    {'bot-a': valid, 'unknown-bot': valid},
     {'bot-a': valid, 'bot-b': {level: 'trace', expiresAt: valid.expiresAt}},
     {
       'bot-a': valid,
@@ -323,7 +342,7 @@ test('readValidOverrides accepts a live bot-id lookup, so bots added after start
   );
   const live = new Map<string, unknown>();
   const knownBotIds = {has: (botId: string) => live.has(botId)};
-  assert.throws(() => readValidOverrides(path, knownBotIds, now));
+  assert.equal(readValidOverrides(path, knownBotIds, now).has('new-bot'), false);
   live.set('new-bot', {});
   assert.equal(readValidOverrides(path, knownBotIds, now).get('new-bot')?.level, 'debug');
 });

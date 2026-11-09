@@ -192,7 +192,7 @@ test('mutations prune an expired override for a removed bot before authority val
   });
 });
 
-test('active unknown overrides invalidate list and mutations without changing the document', t => {
+test('an active override for a removed bot does not block list or set for other bots', t => {
   const dataRoot = tempDirectory(t);
   writeStatus(dataRoot);
   const path = overridesPath(dataRoot);
@@ -200,17 +200,36 @@ test('active unknown overrides invalidate list and mutations without changing th
     path,
     new Map([['removed-bot', {level: 'debug', expiresAt: '2026-08-03T12:10:00.000Z'}]]),
   );
-  const original = readFileSync(path, 'utf8');
-  const originalInode = statSync(path).ino;
 
-  for (const args of [['list'], ['set', 'bot-a', 'debug', '--for', '15m'], ['clear', 'bot-a']]) {
-    assert.throws(
-      () => runLogControl(args, {dataRoot, now: () => fixedNow}),
-      /unknown bot removed-bot/i,
-    );
-    assert.equal(readFileSync(path, 'utf8'), original);
-    assert.equal(statSync(path).ino, originalInode);
-  }
+  assert.equal(
+    runLogControl(['list'], {dataRoot, now: () => fixedNow}),
+    'No active log overrides.',
+  );
+  runLogControl(['set', 'bot-a', 'debug', '--for', '15m'], {dataRoot, now: () => fixedNow});
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
+    'bot-a': {level: 'debug', expiresAt: '2026-08-03T12:15:00.000Z'},
+  });
+});
+
+test('clear succeeds for a removed bot that still has an override, keeping the others', t => {
+  const dataRoot = tempDirectory(t);
+  writeStatus(dataRoot);
+  const path = overridesPath(dataRoot);
+  writeOverrides(
+    path,
+    new Map([
+      ['removed-bot', {level: 'debug', expiresAt: '2026-08-03T12:10:00.000Z'}],
+      ['bot-b', {level: 'verbose', expiresAt: '2026-08-03T12:10:00.000Z'}],
+    ]),
+  );
+
+  assert.equal(
+    runLogControl(['clear', 'removed-bot'], {dataRoot, now: () => fixedNow}),
+    'Cleared log override for removed-bot.',
+  );
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
+    'bot-b': {level: 'verbose', expiresAt: '2026-08-03T12:10:00.000Z'},
+  });
 });
 
 test('list uses one coherent override read with status-backed authority', t => {

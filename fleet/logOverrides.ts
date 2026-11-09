@@ -70,11 +70,8 @@ export function readValidOverrides(
   const overrides = new Map<string, LogOverride>();
   for (const [botId, override] of validated) {
     if (new Date(override.expiresAt).getTime() <= now.getTime()) continue;
-    if (!knownBotIds.has(botId)) {
-      throw new InvalidLogOverrideDocumentError(
-        `Invalid log override document at ${path}: unknown bot ${botId}`,
-      );
-    }
+    // A bot removed or disabled at runtime must not invalidate every other bot's override.
+    if (!knownBotIds.has(botId)) continue;
     overrides.set(botId, override);
   }
   return overrides;

@@ -41,8 +41,9 @@ export function runLogControl(
   if (args.length === 2 && args[0] === 'clear') {
     const botId = args[1] as string;
     const knownBotIds = currentBotIds(options.dataRoot);
-    requireKnownBot(botId, knownBotIds);
-    const overrides = new Map(readValidOverrides(path, knownBotIds, now));
+    // A removed bot's leftover override can still be cleared; a typo with no entry is rejected.
+    const overrides = new Map(readValidOverrides(path, new Set([...knownBotIds, botId]), now));
+    if (!overrides.has(botId)) requireKnownBot(botId, knownBotIds);
     overrides.delete(botId);
     writeOverrides(path, overrides);
     return `Cleared log override for ${botId}.`;
