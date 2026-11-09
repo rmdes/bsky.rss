@@ -1005,3 +1005,39 @@ test('checkNotificationsOnce guards against overlapping calls — a second call 
 
   assert.equal(listCalls, 1, 'a second call while one is in flight must not start a new check');
 });
+
+test('shutdown is idempotent: a second call closes the store only once and both calls resolve', async t => {
+  let closes = 0;
+  const store = new FakeBotStore();
+  store.close = () => {
+    closes++;
+    if (closes > 1) throw new Error('database is not open');
+  };
+  const {worker} = makeWorker(t, {store});
+  await worker.start();
+  await Promise.all([worker.shutdown(1000), worker.shutdown(1000)]);
+  await worker.shutdown(1000);
+  assert.equal(closes, 1);
+});
+
+test('shutdown clears its intervals even when feedReader.stop() throws', async t => {
+  const feedReader = new FakeFeedReader();
+  feedReader.stop = () => {
+    throw new Error('stop failed');
+  };
+  const {worker} = makeWorker(t, {
+    feedReader,
+    ntfyUrl: 'https://ntfy.example/topic',
+    botHandle: 'bot.bsky.social',
+  });
+  await worker.start();
+  const handles = worker as unknown as {
+    intervalHandle: NodeJS.Timeout;
+    notificationIntervalHandle: NodeJS.Timeout;
+  };
+  const expected = [handles.intervalHandle, handles.notificationIntervalHandle];
+  const cleared = t.mock.method(globalThis, 'clearInterval');
+  await assert.rejects(worker.shutdown(1000), /stop failed/);
+  const clearedHandles = cleared.mock.calls.map(call => call.arguments[0]);
+  for (const handle of expected) assert.ok(clearedHandles.includes(handle));
+});

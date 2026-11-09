@@ -221,23 +221,30 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.summary('FLEET', `Received ${signal}, shutting down gracefully`);
-    clearInterval(healthHeartbeatHandle);
-    clearInterval(identityCleanupHandle);
-    coordinator.abortActivation();
-    await Promise.race([
-      reconciler?.stop(),
-      new Promise(resolve => setTimeout(resolve, shutdownOverallTimeoutMs)),
-    ]);
-    operationsRuntime.markStopping();
-    operationsRuntime.stop();
-    await Promise.race([
-      coordinator.shutdownAll(shutdownPerBotTimeoutMs),
-      new Promise(resolve => setTimeout(resolve, shutdownOverallTimeoutMs)),
-    ]);
-    for (const identityStore of identityStores.values()) identityStore.close();
-    releaseLock(lockFilePath);
-    logger.summary('FLEET', 'Shutdown complete');
-    process.exit(0);
+    // try/finally: a failing step must never keep the process alive until Docker's SIGKILL.
+    try {
+      clearInterval(healthHeartbeatHandle);
+      clearInterval(identityCleanupHandle);
+      coordinator.abortActivation();
+      await Promise.race([
+        reconciler?.stop(),
+        new Promise(resolve => setTimeout(resolve, shutdownOverallTimeoutMs)),
+      ]);
+      operationsRuntime.markStopping();
+      operationsRuntime.stop();
+      await Promise.race([
+        coordinator.shutdownAll(shutdownPerBotTimeoutMs),
+        new Promise(resolve => setTimeout(resolve, shutdownOverallTimeoutMs)),
+      ]);
+      for (const identityStore of identityStores.values()) identityStore.close();
+    } catch (error) {
+      logger.summary('FLEET', 'Shutdown step failed; exiting anyway');
+      logger.debug('FLEET', formatDebugError(error));
+    } finally {
+      releaseLock(lockFilePath);
+      logger.summary('FLEET', 'Shutdown complete');
+      process.exit(0);
+    }
   }
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));

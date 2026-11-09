@@ -41,6 +41,7 @@ export class ConfigReconciler<Spec> {
   private readonly rejectedLogged = new Map<string, string>(); // botId -> rejection key
   private readonly warned = new Set<string>(); // fleet-level warnings already logged
   private ticking = false;
+  private stopping = false; // set by stop(): the tick in flight finishes its current bot only
   private inFlight: Promise<void> = Promise.resolve();
   private interval: ReturnType<typeof setInterval> | undefined;
 
@@ -57,12 +58,13 @@ export class ConfigReconciler<Spec> {
   }
 
   async stop(): Promise<void> {
+    this.stopping = true;
     if (this.interval) clearInterval(this.interval);
     await this.inFlight.catch(() => undefined);
   }
 
   async tick(): Promise<void> {
-    if (this.ticking) return; // the previous tick is still applying changes
+    if (this.ticking || this.stopping) return; // the previous tick is still applying changes
     this.ticking = true;
     // A tick must never reject: start() fires it unawaited, and repeated unhandled rejections
     // make processSafety exit the whole fleet.
@@ -125,6 +127,7 @@ export class ConfigReconciler<Spec> {
     }
     for (const botId of [...this.running.keys()]) {
       if (onDisk.has(botId)) continue;
+      if (this.stopping) return;
       const missing = (this.missingTicks.get(botId) ?? 0) + 1;
       this.missingTicks.set(botId, missing);
       if (missing >= MISSING_TICKS_BEFORE_STOP) {
@@ -133,6 +136,7 @@ export class ConfigReconciler<Spec> {
     }
 
     for (const botId of botIds) {
+      if (this.stopping) return;
       this.missingTicks.delete(botId);
       await this.isolated(botId, () => this.reconcileBot(botId, secrets, requests));
     }

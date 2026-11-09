@@ -40,6 +40,7 @@ function harness(initial: Record<string, string> = {}) {
     stopFailures: new Set<string>(), // bot ids whose stopBot throws
     recordFailures: new Set<string>(), // bot ids whose recordOutcome throws
     takeError: undefined as string | undefined,
+    onStop: undefined as (() => void) | undefined,
   };
   const running = new Map<string, RunningBotConfig<Spec>>();
   for (const [botId, hash] of Object.entries(initial)) {
@@ -74,6 +75,7 @@ function harness(initial: Record<string, string> = {}) {
       },
       stopBot: async (botId: string, reason: StopReason) => {
         calls.push(`stop ${botId} (${reason})`);
+        state.onStop?.();
         if (state.stopFailures.has(botId)) throw new Error('stop blew up');
       },
       recordOutcome: (botId, outcome) => {
@@ -229,6 +231,34 @@ test('overlapping ticks are skipped, and stop() waits for the tick in flight', a
   await first;
   await stopping;
   assert.equal(stopped, true);
+});
+
+test('stop() during a multi-bot tick waits only for the bot in progress; the rest are not touched', async () => {
+  const h = harness();
+  for (const id of ['a', 'b', 'c']) h.disk.set(id, fp(id, `${id}1`));
+  let release!: () => void;
+  h.state.startGate = new Promise(resolve => (release = resolve));
+  const tick = h.reconciler.tick();
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(h.calls, ['start a@a1']); // blocked on a's start
+  const stopping = h.reconciler.stop();
+  release();
+  await stopping;
+  await tick;
+  assert.deepEqual(h.calls, ['start a@a1']);
+});
+
+test('stop() during the missing-directory loop skips the remaining removed bots and every other bot', async () => {
+  const h = harness({a: 'h1', b: 'h2', c: 'h3'});
+  h.disk.delete('a');
+  h.disk.delete('b');
+  await h.reconciler.tick(); // a, b missing once
+  h.disk.set('c', fp('c', 'h3b'));
+  let stopping: Promise<void> | undefined;
+  h.state.onStop = () => void (stopping ??= h.reconciler.stop());
+  await h.reconciler.tick();
+  await stopping;
+  assert.deepEqual(h.calls, ['stop a (directory removed)']);
 });
 
 test('log lines never contain config values', async () => {

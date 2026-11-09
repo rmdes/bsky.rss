@@ -33,6 +33,7 @@ export class BotWorker {
   private notificationRunning = false;
   private intervalHandle: NodeJS.Timeout | null = null;
   private notificationIntervalHandle: NodeJS.Timeout | null = null;
+  private shutdownPromise: Promise<void> | undefined;
 
   constructor(private options: BotWorkerOptions) {
     this.botId = options.botId;
@@ -86,10 +87,17 @@ export class BotWorker {
     if (this.notificationIntervalHandle) clearInterval(this.notificationIntervalHandle);
   }
 
-  async shutdown(timeoutMs: number): Promise<void> {
+  // Memoised: the config reconciler and fleet shutdown can both stop the same worker, and the
+  // store must close only once (node:sqlite throws on a second close).
+  shutdown(timeoutMs: number): Promise<void> {
+    this.shutdownPromise ??= this.doShutdown(timeoutMs);
+    return this.shutdownPromise;
+  }
+
+  private async doShutdown(timeoutMs: number): Promise<void> {
+    // Timers first: if feedReader.stop() throws, the worker must not keep draining untracked.
+    this.stop();
     this.options.feedReader.stop();
-    if (this.intervalHandle) clearInterval(this.intervalHandle);
-    if (this.notificationIntervalHandle) clearInterval(this.notificationIntervalHandle);
     await Promise.all([
       this.waitForFlagToClear(() => this.queueRunning, timeoutMs),
       this.waitForFlagToClear(() => this.notificationRunning, timeoutMs),
