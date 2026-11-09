@@ -9,11 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.16.0] - 2026-11-09
+
 ### Added
 - **Per-bot config reload without restarting the fleet.** Changes to a bot's `bot.json`,
   `config.json`, or secret apply within ~10 s, only to that bot; bots can be added, enabled,
   disabled, or removed at runtime; `yarn fleet:reload <bot-id> | --all` forces a reload. A bad edit
-  keeps the bot on its previous config. See `documentation/fleet.md`.
+  keeps the bot on its previous config, and a new config that fails to start rolls back to the
+  previous one. `fleet:status` shows each bot's `configLoadedAt` and `lastConfigOutcome`. See
+  `documentation/fleet.md`.
+
+### Fixed
+- **Changing a bot's `identifier` now takes effect**: a stored session is only resumed if it
+  belongs to the configured account (handle/email compared case-insensitively, or DID); otherwise
+  the bot logs in fresh. Previously it kept posting as the old account, even after a full restart.
+- A log override left behind for a bot that no longer exists no longer freezes every other
+  override (or blocks `yarn fleet:log`); the stale entry is skipped.
+- Fleet shutdown always exits: a worker's shutdown is idempotent, every worker finishes shutting
+  down even if one fails, and identity stores always close.
 
 ---
 
