@@ -182,6 +182,28 @@ test('shutdownAll calls shutdown on every active worker in parallel with the giv
   assert.ok(shutdownCalls.every(c => c.timeoutMs === 1234));
 });
 
+test('shutdownAll lets every worker finish even if one rejects, then rejects with that failure', async () => {
+  let slowFinished = false;
+  const coordinator = new AuthCoordinator({
+    logger: quietLogger(),
+    bots: [makeSpec('bad-bot'), makeSpec('slow-bot')],
+    staggerSeconds: 0,
+    activateBot: async spec =>
+      ({
+        botId: spec.botId,
+        shutdown: async () => {
+          if (spec.botId === 'bad-bot') throw new Error('database is not open');
+          await new Promise(resolve => setTimeout(resolve, 30)); // in-flight post finishing
+          slowFinished = true;
+        },
+      }) as unknown as BotWorker,
+  });
+
+  await coordinator.start();
+  await assert.rejects(coordinator.shutdownAll(1000), /database is not open/);
+  assert.equal(slowFinished, true, 'shutdownAll must not settle before the other worker is done');
+});
+
 test('activation summaries are privacy-safe while debug retains failure detail and stored status is unchanged', async () => {
   const records: LogRecord[] = [];
   const logger = new Logger({

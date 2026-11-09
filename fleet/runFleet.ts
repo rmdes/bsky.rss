@@ -236,11 +236,18 @@ async function main(): Promise<void> {
         coordinator.shutdownAll(shutdownPerBotTimeoutMs),
         new Promise(resolve => setTimeout(resolve, shutdownOverallTimeoutMs)),
       ]);
-      for (const identityStore of identityStores.values()) identityStore.close();
     } catch (error) {
       logger.summary('FLEET', 'Shutdown step failed; exiting anyway');
       logger.debug('FLEET', formatDebugError(error));
     } finally {
+      // Closed even when a worker failed to shut down; one bad store must not skip the rest.
+      for (const identityStore of identityStores.values()) {
+        try {
+          identityStore.close();
+        } catch (error) {
+          logger.debug('FLEET', formatDebugError(error));
+        }
+      }
       releaseLock(lockFilePath);
       logger.summary('FLEET', 'Shutdown complete');
       process.exit(0);

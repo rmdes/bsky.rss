@@ -82,6 +82,11 @@ export class AuthCoordinator {
   }
 
   async shutdownAll(timeoutMs: number): Promise<void> {
-    await Promise.all(this.workers.map(worker => worker.shutdown(timeoutMs)));
+    // allSettled: one failing worker must not cut short the others finishing in-flight posts.
+    const results = await Promise.allSettled(
+      this.workers.map(worker => worker.shutdown(timeoutMs)),
+    );
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
   }
 }
