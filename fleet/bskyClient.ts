@@ -157,12 +157,15 @@ export class BskyClient {
   async login(identifier: string, password: string): Promise<void> {
     let persisted = this.store.readSession<AtpSessionData>();
     // After an identifier change the stored session belongs to the old account: resuming it
-    // would keep posting as that account.
+    // would keep posting as that account. Handles and emails compare case-insensitively (the
+    // PDS lowercases handles); a did compares exactly.
+    const normalise = (value: string | undefined) => value?.trim().toLowerCase();
+    const wanted = normalise(identifier.trim().replace(/^@/, ''));
     if (
       persisted &&
-      persisted.handle !== identifier &&
+      normalise(persisted.handle) !== wanted &&
       persisted.did !== identifier &&
-      persisted.email !== identifier
+      normalise(persisted.email) !== wanted
     ) {
       this.logger.summary(
         'LOGIN',

@@ -281,7 +281,14 @@ test('a persisted session for another account is not resumed; the password login
 });
 
 test('a persisted session matching the identifier by handle, did, or email is resumed', async () => {
-  for (const identifier of ['me.bsky.social', 'did:plc:me', 'me@example.com']) {
+  for (const identifier of [
+    'me.bsky.social',
+    'did:plc:me',
+    'me@example.com',
+    'Me.Bsky.Social', // the PDS lowercases handles; config may not
+    '@me.bsky.social',
+    ' ME@Example.com ',
+  ]) {
     const {client, calls} = makeResumeClient({
       handle: 'me.bsky.social',
       did: 'did:plc:me',
