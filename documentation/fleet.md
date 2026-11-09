@@ -285,6 +285,15 @@ To force a reload without editing anything:
     docker exec bsky-rss-fleet node --import tsx fleet/reloadControl.ts <bot-id>
     docker exec bsky-rss-fleet node --import tsx fleet/reloadControl.ts --all
 
+For a local or non-Docker run, from the repository (with the same `FLEET_DATA_ROOT` as the fleet):
+
+    yarn fleet:reload <bot-id>
+    yarn fleet:reload --all
+
+A reload restarts the bot the same way a full restart does, so its pacing state (post spacing
+and any rate-limit wait) starts fresh. Changing a bot's `"identifier"` logs it in again with its
+password: the stored session belongs to the old account and is not reused.
+
 The outcome appears in the logs and in `yarn fleet:status` (`configLoadedAt`, `lastConfigOutcome`).
 `fleet.json` and environment variables still need a full restart.
 
