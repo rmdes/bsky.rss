@@ -218,3 +218,38 @@ test('activation summaries are privacy-safe while debug retains failure detail a
   );
   assert.equal(coordinator.activationFailures()[0]!.error, 'Error: private raw login failure');
 });
+
+test('addWorker registers a worker, replacing one with the same botId and clearing its failure', () => {
+  const coordinator = new AuthCoordinator({
+    logger: quietLogger(),
+    bots: [],
+    staggerSeconds: 0,
+    activateBot: async spec => fakeWorker(spec.botId),
+  });
+  coordinator.recordFailure('bot-1', 'login failed');
+  const first = fakeWorker('bot-1');
+  const second = fakeWorker('bot-1');
+  coordinator.addWorker(first);
+  coordinator.addWorker(second);
+  assert.deepEqual(coordinator.activeWorkers(), [second]);
+  assert.deepEqual(coordinator.activationFailures(), []);
+});
+
+test('removeWorker returns and unregisters the worker; failures can be recorded and forgotten', () => {
+  const coordinator = new AuthCoordinator({
+    logger: quietLogger(),
+    bots: [],
+    staggerSeconds: 0,
+    activateBot: async spec => fakeWorker(spec.botId),
+  });
+  const worker = fakeWorker('bot-1');
+  coordinator.addWorker(worker);
+  assert.equal(coordinator.removeWorker('bot-1'), worker);
+  assert.equal(coordinator.removeWorker('bot-1'), undefined);
+  assert.deepEqual(coordinator.activeWorkers(), []);
+  coordinator.recordFailure('bot-2', 'first');
+  coordinator.recordFailure('bot-2', 'second');
+  assert.deepEqual(coordinator.activationFailures(), [{botId: 'bot-2', error: 'second'}]);
+  coordinator.forgetFailure('bot-2');
+  assert.deepEqual(coordinator.activationFailures(), []);
+});

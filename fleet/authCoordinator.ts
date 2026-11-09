@@ -60,6 +60,27 @@ export class AuthCoordinator {
     return this.failures;
   }
 
+  // Used by the config reconciler (fleet/configReconciler.ts) to change the running set after
+  // the initial staggered activation.
+  addWorker(worker: BotWorker): void {
+    this.workers = [...this.workers.filter(existing => existing.botId !== worker.botId), worker];
+    this.forgetFailure(worker.botId);
+  }
+
+  removeWorker(botId: string): BotWorker | undefined {
+    const worker = this.workers.find(existing => existing.botId === botId);
+    this.workers = this.workers.filter(existing => existing.botId !== botId);
+    return worker;
+  }
+
+  recordFailure(botId: string, error: string): void {
+    this.failures = [...this.failures.filter(failure => failure.botId !== botId), {botId, error}];
+  }
+
+  forgetFailure(botId: string): void {
+    this.failures = this.failures.filter(failure => failure.botId !== botId);
+  }
+
   async shutdownAll(timeoutMs: number): Promise<void> {
     await Promise.all(this.workers.map(worker => worker.shutdown(timeoutMs)));
   }
