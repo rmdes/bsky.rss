@@ -224,7 +224,10 @@ async function main(): Promise<void> {
     clearInterval(healthHeartbeatHandle);
     clearInterval(identityCleanupHandle);
     coordinator.abortActivation();
-    await reconciler?.stop();
+    await Promise.race([
+      reconciler?.stop(),
+      new Promise(resolve => setTimeout(resolve, shutdownOverallTimeoutMs)),
+    ]);
     operationsRuntime.markStopping();
     operationsRuntime.stop();
     await Promise.race([
@@ -247,11 +250,17 @@ async function main(): Promise<void> {
 
     const active = new Set(coordinator.activeWorkers().map(worker => worker.botId));
     const running = new Map<string, RunningBotConfig<BotSpec>>();
+    // Every active bot must be tracked, or the first tick would start a second worker for it.
+    // With no usable startup fingerprint (read race), an empty hash forces one clean reload.
     for (const spec of bots) {
+      if (!active.has(spec.botId)) continue;
       const fingerprint = startupFingerprints.get(spec.botId);
-      if (active.has(spec.botId) && fingerprint?.ok) {
-        running.set(spec.botId, {hash: fingerprint.hash, fields: fingerprint.fields, spec});
-      }
+      running.set(
+        spec.botId,
+        fingerprint?.ok
+          ? {hash: fingerprint.hash, fields: fingerprint.fields, spec}
+          : {hash: '', fields: {}, spec},
+      );
     }
     // Bots that failed activation or had invalid config: not retried until their config changes.
     const failed = new Map<string, string>();

@@ -159,3 +159,27 @@ test('a shutdown that throws still unregisters the worker, frees the claim, and 
   assert.deepEqual(s.notified, ['a', 'b']); // claim was freed for the sibling
   await s.lifecycle.stopBot('b', 'disabled');
 });
+
+test('starting a bot that already has a registered worker shuts the old one down first', async t => {
+  const s = setup(t);
+  const dbPath = join(s.dir, 'a.sqlite');
+  await s.lifecycle.startBot(spec('a', 'a.bsky.social', dbPath));
+  const old = s.workers.get('a')!;
+  const order: string[] = [];
+  const realShutdown = old.shutdown;
+  old.shutdown = async ms => {
+    order.push('old shutdown');
+    await realShutdown.call(old, ms);
+  };
+  const realAdd = s.coordinator.addWorker.bind(s.coordinator);
+  s.coordinator.addWorker = worker => {
+    order.push('add new');
+    realAdd(worker);
+  };
+  await s.lifecycle.startBot(spec('a', 'a.bsky.social', dbPath));
+  assert.deepEqual(order, ['old shutdown', 'add new']);
+  assert.deepEqual(s.coordinator.activeWorkers(), [s.workers.get('a')]);
+  assert.notEqual(s.workers.get('a'), old);
+  assert.ok(s.records.some(r => r.message.includes('replaced a still-running worker')));
+  await s.lifecycle.stopBot('a', 'disabled');
+});

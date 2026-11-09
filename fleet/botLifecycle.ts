@@ -1,7 +1,7 @@
 // fleet/botLifecycle.ts
 // Starts and stops one bot at runtime (initial activation and config reloads), keeping the
 // coordinator's worker list, the per-bot operations map, and notifier claims in step.
-import {Logger} from '../shared/logging/logger.ts';
+import {Logger, formatDebugError} from '../shared/logging/logger.ts';
 import type {AuthCoordinator} from './authCoordinator.ts';
 import {BotOperations} from './botOperations.ts';
 import type {BotWorker} from './botWorker.ts';
@@ -52,6 +52,18 @@ export function createBotLifecycle(options: BotLifecycleOptions): BotLifecycle {
       } catch (error) {
         options.coordinator.recordFailure(spec.botId, String(error));
         throw error;
+      }
+      // Defense in depth: a registered worker for this bot means bookkeeping went wrong; never
+      // leave it running unowned.
+      const previous = options.coordinator.removeWorker(spec.botId);
+      if (previous) {
+        options.logger.summary('CONFIG', 'replaced a still-running worker', spec.botId);
+        try {
+          await previous.shutdown(options.shutdownTimeoutMs);
+        } catch (error) {
+          options.logger.summary('CONFIG', 'previous worker failed to stop cleanly', spec.botId);
+          options.logger.debug('CONFIG', formatDebugError(error), spec.botId);
+        }
       }
       options.coordinator.addWorker(worker);
     },
