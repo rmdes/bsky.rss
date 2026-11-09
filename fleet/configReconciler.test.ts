@@ -87,7 +87,7 @@ function harness(initial: Record<string, string> = {}) {
   );
   const summaries = () =>
     records.filter(r => r.level === 'summary').map(r => `${r.botId ?? ''} ${r.message}`);
-  return {reconciler, disk, calls, outcomes, records, summaries, state, failed};
+  return {reconciler, disk, calls, outcomes, records, summaries, state, failed, running};
 }
 
 test('an unchanged running bot is left alone', async () => {
@@ -325,4 +325,48 @@ test('when the new and previous specs both fail to start the bot is removed and 
   assert.ok(h.summaries().includes('a reload failed and previous config failed too; bot stopped'));
   await h.reconciler.tick();
   assert.equal(h.calls.length, 3);
+});
+
+test('a throwing recordOutcome after a successful rollback keeps the bot tracked; next change stops it first', async () => {
+  const h = harness({a: 'h1'});
+  h.state.recordFailures.add('a');
+  h.state.startFailures.add('h2');
+  h.disk.set('a', fp('a', 'h2'));
+  await h.reconciler.tick();
+  assert.equal(h.running.get('a')?.hash, 'h1');
+  h.disk.set('a', fp('a', 'h3'));
+  await h.reconciler.tick();
+  assert.deepEqual(h.calls.slice(3), ['stop a (reload)', 'start a@h3']);
+});
+
+test('a throwing recordOutcome after a successful start keeps the bot tracked; next change stops it first', async () => {
+  const h = harness();
+  h.state.recordFailures.add('a');
+  h.disk.set('a', fp('a', 'h1'));
+  await h.reconciler.tick();
+  assert.equal(h.running.get('a')?.hash, 'h1');
+  h.disk.set('a', fp('a', 'h2'));
+  await h.reconciler.tick();
+  assert.deepEqual(h.calls, ['start a@h1', 'stop a (reload)', 'start a@h2']);
+});
+
+test('a throwing recordOutcome after a successful restart keeps the bot tracked; next change stops it first', async () => {
+  const h = harness({a: 'h1'});
+  h.state.recordFailures.add('a');
+  h.disk.set('a', fp('a', 'h2'));
+  await h.reconciler.tick();
+  assert.equal(h.running.get('a')?.hash, 'h2');
+  h.disk.set('a', fp('a', 'h3'));
+  await h.reconciler.tick();
+  assert.deepEqual(h.calls.slice(2), ['stop a (reload)', 'start a@h3']);
+});
+
+test('a stopBot that throws during a restart records start-failed even if recordOutcome throws', async () => {
+  const h = harness({a: 'h1'});
+  h.state.stopFailures.add('a');
+  h.state.recordFailures.add('a');
+  h.disk.set('a', fp('a', 'h2'));
+  await h.reconciler.tick();
+  assert.deepEqual(h.outcomes, [['a', 'start-failed']]);
+  assert.ok(h.summaries().includes('a config change failed; will retry when its config changes'));
 });

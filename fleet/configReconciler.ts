@@ -173,8 +173,10 @@ export class ConfigReconciler<Spec> {
     }
     if (running) {
       // Back on the running config: a later identical break is a new event worth logging.
-      if (fingerprint.hash === running.hash) this.rejectedLogged.delete(botId);
-      if (fingerprint.hash === running.hash && !requested) return;
+      if (fingerprint.hash === running.hash) {
+        this.rejectedLogged.delete(botId);
+        if (!requested) return;
+      }
       if (this.failed.get(botId) === fingerprint.hash && !requested) return;
       await this.restart(botId, fingerprint, running, secrets, requested);
     } else {
@@ -247,19 +249,33 @@ export class ConfigReconciler<Spec> {
       // The old worker's state is unknown: treat it as not running, and do not start a second one.
       this.running.delete(botId);
       this.failed.set(botId, fingerprint.hash);
+      try {
+        this.options.recordOutcome(botId, 'start-failed'); // keep fleet:status honest
+      } catch {
+        // must not mask the original error
+      }
       throw error;
     }
     try {
       await this.options.startBot(spec);
     } catch (error) {
       this.failed.set(botId, fingerprint.hash);
-      this.options.logger.debug('CONFIG', formatDebugError(error), botId);
+      // Bookkeeping that can throw (logging, recordOutcome) always runs after worker state is
+      // settled, so the rollback is never skipped and `running` always matches reality.
+      let restored = false;
+      let rollbackError: unknown;
       try {
         await this.options.startBot(previous.spec);
+        restored = true;
+      } catch (e) {
+        rollbackError = e;
+        this.running.delete(botId);
+      }
+      this.options.logger.debug('CONFIG', formatDebugError(error), botId);
+      if (restored) {
         this.options.logger.summary('CONFIG', 'reload failed, previous config restored', botId);
         this.options.recordOutcome(botId, 'reload-failed-restored');
-      } catch (rollbackError) {
-        this.running.delete(botId);
+      } else {
         this.options.logger.summary(
           'CONFIG',
           'reload failed and previous config failed too; bot stopped',
