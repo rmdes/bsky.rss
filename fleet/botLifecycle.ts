@@ -46,15 +46,8 @@ export function createBotLifecycle(options: BotLifecycleOptions): BotLifecycle {
     build,
 
     async startBot(spec: BotSpec): Promise<void> {
-      let worker: BotWorker;
-      try {
-        worker = await build(spec);
-      } catch (error) {
-        options.coordinator.recordFailure(spec.botId, String(error));
-        throw error;
-      }
       // Defense in depth: a registered worker for this bot means bookkeeping went wrong; never
-      // leave it running unowned.
+      // leave it running unowned. It goes first, since build() starts the new worker.
       const previous = options.coordinator.removeWorker(spec.botId);
       if (previous) {
         options.logger.summary('CONFIG', 'replaced a still-running worker', spec.botId);
@@ -64,6 +57,13 @@ export function createBotLifecycle(options: BotLifecycleOptions): BotLifecycle {
           options.logger.summary('CONFIG', 'previous worker failed to stop cleanly', spec.botId);
           options.logger.debug('CONFIG', formatDebugError(error), spec.botId);
         }
+      }
+      let worker: BotWorker;
+      try {
+        worker = await build(spec);
+      } catch (error) {
+        options.coordinator.recordFailure(spec.botId, String(error));
+        throw error;
       }
       options.coordinator.addWorker(worker);
     },

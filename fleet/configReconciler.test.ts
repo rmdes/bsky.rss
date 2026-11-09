@@ -140,6 +140,31 @@ test('enabled:false stops the bot; enabled:true again starts it', async () => {
   assert.deepEqual(h.calls, ['stop a (disabled)', 'start a@h1']);
 });
 
+test('a failed, not-running bot that is disabled or removed is stopped so its failure is cleared', async () => {
+  const h = harness();
+  h.disk.set('a', fp('a', 'h1'));
+  h.disk.set('b', fp('b', 'h2'));
+  h.failed.set('a', 'h1');
+  h.failed.set('b', 'h2');
+  h.disk.set('a', fp('a', 'h1-off', {enabled: false}));
+  h.disk.delete('b');
+  await h.reconciler.tick();
+  assert.deepEqual(h.calls.sort(), ['stop a (disabled)', 'stop b (directory removed)']);
+  assert.equal(h.failed.size, 0);
+  await h.reconciler.tick(); // nothing left to clean up: no repeated stops
+  assert.equal(h.calls.length, 2);
+});
+
+test('a failed bot whose cleanup stop throws does not block other bots', async () => {
+  const h = harness();
+  h.disk.set('a', fp('a', 'h1-off', {enabled: false}));
+  h.disk.set('b', fp('b', 'h2'));
+  h.failed.set('a', 'h1');
+  h.state.stopFailures.add('a');
+  await h.reconciler.tick();
+  assert.deepEqual(h.calls, ['stop a (disabled)', 'start b@h2']);
+});
+
 test('a directory missing for one tick is tolerated; missing for two stops the bot', async () => {
   const h = harness({a: 'h1'});
   const saved = h.disk.get('a')!;
@@ -332,7 +357,8 @@ test('a failed bot whose directory is removed then restored unchanged is started
   await h.reconciler.tick();
   h.disk.set('a', saved);
   await h.reconciler.tick();
-  assert.deepEqual(h.calls, ['start a@h1']);
+  // the removal clears the stale failure through stopBot; the restored directory starts again
+  assert.deepEqual(h.calls, ['stop a (directory removed)', 'start a@h1']);
 });
 
 test('a persistent takeReloadRequests error is logged once', async () => {

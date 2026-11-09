@@ -53,11 +53,13 @@ function setup(t: {after(callback: () => void): void}) {
   const notified: string[] = [];
   const failing = new Set<string>();
   const workers = new Map<string, BotWorker & {store: BotStore}>();
+  const ctx = {onBuild: undefined as (() => void) | undefined};
   const lifecycle = createBotLifecycle({
     coordinator,
     operations,
     claims,
     buildWorker: async (s, notify) => {
+      ctx.onBuild?.();
       if (failing.has(s.botId)) throw new Error('login rejected');
       if (notify) notified.push(s.botId);
       const worker = storeWorker(s);
@@ -67,7 +69,17 @@ function setup(t: {after(callback: () => void): void}) {
     shutdownTimeoutMs: 1000,
     logger,
   });
-  return {dir, records, coordinator, operations, claims, notified, failing, workers, lifecycle};
+  return Object.assign(ctx, {
+    dir,
+    records,
+    coordinator,
+    operations,
+    claims,
+    notified,
+    failing,
+    workers,
+    lifecycle,
+  });
 }
 
 test('startBot registers the worker, creates operations, and records config loaded', async t => {
@@ -146,6 +158,7 @@ test('a reload swaps workers on the same store: queue, cursor, and dedup history
 test('a shutdown that throws still unregisters the worker, frees the claim, and rejects', async t => {
   const s = setup(t);
   await s.lifecycle.startBot(spec('a', 'shared.bsky.social', join(s.dir, 'a.sqlite')));
+  s.coordinator.recordFailure('a', 'earlier failure');
   const worker = s.workers.get('a')!;
   const realShutdown = worker.shutdown;
   worker.shutdown = async () => {
@@ -155,6 +168,7 @@ test('a shutdown that throws still unregisters the worker, frees the claim, and 
   await assert.rejects(s.lifecycle.stopBot('a', 'disabled'), /shutdown boom/);
   assert.deepEqual(s.coordinator.activeWorkers(), []);
   assert.equal(s.operations.has('a'), false);
+  assert.deepEqual(s.coordinator.activationFailures(), []);
   await s.lifecycle.startBot(spec('b', 'shared.bsky.social', join(s.dir, 'b.sqlite')));
   assert.deepEqual(s.notified, ['a', 'b']); // claim was freed for the sibling
   await s.lifecycle.stopBot('b', 'disabled');
@@ -176,10 +190,21 @@ test('starting a bot that already has a registered worker shuts the old one down
     order.push('add new');
     realAdd(worker);
   };
+  s.onBuild = () => order.push('build new');
   await s.lifecycle.startBot(spec('a', 'a.bsky.social', dbPath));
-  assert.deepEqual(order, ['old shutdown', 'add new']);
+  // never two workers alive for one bot: the old one is gone before the new one is built
+  assert.deepEqual(order, ['old shutdown', 'build new', 'add new']);
   assert.deepEqual(s.coordinator.activeWorkers(), [s.workers.get('a')]);
   assert.notEqual(s.workers.get('a'), old);
   assert.ok(s.records.some(r => r.message.includes('replaced a still-running worker')));
   await s.lifecycle.stopBot('a', 'disabled');
+});
+
+test('stopping a failed bot with no worker clears its failure and operations', async t => {
+  const s = setup(t);
+  s.failing.add('a');
+  await assert.rejects(s.lifecycle.startBot(spec('a', 'a.bsky.social', join(s.dir, 'a.sqlite'))));
+  await s.lifecycle.stopBot('a', 'disabled');
+  assert.deepEqual(s.coordinator.activationFailures(), []);
+  assert.equal(s.operations.has('a'), false);
 });

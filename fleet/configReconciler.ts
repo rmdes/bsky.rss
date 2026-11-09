@@ -122,8 +122,13 @@ export class ConfigReconciler<Spec> {
     // A bot whose directory is gone must not stay blocked if the same directory comes back.
     for (const botId of [...this.failed.keys(), ...this.rejectedLogged.keys()]) {
       if (onDisk.has(botId)) continue;
-      this.failed.delete(botId);
+      if (this.stopping) return;
+      const wasFailed = this.failed.delete(botId);
       this.rejectedLogged.delete(botId);
+      // Nothing runs, but fleet:status still lists the failure: stopBot clears it.
+      if (wasFailed && !this.running.has(botId)) {
+        await this.isolated(botId, () => this.options.stopBot(botId, 'directory removed'));
+      }
     }
     for (const botId of [...this.running.keys()]) {
       if (onDisk.has(botId)) continue;
@@ -171,8 +176,9 @@ export class ConfigReconciler<Spec> {
       return;
     }
     if (!fingerprint.enabled) {
-      this.failed.delete(botId);
+      const wasFailed = this.failed.delete(botId);
       if (running) await this.stop_(botId, 'disabled');
+      else if (wasFailed) await this.options.stopBot(botId, 'disabled'); // clears the failure
       return;
     }
     if (running) {
