@@ -1,5 +1,6 @@
 // fleet/runFleet.ts
 import 'dotenv/config';
+import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {BotStore} from './botStore.ts';
 import {Scheduler} from './scheduler.ts';
@@ -8,7 +9,12 @@ import {FeedReader} from './feedReader.ts';
 import {BotWorker} from './botWorker.ts';
 import {SharedLimiters} from './sharedLimiters.ts';
 import {installProcessSafetyNet} from './processSafety.ts';
-import {loadFleet} from './configLoader.ts';
+import {loadFleet, loadOneBot} from './configLoader.ts';
+import {fingerprintBot, listBotIds, type BotFingerprint} from './botFingerprint.ts';
+import {ConfigReconciler, type RunningBotConfig} from './configReconciler.ts';
+import {createBotLifecycle} from './botLifecycle.ts';
+import {NotifierClaims} from './notifierClaims.ts';
+import {reloadRequestsPath, takeReloadRequests} from './reloadRequests.ts';
 import {AuthCoordinator} from './authCoordinator.ts';
 import {acquireLock, releaseLock} from './pidLock.ts';
 import {BotOperations} from './botOperations.ts';
@@ -19,22 +25,6 @@ import {statusPath} from './status.ts';
 import health from '../app/utils/healthHandler.ts';
 import type {FreshnessConfig} from './freshnessPolicy.ts';
 import type {BotSpec} from './configLoader.ts';
-
-/**
- * Whether this identifier should get the real ntfyUrl (true) or undefined (false) — the
- * first bot config that successfully activates for a given identity claims notifications
- * for the whole account; every sibling config sharing that identity must not also poll and
- * push for it (see documentation/specs/2026-08-09-fleet-identity-dedup-design.md for why
- * several production identities have multiple bot configs). Pure and side-effect-free —
- * committing the identifier as claimed is the caller's job, only after activation actually
- * succeeds.
- */
-export function shouldAssignNotifier(
-  alreadyClaimed: ReadonlySet<string>,
-  identifier: string,
-): boolean {
-  return !alreadyClaimed.has(identifier);
-}
 
 async function buildWorker(
   spec: BotSpec,
@@ -135,11 +125,23 @@ async function main(): Promise<void> {
     logger.debug('CONFIG', formatDebugError(error.error), error.botId);
   }
 
+  const readSecrets = (): Record<string, string> =>
+    JSON.parse(readFileSync(secretsFilePath, 'utf-8')) as Record<string, string>;
+  const startupFingerprints = new Map<string, BotFingerprint>();
+  try {
+    const startupSecrets = readSecrets();
+    for (const botId of listBotIds(configRoot)) {
+      startupFingerprints.set(botId, fingerprintBot(configRoot, startupSecrets, botId));
+    }
+  } catch {
+    // loadFleet already succeeded with these files; a race here only means a bot may be reloaded once.
+  }
+
   if (!ntfyUrl) {
     logger.summary('FLEET', 'NTFY_URL not set - reply/mention/quote notifications disabled');
   }
 
-  const notifiedIdentities = new Set<string>();
+  const claims = new NotifierClaims();
 
   const identityStores = new Map<string, BotStore>();
   function getIdentityStore(identifier: string): BotStore {
@@ -158,27 +160,28 @@ async function main(): Promise<void> {
     logger,
     bots,
     staggerSeconds: fleetConfig.staggerSeconds,
-    activateBot: spec => {
-      const botOperations = operations.get(spec.botId);
-      if (!botOperations) throw new Error(`Missing operational state for ${spec.botId}`);
-      const assignNotifier = shouldAssignNotifier(notifiedIdentities, spec.identifier);
-      return buildWorker(
+    activateBot: spec => lifecycle.build(spec),
+  });
+  const lifecycle = createBotLifecycle({
+    coordinator,
+    operations,
+    claims,
+    buildWorker: (spec, notify) =>
+      buildWorker(
         spec,
         sharedLimiters,
-        botOperations,
+        operations.get(spec.botId)!,
         logger,
         dryRun,
         fleetConfig.runIntervalSeconds,
         fleetConfig.freshness,
         fleetConfig.perBotQueueMaxLength,
         getIdentityStore(spec.identifier),
-        assignNotifier ? ntfyUrl : undefined,
+        notify ? ntfyUrl : undefined,
         ntfyToken,
-      ).then(worker => {
-        if (assignNotifier) notifiedIdentities.add(spec.identifier);
-        return worker;
-      });
-    },
+      ),
+    shutdownTimeoutMs: shutdownPerBotTimeoutMs,
+    logger,
   });
   const operationsRuntime = new FleetOperationsRuntime({
     timers: {
@@ -213,6 +216,7 @@ async function main(): Promise<void> {
   }, identityCleanupIntervalMs);
 
   let shuttingDown = false;
+  let reconciler: ConfigReconciler<BotSpec> | undefined;
   async function shutdown(signal: string): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
@@ -220,6 +224,7 @@ async function main(): Promise<void> {
     clearInterval(healthHeartbeatHandle);
     clearInterval(identityCleanupHandle);
     coordinator.abortActivation();
+    await reconciler?.stop();
     operationsRuntime.markStopping();
     operationsRuntime.stop();
     await Promise.race([
@@ -239,6 +244,38 @@ async function main(): Promise<void> {
   if (!shuttingDown) {
     operationsRuntime.markRunning();
     health.markReady();
+
+    const active = new Set(coordinator.activeWorkers().map(worker => worker.botId));
+    const running = new Map<string, RunningBotConfig<BotSpec>>();
+    for (const spec of bots) {
+      const fingerprint = startupFingerprints.get(spec.botId);
+      if (active.has(spec.botId) && fingerprint?.ok) {
+        running.set(spec.botId, {hash: fingerprint.hash, fields: fingerprint.fields, spec});
+      }
+    }
+    // Bots that failed activation or had invalid config: not retried until their config changes.
+    const failed = new Map<string, string>();
+    for (const [botId, fingerprint] of startupFingerprints) {
+      if (fingerprint.ok && fingerprint.enabled && !active.has(botId))
+        failed.set(botId, fingerprint.hash);
+    }
+    reconciler = new ConfigReconciler<BotSpec>(
+      {
+        readSecrets,
+        listBotIds: () => listBotIds(configRoot),
+        fingerprint: (secrets, botId) => fingerprintBot(configRoot, secrets, botId),
+        loadSpec: (secrets, botId) => loadOneBot(configRoot, dataRoot, secrets, botId),
+        takeReloadRequests: () => takeReloadRequests(reloadRequestsPath(dataRoot)),
+        startBot: spec => lifecycle.startBot(spec),
+        stopBot: (botId, reason) => lifecycle.stopBot(botId, reason),
+        recordOutcome: (botId, outcome) => operations.get(botId)?.recordConfigOutcome(outcome),
+        logger,
+      },
+      running,
+      failed,
+    );
+    reconciler.start();
+    logger.summary('FLEET', 'Config reload active: bot config changes apply within ~10s');
   }
 
   reportFleetStarted(

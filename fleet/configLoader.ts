@@ -61,7 +61,7 @@ function splitConfigJson(configJson: Record<string, unknown>): {
   };
 }
 
-function loadOneBot(
+export function loadOneBot(
   configRoot: string,
   dataRoot: string,
   secrets: Record<string, string>,
