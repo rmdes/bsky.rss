@@ -58,15 +58,22 @@ export class ConfigReconciler<Spec> {
 
   async stop(): Promise<void> {
     if (this.interval) clearInterval(this.interval);
-    await this.inFlight;
+    await this.inFlight.catch(() => undefined);
   }
 
   async tick(): Promise<void> {
     if (this.ticking) return; // the previous tick is still applying changes
     this.ticking = true;
-    const current = this.reconcile().finally(() => {
-      this.ticking = false;
-    });
+    // A tick must never reject: start() fires it unawaited, and repeated unhandled rejections
+    // make processSafety exit the whole fleet.
+    const current = this.reconcile()
+      .catch(error => {
+        this.options.logger.summary('CONFIG', 'config reconcile failed; will retry next tick');
+        this.options.logger.debug('CONFIG', formatDebugError(error));
+      })
+      .finally(() => {
+        this.ticking = false;
+      });
     this.inFlight = current;
     await current;
   }
@@ -78,7 +85,6 @@ export class ConfigReconciler<Spec> {
   }
 
   private async reconcile(): Promise<void> {
-    const {logger} = this.options;
     let secrets: Record<string, string>;
     let botIds: string[];
     try {
@@ -105,41 +111,75 @@ export class ConfigReconciler<Spec> {
     let requests: ReloadRequests = {all: false, botIds: []};
     if (taken.ok) {
       requests = taken.requests;
+      this.warned.delete('requests');
     } else {
-      logger.summary('CONFIG', `reload requests ignored: ${taken.error}`);
+      this.warnOnce('requests', `reload requests ignored: ${taken.error}`);
     }
 
     const onDisk = new Set(botIds);
+    // A bot whose directory is gone must not stay blocked if the same directory comes back.
+    for (const botId of [...this.failed.keys(), ...this.rejectedLogged.keys()]) {
+      if (onDisk.has(botId)) continue;
+      this.failed.delete(botId);
+      this.rejectedLogged.delete(botId);
+    }
     for (const botId of [...this.running.keys()]) {
       if (onDisk.has(botId)) continue;
       const missing = (this.missingTicks.get(botId) ?? 0) + 1;
       this.missingTicks.set(botId, missing);
-      if (missing >= MISSING_TICKS_BEFORE_STOP) await this.stop_(botId, 'directory removed');
+      if (missing >= MISSING_TICKS_BEFORE_STOP) {
+        await this.isolated(botId, () => this.stop_(botId, 'directory removed'));
+      }
     }
 
     for (const botId of botIds) {
       this.missingTicks.delete(botId);
-      const requested = requests.all || requests.botIds.includes(botId);
-      const fingerprint = this.options.fingerprint(secrets, botId);
-      const running = this.running.get(botId);
+      await this.isolated(botId, () => this.reconcileBot(botId, secrets, requests));
+    }
+  }
 
-      if (!fingerprint.ok) {
-        this.reject(botId, `error:${fingerprint.error}`, fingerprint.error, Boolean(running));
-        continue;
-      }
-      if (!fingerprint.enabled) {
-        this.failed.delete(botId);
-        if (running) await this.stop_(botId, 'disabled');
-        continue;
-      }
-      if (running) {
-        if (fingerprint.hash === running.hash && !requested) continue;
-        if (this.failed.get(botId) === fingerprint.hash && !requested) continue;
-        await this.restart(botId, fingerprint, running, secrets, requested);
-      } else {
-        if (this.failed.get(botId) === fingerprint.hash && !requested) continue;
-        await this.start_(botId, fingerprint, secrets);
-      }
+  // One bot's failure (a throwing callback) never aborts the tick for the others. No error text
+  // in the summary line: callbacks' messages may quote config values.
+  private async isolated(botId: string, work: () => Promise<void>): Promise<void> {
+    try {
+      await work();
+    } catch (error) {
+      this.options.logger.summary(
+        'CONFIG',
+        'config change failed; will retry when its config changes',
+        botId,
+      );
+      this.options.logger.debug('CONFIG', formatDebugError(error), botId);
+    }
+  }
+
+  private async reconcileBot(
+    botId: string,
+    secrets: Record<string, string>,
+    requests: ReloadRequests,
+  ): Promise<void> {
+    const requested = requests.all || requests.botIds.includes(botId);
+    const fingerprint = this.options.fingerprint(secrets, botId);
+    const running = this.running.get(botId);
+
+    if (!fingerprint.ok) {
+      this.reject(botId, `error:${fingerprint.error}`, fingerprint.error, Boolean(running));
+      return;
+    }
+    if (!fingerprint.enabled) {
+      this.failed.delete(botId);
+      if (running) await this.stop_(botId, 'disabled');
+      return;
+    }
+    if (running) {
+      // Back on the running config: a later identical break is a new event worth logging.
+      if (fingerprint.hash === running.hash) this.rejectedLogged.delete(botId);
+      if (fingerprint.hash === running.hash && !requested) return;
+      if (this.failed.get(botId) === fingerprint.hash && !requested) return;
+      await this.restart(botId, fingerprint, running, secrets, requested);
+    } else {
+      if (this.failed.get(botId) === fingerprint.hash && !requested) return;
+      await this.start_(botId, fingerprint, secrets);
     }
   }
 
@@ -151,7 +191,7 @@ export class ConfigReconciler<Spec> {
       isRunning ? `reload rejected: ${reason}` : `not started: ${reason}`,
       botId,
     );
-    this.options.recordOutcome(botId, 'reload-rejected');
+    this.options.recordOutcome(botId, isRunning ? 'reload-rejected' : 'start-failed');
   }
 
   private loadSpec(
@@ -201,7 +241,14 @@ export class ConfigReconciler<Spec> {
   ): Promise<void> {
     const spec = this.loadSpec(botId, fingerprint, secrets, true);
     if (spec === undefined) return; // the old worker keeps running
-    await this.options.stopBot(botId, 'reload');
+    try {
+      await this.options.stopBot(botId, 'reload');
+    } catch (error) {
+      // The old worker's state is unknown: treat it as not running, and do not start a second one.
+      this.running.delete(botId);
+      this.failed.set(botId, fingerprint.hash);
+      throw error;
+    }
     try {
       await this.options.startBot(spec);
     } catch (error) {
@@ -240,9 +287,12 @@ export class ConfigReconciler<Spec> {
   }
 
   private async stop_(botId: string, reason: StopReason): Promise<void> {
-    await this.options.stopBot(botId, reason);
-    this.running.delete(botId);
-    this.missingTicks.delete(botId);
+    try {
+      await this.options.stopBot(botId, reason);
+    } finally {
+      this.running.delete(botId); // even if stopping threw: never retry forever
+      this.missingTicks.delete(botId);
+    }
     this.options.logger.summary('CONFIG', `stopped (${reason})`, botId);
   }
 }

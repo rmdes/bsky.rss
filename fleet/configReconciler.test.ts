@@ -37,6 +37,9 @@ function harness(initial: Record<string, string> = {}) {
     startFailures: new Set<string>(), // hashes that fail to start
     requests: NO_RELOAD_REQUESTS as ReloadRequests,
     startGate: undefined as Promise<void> | undefined,
+    stopFailures: new Set<string>(), // bot ids whose stopBot throws
+    recordFailures: new Set<string>(), // bot ids whose recordOutcome throws
+    takeError: undefined as string | undefined,
   };
   const running = new Map<string, RunningBotConfig<Spec>>();
   for (const [botId, hash] of Object.entries(initial)) {
@@ -59,6 +62,7 @@ function harness(initial: Record<string, string> = {}) {
         return {botId, hash: current.ok ? current.hash : 'x'};
       },
       takeReloadRequests: () => {
+        if (state.takeError) return {ok: false, error: state.takeError};
         const requests = state.requests;
         state.requests = NO_RELOAD_REQUESTS;
         return {ok: true, requests};
@@ -70,8 +74,12 @@ function harness(initial: Record<string, string> = {}) {
       },
       stopBot: async (botId: string, reason: StopReason) => {
         calls.push(`stop ${botId} (${reason})`);
+        if (state.stopFailures.has(botId)) throw new Error('stop blew up');
       },
-      recordOutcome: (botId, outcome) => outcomes.push([botId, outcome]),
+      recordOutcome: (botId, outcome) => {
+        outcomes.push([botId, outcome]);
+        if (state.recordFailures.has(botId)) throw new Error('record blew up');
+      },
       logger: new Logger({defaultLevel: 'debug', sink: (_line, record) => records.push(record)}),
     },
     running,
@@ -228,4 +236,93 @@ test('log lines never contain config values', async () => {
   h.disk.set('a', fp('a', 'h2', {fields: {feedUrl: 'https://x.test/?token=SECRETVALUE'}}));
   await h.reconciler.tick();
   assert.ok(h.records.every(r => !r.message.includes('SECRETVALUE')));
+});
+
+test('a throwing stopBot for a removed bot does not block other bots, and is not retried', async () => {
+  const h = harness({a: 'h1', b: 'h1'});
+  h.state.stopFailures.add('a');
+  h.disk.delete('a');
+  await h.reconciler.tick();
+  h.disk.set('b', fp('b', 'h2', {fields: {feedUrl: 'h2'}}));
+  await h.reconciler.tick(); // resolves even though stopBot('a') throws
+  assert.deepEqual(h.calls, ['stop a (directory removed)', 'stop b (reload)', 'start b@h2']);
+  assert.ok(h.summaries().includes('a config change failed; will retry when its config changes'));
+  await h.reconciler.tick();
+  assert.equal(h.calls.filter(c => c.startsWith('stop a')).length, 1);
+  await h.reconciler.stop();
+});
+
+test('a throwing stopBot during a restart starts nothing and is not retried with the same hash', async () => {
+  const h = harness({a: 'h1'});
+  h.state.stopFailures.add('a');
+  h.disk.set('a', fp('a', 'h2'));
+  await h.reconciler.tick();
+  assert.deepEqual(h.calls, ['stop a (reload)']);
+  await h.reconciler.tick();
+  assert.deepEqual(h.calls, ['stop a (reload)']);
+  assert.equal(h.failed.get('a'), 'h2');
+});
+
+test('a throwing recordOutcome does not stop other bots in the same tick', async () => {
+  const h = harness();
+  h.state.recordFailures.add('a');
+  h.disk.set('a', fp('a', 'h1'));
+  h.disk.set('b', fp('b', 'h1'));
+  await h.reconciler.tick();
+  assert.deepEqual(h.calls, ['start a@h1', 'start b@h1']);
+  assert.ok(h.outcomes.some(([id, o]) => id === 'b' && o === 'started'));
+});
+
+test('break, revert, break again with the same error is logged twice', async () => {
+  const h = harness({a: 'h1'});
+  const broken: BotFingerprint = {ok: false, botId: 'a', error: 'invalid bot.json'};
+  h.disk.set('a', broken);
+  await h.reconciler.tick();
+  h.disk.set('a', fp('a', 'h1'));
+  await h.reconciler.tick();
+  h.disk.set('a', broken);
+  await h.reconciler.tick();
+  assert.equal(h.summaries().filter(s => s.includes('rejected')).length, 2);
+});
+
+test('a never-running bot whose config cannot be loaded records start-failed', async () => {
+  const h = harness();
+  h.disk.set('a', fp('a', 'h1'));
+  h.state.loadErrors.set('a', new Error('No secret'));
+  await h.reconciler.tick();
+  assert.deepEqual(h.outcomes, [['a', 'start-failed']]);
+});
+
+test('a failed bot whose directory is removed then restored unchanged is started again', async () => {
+  const h = harness();
+  const saved = fp('a', 'h1');
+  h.disk.set('a', saved);
+  h.failed.set('a', 'h1');
+  h.disk.delete('a');
+  await h.reconciler.tick();
+  h.disk.set('a', saved);
+  await h.reconciler.tick();
+  assert.deepEqual(h.calls, ['start a@h1']);
+});
+
+test('a persistent takeReloadRequests error is logged once', async () => {
+  const h = harness();
+  h.state.takeError = 'EACCES';
+  await h.reconciler.tick();
+  await h.reconciler.tick();
+  await h.reconciler.tick();
+  assert.equal(h.summaries().filter(s => s.includes('reload requests ignored')).length, 1);
+});
+
+test('when the new and previous specs both fail to start the bot is removed and start-failed recorded', async () => {
+  const h = harness({a: 'h1'});
+  h.disk.set('a', fp('a', 'h2'));
+  h.state.startFailures.add('h2');
+  h.state.startFailures.add('h1');
+  await h.reconciler.tick();
+  assert.deepEqual(h.calls, ['stop a (reload)', 'start a@h2', 'start a@h1']);
+  assert.deepEqual(h.outcomes, [['a', 'start-failed']]);
+  assert.ok(h.summaries().includes('a reload failed and previous config failed too; bot stopped'));
+  await h.reconciler.tick();
+  assert.equal(h.calls.length, 3);
 });
