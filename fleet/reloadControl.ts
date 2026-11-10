@@ -1,6 +1,5 @@
 // `yarn fleet:reload <bot-id> | --all`: asks the running fleet to reload one bot (or every bot)
 // from its config files. The fleet's config reconciler applies it within ~10 s.
-import {basename} from 'node:path';
 import {listBotIds} from './botFingerprint.ts';
 import {addReloadRequest, reloadRequestsPath} from './reloadRequests.ts';
 
@@ -37,7 +36,6 @@ if (import.meta.main) {
     );
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
-    console.error(usage(basename(process.argv[1] ?? 'reloadControl.ts')));
     process.exitCode = 1;
   }
 }
