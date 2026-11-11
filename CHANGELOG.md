@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.17.0] - 2026-11-11
+
 ### Added
 - **`"freshnessFrom": "firstSeen"` in a bot's `config.json`**, for feeds whose dates are unusable:
   every item dated midnight (e.g. Earthquakes Canada, Lefebvre Dalloz), or a FreshRSS folder of
