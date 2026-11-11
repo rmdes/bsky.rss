@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.16.1] - 2026-11-11
+
 ### Fixed
 - **A feed item that fails mid-handling is retried instead of lost.** An item was marked as
   seen (for its account, and per bot) before its Open Graph fetch and queueing; if either failed
