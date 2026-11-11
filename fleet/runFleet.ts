@@ -178,7 +178,7 @@ async function main(): Promise<void> {
         logger,
         dryRun,
         fleetConfig.runIntervalSeconds,
-        fleetConfig.freshness,
+        {...fleetConfig.freshness, freshnessFrom: spec.feedReaderConfig.freshnessFrom},
         fleetConfig.perBotQueueMaxLength,
         getIdentityStore(spec.identifier),
         ntfyUrl,

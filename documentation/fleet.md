@@ -107,6 +107,22 @@ Controls how the fleet handles catching up on missed items.
   new items after downtime
 - `maxItemAgeMinutes`: Ignore feed items older than this (in minutes)
 
+An item's age is normally measured from the date in the feed, and an item dated before the
+newest one the bot already posted (its cursor) is skipped. That fails for feeds whose dates are
+unusable: every item dated midnight (so only items seen within `maxItemAgeMinutes` of midnight
+post), or a FreshRSS folder of several feeds whose items arrive out of date order. For such a bot,
+set in its own `config.json`:
+
+    "freshnessFrom": "firstSeen"
+
+The bot then measures age from when it first saw the item, and no longer compares against its
+cursor. On its first poll in this mode it records everything the feed already lists without
+posting it (logged as `firstSeen: recorded N item(s) already in the feed, not posted`), so only
+items that appear later are posted. `maxCatchupItems` still caps a poll after downtime. Each item
+is taken at most once: the bot keeps a permanent record of every item it queued. The default,
+`"itemDate"`, is the behavior described above. Like any `config.json` change, it applies without a
+restart.
+
 ### `sharedLimiters`
 
 Fleet-wide concurrency limits to prevent resource exhaustion when many bots are

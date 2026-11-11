@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {isStillFresh, selectEligibleItems} from './freshnessPolicy.ts';
+import {isRowFresh, isStillFresh, selectEligibleItems} from './freshnessPolicy.ts';
 import type {QueueItemRow} from './botStore.ts';
 
 function row(overrides: Partial<QueueItemRow>): QueueItemRow {
@@ -19,6 +19,23 @@ function row(overrides: Partial<QueueItemRow>): QueueItemRow {
     ...overrides,
   };
 }
+
+test('with freshnessFrom firstSeen, an item is as fresh as when the bot first queued it', () => {
+  // A feed that dates every item at midnight (Earthquakes Canada, Lefebvre Dalloz) still posts.
+  const now = new Date('2026-01-01T15:00:00.000Z');
+  const midnightDated = row({
+    itemDate: '2026-01-01T00:00:00.000Z',
+    enqueuedAt: '2026-01-01T14:55:00.000Z',
+  });
+  const config = {maxCatchupItems: 5, maxItemAgeMinutes: 120};
+
+  assert.deepEqual(selectEligibleItems([midnightDated], config, now).toPublish, []);
+  assert.deepEqual(
+    selectEligibleItems([midnightDated], {...config, freshnessFrom: 'firstSeen'}, now).toPublish,
+    [midnightDated],
+  );
+  assert.equal(isRowFresh(midnightDated, {...config, freshnessFrom: 'firstSeen'}, now), true);
+});
 
 test('isStillFresh is true for an item within the age window', () => {
   const now = new Date('2026-01-01T01:00:00.000Z'); // 60 min after itemDate

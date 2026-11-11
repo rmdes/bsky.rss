@@ -7,6 +7,7 @@ import type {FeedReader, ParsedItem} from './feedReader.ts';
 import type {BskyClient, PostResult, ResolvedEmbed, ListNotificationsResult} from './bskyClient.ts';
 import type {BotStore, QueueItemRow} from './botStore.ts';
 import {BotOperations} from './botOperations.ts';
+import type {FreshnessConfig} from './freshnessPolicy.ts';
 import {Logger, type LogLevel, type LogRecord} from '../shared/logging/logger.ts';
 
 class FakeFeedReader {
@@ -120,7 +121,7 @@ function makeWorker(
           setRateLimitDeadline: (seconds: number) => void;
           recordPost: () => void;
         };
-    freshnessConfig?: {maxCatchupItems: number; maxItemAgeMinutes: number};
+    freshnessConfig?: FreshnessConfig;
     logger?: Logger;
     logLevel?: LogLevel;
     botId?: string;
@@ -511,6 +512,23 @@ test('freshness policy skips a stale item at selection time without calling Bsky
     'the stale item should be marked skipped, not left queued forever',
   );
   assert.equal(worker.operationalSnapshot().counters.policySkipped, 1);
+});
+
+test('with freshnessFrom firstSeen, an item whose feed date is old but which was just queued is posted', async t => {
+  const {worker, feedReader, bskyClient} = makeWorker(t, {
+    freshnessConfig: {maxCatchupItems: 5, maxItemAgeMinutes: 120, freshnessFrom: 'firstSeen'},
+  });
+  await worker.start();
+  feedReader.emit({
+    title: 'midnight-dated',
+    content: 'posted',
+    languages: [],
+    itemDate: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), // 24h ago
+    dedupeKey: 'first-seen',
+  });
+  await worker.drainOnce();
+
+  assert.equal(bskyClient.posted.length, 1);
 });
 
 test('freshness re-check records one policy skip when an item goes stale mid-pass', async t => {

@@ -534,6 +534,69 @@ test('an item whose handling throws is not marked seen, so the next poll retries
   assert.equal(emitted.length, 1);
 });
 
+// The poll-complete hook (the poller's onItems), driven directly like handleItem.
+function completePoll(reader: FeedReader): void {
+  (reader as unknown as {completePoll: () => void}).completePoll();
+}
+
+test('with freshnessFrom firstSeen, the first poll records what the feed already lists without posting it', async t => {
+  // Without this, a feed's whole backlog would look brand new and post (up to the catch-up cap).
+  const {reader, store} = createInstrumentedReader(t, {config: {freshnessFrom: 'firstSeen'}});
+  const emitted: ParsedItem[] = [];
+  reader.onItem(item => emitted.push(item));
+  const old = normalizedItem({link: 'https://example.test/old', date: '2026-08-01T00:00:00.000Z'});
+
+  await handleItem(reader, old);
+  completePoll(reader);
+  assert.equal(emitted.length, 0);
+  assert.equal(store.hasDedupeKey(computeDedupeKey('test-bot', 'https://example.test/old')), true);
+
+  await handleItem(reader, normalizedItem({link: 'https://example.test/new'}));
+  await handleItem(reader, old);
+  assert.deepEqual(
+    emitted.map(item => item.title),
+    ['Default Title'],
+  );
+});
+
+test('with freshnessFrom firstSeen, an item dated before the cursor is still taken', async t => {
+  // A folder of feeds that lag each other: one source's item can arrive after a newer one posted.
+  const {reader, store} = createInstrumentedReader(t, {config: {freshnessFrom: 'firstSeen'}});
+  const emitted: ParsedItem[] = [];
+  reader.onItem(item => emitted.push(item));
+  completePoll(reader);
+  store.writeCursor(new Date('2026-08-05T12:00:00.000Z'));
+
+  await handleItem(reader, normalizedItem({date: '2026-08-05T10:00:00.000Z'}));
+
+  assert.equal(emitted.length, 1);
+});
+
+test('with freshnessFrom firstSeen, a queued item is not taken again after its account record expires', async t => {
+  // Account seen records are pruned after 96 h; queue rows are kept, so they are the lasting guard.
+  const dir = mkdtempSync(join(tmpdir(), 'feedreader-test-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const identityStore = new BotStore(join(dir, 'identity.sqlite'));
+  t.after(() => identityStore.close());
+  const {reader, store} = createInstrumentedReader(t, {
+    identityStore,
+    config: {freshnessFrom: 'firstSeen'},
+  });
+  const emitted: ParsedItem[] = [];
+  reader.onItem(item => {
+    emitted.push(item);
+    store.enqueue({...item, embedJson: null, languagesJson: null, facetsJson: null});
+  });
+  completePoll(reader);
+  const item = normalizedItem({date: '2026-08-01T00:00:00.000Z'});
+
+  await handleItem(reader, item);
+  identityStore.deleteSeenValue(emitted[0]!.dedupeKey);
+  await handleItem(reader, item);
+
+  assert.equal(emitted.length, 1);
+});
+
 test('a duplicate item posted through one FeedReader is skipped by a second FeedReader sharing its identity', async t => {
   // The actual production bug this feature fixes: two bot configs (different feeds,
   // different botIds) sharing one Bluesky identifier must recognize a story the OTHER

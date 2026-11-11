@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`"freshnessFrom": "firstSeen"` in a bot's `config.json`**, for feeds whose dates are unusable:
+  every item dated midnight (e.g. Earthquakes Canada, Lefebvre Dalloz), or a FreshRSS folder of
+  feeds whose items arrive out of date order. The bot measures an item's age from when it first
+  saw it and stops comparing against its cursor; its first poll in this mode records what the
+  feed already lists without posting it. Each item is still taken once: queued items are kept as a
+  permanent record. The default (`"itemDate"`) is unchanged. See `documentation/fleet.md`.
+
 ---
 
 ## [2.16.1] - 2026-11-11

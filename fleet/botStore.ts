@@ -64,6 +64,10 @@ export class BotStore {
         enqueued_at TEXT NOT NULL,
         published_at TEXT
       );
+      CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
     `);
     this.migrateFacetsColumn();
   }
@@ -115,6 +119,28 @@ export class BotStore {
       | {last_item_date: string}
       | undefined;
     return row ? row.last_item_date : '';
+  }
+
+  readMeta(key: string): string | undefined {
+    const row = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as
+      | {value: string}
+      | undefined;
+    return row?.value;
+  }
+
+  writeMeta(key: string, value: string): void {
+    this.db
+      .prepare(
+        'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
+      .run(key, value);
+  }
+
+  // Queue rows are never pruned, so this outlasts the 96 h seen records.
+  hasDedupeKey(dedupeKey: string): boolean {
+    return (
+      this.db.prepare('SELECT 1 FROM queue_items WHERE dedupe_key = ?').get(dedupeKey) !== undefined
+    );
   }
 
   seenValueExists(value: string, table: SeenTable = 'seen_items'): boolean {

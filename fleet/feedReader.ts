@@ -48,7 +48,12 @@ export interface FeedReaderConfig {
   forceDescriptionEmbed?: boolean;
   removeDuplicate?: boolean;
   titleClearHTML?: boolean;
+  // 'firstSeen': trust when the bot first sees an item, not the feed's date (see FreshnessConfig).
+  freshnessFrom?: 'itemDate' | 'firstSeen';
 }
+
+// Set once a firstSeen bot has recorded what its feed listed before it started taking items.
+const FIRST_SEEN_BASELINE = 'firstSeenBaselineAt';
 
 export interface FeedReaderRuntime {
   operations: BotOperations;
@@ -203,6 +208,7 @@ export function parseString(
 export class FeedReader {
   private reader: FeedSource;
   private itemHandler: ((parsed: ParsedItem) => void) | null = null;
+  private baselineCount = 0;
 
   constructor(
     private botId: string,
@@ -235,6 +241,18 @@ export class FeedReader {
     this.itemHandler = handler;
   }
 
+  // After every item of a successful poll was handled. A failed poll never ends the baseline.
+  private completePoll(): void {
+    if (this.config.freshnessFrom !== 'firstSeen' || this.store.readMeta(FIRST_SEEN_BASELINE))
+      return;
+    this.store.writeMeta(FIRST_SEEN_BASELINE, new Date().toISOString());
+    this.runtime.logger.summary(
+      'FEED',
+      `firstSeen: recorded ${this.baselineCount} item(s) already in the feed, not posted; new items post from now on`,
+      this.botId,
+    );
+  }
+
   start(): void {
     this.reader.start({
       onItems: () => {
@@ -246,6 +264,7 @@ export class FeedReader {
             this.botId,
           );
         }
+        this.completePoll();
       },
       onItem: (item: NormalizedItem) => this.handleItem(item),
       onError: err => {
@@ -365,6 +384,27 @@ export class FeedReader {
     // <guid isPermaLink="false">), letting it enqueue and post a second time at cutover.
     const dedupeKey = computeDedupeKey(this.identifier, item.link || item.id);
 
+    if (this.config.freshnessFrom === 'firstSeen') {
+      // Freshness counts from first sight here, so an item must never be "first seen" twice:
+      // the queue row (kept forever) is the record, not the seen records pruned after 96 h.
+      if (this.store.hasDedupeKey(dedupeKey)) return;
+      if (!this.store.readMeta(FIRST_SEEN_BASELINE)) {
+        // First poll: what the feed already lists is the backlog, recorded but never posted.
+        const id = this.store.enqueue({
+          title: item.title ?? '',
+          content: '',
+          embedJson: null,
+          languagesJson: null,
+          facetsJson: null,
+          itemDate: useDate,
+          dedupeKey,
+        });
+        if (id) this.store.setQueueItemStatus(id, 'skipped');
+        this.baselineCount++;
+        return;
+      }
+    }
+
     // Identity-scoped duplicate check - runs unconditionally (regardless of this bot's
     // own publishEmbed/removeDuplicate settings), before any OG/image work, so two bot
     // configs sharing one Bluesky identity (different feeds, same account) never both
@@ -405,8 +445,9 @@ export class FeedReader {
     dedupeKey: string,
   ): Promise<void> {
     const lastCursor = this.store.readCursor();
-    // Before any Open Graph/image/oEmbed fetch: a stale item is dropped either way.
-    if (isPastCursor(useDate, lastCursor)) {
+    // Before any Open Graph/image/oEmbed fetch: a stale item is dropped either way. firstSeen bots
+    // skip this: their feed dates can't be ordered against the cursor (see FreshnessConfig).
+    if (this.config.freshnessFrom !== 'firstSeen' && isPastCursor(useDate, lastCursor)) {
       this.runtime.logger.verbose(
         'FEED',
         `Skipping stale item: ${item.title} (${itemUrl ?? 'no URL'})`,

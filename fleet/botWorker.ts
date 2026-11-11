@@ -2,7 +2,7 @@ import {FeedReader, ParsedItem, ParsedEmbed} from './feedReader.ts';
 import {Scheduler} from './scheduler.ts';
 import {BskyClient, ResolvedEmbed} from './bskyClient.ts';
 import {BotStore} from './botStore.ts';
-import {selectEligibleItems, isStillFresh, FreshnessConfig} from './freshnessPolicy.ts';
+import {selectEligibleItems, isRowFresh, FreshnessConfig} from './freshnessPolicy.ts';
 import type {QueueItemRow} from './botStore.ts';
 import {BotOperations, type BotOperationalSnapshot} from './botOperations.ts';
 import {Logger, formatDebugError} from '../shared/logging/logger.ts';
@@ -210,7 +210,7 @@ export class BotWorker {
 
         // Re-check freshness immediately before posting - a long adaptive-spacing pass
         // can let an item go stale after it was selected (design spec §6).
-        if (!isStillFresh(row.itemDate, this.options.freshnessConfig.maxItemAgeMinutes)) {
+        if (!isRowFresh(row, this.options.freshnessConfig)) {
           this.options.store.setQueueItemStatus(row.id, 'skipped');
           this.options.operations.recordPolicySkip();
           this.options.logger.verbose(
