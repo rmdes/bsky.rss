@@ -270,7 +270,9 @@ publishing.
 
 ## Changing one bot without restarting the fleet
 
-The fleet checks `config/bots/` every 10 seconds and applies changes to individual bots:
+The fleet checks `config/bots/` every 10 seconds and applies changes to individual bots. Checking
+starts once every bot has activated after a fleet start (`Config reload active` in the logs);
+an edit made during startup is applied then, not lost.
 
 - **Edit** a bot's `bot.json` or `config.json`, or rotate its secret: that bot restarts with the
   new config. Nothing else is touched. Its queue, cursor, dedup history, and session are kept.
