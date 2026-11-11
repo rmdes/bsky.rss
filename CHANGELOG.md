@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A feed item that fails mid-handling is retried instead of lost.** An item was marked as
+  seen (for its account, and per bot) before its Open Graph fetch and queueing; if either failed
+  (for example the bot's store closing under a config reload), every later poll skipped it as
+  already published. The account-wide claim is now released on failure, and the per-bot mark is
+  written only once the item is queued.
+- **An account's notifications pass to a sibling that is already running** when the config
+  holding them stops, instead of pausing until another config for the account starts. Sent
+  notifications are now recorded per account (`identities/<account>.sqlite`) rather than per
+  bot, so the sibling taking over doesn't resend them; records made before this release are still
+  honored.
+
 ---
 
 ## [2.16.0] - 2026-11-09

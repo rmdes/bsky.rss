@@ -1,6 +1,7 @@
 // Only one bot config per Bluesky account polls that account's notifications (several configs
 // can share an identity; see documentation/specs/2026-08-09-fleet-identity-dedup-design.md).
-// Claims are released when the holder stops, so the next sibling that starts takes over.
+// Workers ask on every notification check, so when the holder stops and releases its claim, a
+// sibling that is already running takes over on its next check.
 export class NotifierClaims {
   private readonly holders = new Map<string, string>(); // identifier -> botId
 

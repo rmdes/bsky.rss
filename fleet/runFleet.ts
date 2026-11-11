@@ -38,6 +38,7 @@ async function buildWorker(
   identityStore: BotStore,
   ntfyUrl: string | undefined,
   ntfyToken: string | undefined,
+  holdsNotifier: () => boolean,
 ): Promise<BotWorker> {
   const store = new BotStore(spec.dbPath);
   try {
@@ -69,6 +70,8 @@ async function buildWorker(
       logger,
       ntfyUrl,
       ntfyToken,
+      holdsNotifier,
+      accountStore: identityStore,
       botHandle: spec.identifier,
     });
     await worker.start();
@@ -166,7 +169,8 @@ async function main(): Promise<void> {
     coordinator,
     operations,
     claims,
-    buildWorker: (spec, notify) =>
+    // Every worker gets ntfyUrl; the claim, asked on each check, decides which one uses it.
+    buildWorker: spec =>
       buildWorker(
         spec,
         sharedLimiters,
@@ -177,8 +181,9 @@ async function main(): Promise<void> {
         fleetConfig.freshness,
         fleetConfig.perBotQueueMaxLength,
         getIdentityStore(spec.identifier),
-        notify ? ntfyUrl : undefined,
+        ntfyUrl,
         ntfyToken,
+        () => claims.claim(spec.botId, spec.identifier),
       ),
     shutdownTimeoutMs: shutdownPerBotTimeoutMs,
     logger,

@@ -120,13 +120,19 @@ test('stopping a disabled bot drops its operations; a reload keeps them', async 
   assert.deepEqual(s.coordinator.activeWorkers(), []);
 });
 
-test('stopping the notifier holder logs that the account’s notifications pause', async t => {
+test('stopping the notifier holder frees the role for a sibling that is already running', async t => {
   const s = setup(t);
   await s.lifecycle.startBot(spec('a', 'shared.bsky.social', join(s.dir, 'a.sqlite')));
+  await s.lifecycle.startBot(spec('b', 'shared.bsky.social', join(s.dir, 'b.sqlite')));
+  assert.equal(s.claims.claim('b', 'shared.bsky.social'), false);
   await s.lifecycle.stopBot('a', 'disabled');
+  assert.equal(s.claims.claim('b', 'shared.bsky.social'), true);
   assert.ok(
-    s.records.some(r => r.message.includes('notifications for @shared.bsky.social paused')),
+    s.records.some(r =>
+      r.message.includes('notifications for @shared.bsky.social pass to another running config'),
+    ),
   );
+  await s.lifecycle.stopBot('b', 'disabled');
 });
 
 test('a reload swaps workers on the same store: queue, cursor, and dedup history survive', async t => {

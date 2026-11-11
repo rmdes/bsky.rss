@@ -24,6 +24,11 @@ export interface BotWorkerOptions {
   logger: Logger;
   ntfyUrl?: string;
   ntfyToken?: string;
+  // Asked on every check: only one config per account checks its notifications, and a running
+  // sibling takes the role over when its holder stops. Absent means always.
+  holdsNotifier?: () => boolean;
+  // Shared by every config posting to this account; records which notifications were pushed.
+  accountStore?: BotStore;
   botHandle?: string;
 }
 
@@ -65,6 +70,7 @@ export class BotWorker {
 
   async checkNotificationsOnce(): Promise<void> {
     if (!this.options.ntfyUrl) return;
+    if (this.options.holdsNotifier && !this.options.holdsNotifier()) return;
     if (this.notificationRunning) return;
     this.notificationRunning = true;
     try {
@@ -73,6 +79,7 @@ export class BotWorker {
         botHandle: this.options.botHandle ?? this.botId,
         bskyClient: this.options.bskyClient,
         store: this.options.store,
+        accountStore: this.options.accountStore,
         ntfyUrl: this.options.ntfyUrl,
         ntfyToken: this.options.ntfyToken,
         logger: this.options.logger,

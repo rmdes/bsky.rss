@@ -129,6 +129,10 @@ export class BotStore {
       .run(value, now);
   }
 
+  deleteSeenValue(value: string, table: SeenTable = 'seen_items'): void {
+    this.db.prepare(`DELETE FROM ${table} WHERE value = ?`).run(value);
+  }
+
   listSeenValues(): {value: string; seenAt: string}[] {
     return this.db
       .prepare('SELECT value, seen_at as seenAt FROM seen_items ORDER BY seen_at ASC')

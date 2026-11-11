@@ -387,7 +387,23 @@ export class FeedReader {
       return;
     }
     this.identityStore.writeSeenValue(dedupeKey);
+    try {
+      await this.handleClaimedItem(item, itemUrl, useDate, dedupeKey);
+    } catch (error) {
+      // Not queued (e.g. the bot's store closed under a reload): release the claim so the next
+      // poll retries the item instead of skipping it as already published.
+      this.identityStore.deleteSeenValue(dedupeKey);
+      throw error;
+    }
+  }
 
+  // The rest of handleItem, once this identity has claimed the item's dedupe key.
+  private async handleClaimedItem(
+    item: NormalizedItem,
+    itemUrl: string | undefined,
+    useDate: string,
+    dedupeKey: string,
+  ): Promise<void> {
     const lastCursor = this.store.readCursor();
     // Before any Open Graph/image/oEmbed fetch: a stale item is dropped either way.
     if (isPastCursor(useDate, lastCursor)) {
@@ -415,7 +431,6 @@ export class FeedReader {
           );
           return;
         }
-        this.store.writeSeenValue(url);
       }
 
       let imageUrl: string | undefined = item.imageUrl;
@@ -526,6 +541,10 @@ export class FeedReader {
       itemDate: useDate,
       dedupeKey,
     } as ParsedItem);
+    // Only once queued: marking before a failure would skip the item on every later poll.
+    if (this.config.publishEmbed && this.config.removeDuplicate && itemUrl) {
+      this.store.writeSeenValue(itemUrl);
+    }
   }
 
   /**

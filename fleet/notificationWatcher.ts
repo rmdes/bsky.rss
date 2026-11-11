@@ -78,6 +78,10 @@ export interface CheckBotNotificationsParams {
   botHandle: string;
   bskyClient: BskyClient;
   store: BotStore;
+  /** The account's store, shared by every config posting to it: sent notifications are recorded
+   * there, so a sibling taking over the notifier role doesn't resend them. `store` is still read
+   * for what was sent before this existed. */
+  accountStore?: BotStore;
   ntfyUrl: string;
   /** Bearer token for an auth-protected ntfy topic (ntfy access tokens are prefixed `tk_`).
    * Omit for a topic that allows unauthenticated publishing. */
@@ -89,8 +93,10 @@ export interface CheckBotNotificationsParams {
 export async function checkBotNotifications(params: CheckBotNotificationsParams): Promise<void> {
   const {botId, botHandle, bskyClient, store, ntfyUrl, ntfyToken, logger} = params;
   const fetchImpl = params.fetchImpl ?? createTimeoutFetch(NTFY_TIMEOUT_MS);
+  const sentStore = params.accountStore ?? store;
+  const sentStores = params.accountStore ? [params.accountStore, store] : [store];
 
-  store.cleanupOldSeenValues(96, NOTIFIED_TABLE);
+  for (const s of sentStores) s.cleanupOldSeenValues(96, NOTIFIED_TABLE);
 
   const result = await bskyClient.listNotifications(['reply', 'mention', 'quote']);
   if (!result.ok) {
@@ -109,7 +115,7 @@ export async function checkBotNotifications(params: CheckBotNotificationsParams)
     if (Number.isNaN(indexedAtMs)) continue;
     const ageMs = Date.now() - indexedAtMs;
     if (ageMs > MAX_NOTIFICATION_AGE_MS) continue;
-    if (store.seenValueExists(notification.uri, NOTIFIED_TABLE)) continue;
+    if (sentStores.some(s => s.seenValueExists(notification.uri, NOTIFIED_TABLE))) continue;
 
     const message = buildNtfyMessage(botHandle, notification);
 
@@ -142,7 +148,7 @@ export async function checkBotNotifications(params: CheckBotNotificationsParams)
       logger.debug('NOTIFY', formatDebugError(error), botId);
       continue;
     }
-    store.writeSeenValue(notification.uri, NOTIFIED_TABLE);
+    sentStore.writeSeenValue(notification.uri, NOTIFIED_TABLE);
     logger.verbose(
       'NOTIFY',
       `Pushed notification (${notification.reason} from @${notification.author.handle})`,

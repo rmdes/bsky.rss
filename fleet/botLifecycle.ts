@@ -86,7 +86,7 @@ export function createBotLifecycle(options: BotLifecycleOptions): BotLifecycle {
       if (reason !== 'reload' && releasedIdentifier) {
         options.logger.summary(
           'CONFIG',
-          `notifications for @${releasedIdentifier} paused until another config for it starts`,
+          `notifications for @${releasedIdentifier} pass to another running config for it, if any`,
           botId,
         );
       }

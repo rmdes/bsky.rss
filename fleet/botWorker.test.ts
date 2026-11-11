@@ -126,6 +126,7 @@ function makeWorker(
     botId?: string;
     ntfyUrl?: string;
     ntfyToken?: string;
+    holdsNotifier?: () => boolean;
     botHandle?: string;
   },
 ) {
@@ -158,6 +159,7 @@ function makeWorker(
     logger,
     ntfyUrl: overrides?.ntfyUrl,
     ntfyToken: overrides?.ntfyToken,
+    holdsNotifier: overrides?.holdsNotifier,
     botHandle: overrides?.botHandle,
   });
   t.after(() => worker.stop());
@@ -876,6 +878,23 @@ test('checkNotificationsOnce calls through to bskyClient.listNotifications when 
     botHandle: 'bot.bsky.social',
   });
   await worker.start();
+  await worker.checkNotificationsOnce();
+  assert.equal(bskyClient.notificationChecks, 1);
+});
+
+test('a worker checks notifications only while it holds its account’s notifier role', async t => {
+  // A running sibling takes over when the holder stops (live 2026-11-11: @alerts went silent
+  // until a bot for it was restarted by hand).
+  let holds = false;
+  const {worker, bskyClient} = makeWorker(t, {
+    ntfyUrl: 'https://ntfy.example/topic',
+    botHandle: 'bot.bsky.social',
+    holdsNotifier: () => holds,
+  });
+  await worker.start();
+  await worker.checkNotificationsOnce();
+  assert.equal(bskyClient.notificationChecks, 0);
+  holds = true;
   await worker.checkNotificationsOnce();
   assert.equal(bskyClient.notificationChecks, 1);
 });

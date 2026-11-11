@@ -511,6 +511,29 @@ test('two bot configs with different identifiers compute different dedupeKeys fo
   assert.notEqual(emittedA[0]?.dedupeKey, emittedB[0]?.dedupeKey);
 });
 
+test('an item whose handling throws is not marked seen, so the next poll retries it', async t => {
+  // Live 2026-11-11: reloading a bot mid-poll made 39 items throw after both seen marks were
+  // written; every later poll skipped them as "already published" though none was queued.
+  const {reader} = createInstrumentedReader(t, {
+    config: {publishEmbed: true, removeDuplicate: true},
+    fetchOpenGraph: async () => {
+      throw new Error('offline');
+    },
+  });
+  const item = normalizedItem({date: '2026-08-03T12:01:00.000Z'});
+
+  reader.onItem(() => {
+    throw new Error('database is not open');
+  });
+  await assert.rejects(handleItem(reader, item), /database is not open/);
+
+  const emitted: ParsedItem[] = [];
+  reader.onItem(parsed => emitted.push(parsed));
+  await handleItem(reader, item);
+
+  assert.equal(emitted.length, 1);
+});
+
 test('a duplicate item posted through one FeedReader is skipped by a second FeedReader sharing its identity', async t => {
   // The actual production bug this feature fixes: two bot configs (different feeds,
   // different botIds) sharing one Bluesky identifier must recognize a story the OTHER

@@ -125,6 +125,61 @@ test('checkBotNotifications skips a notification already recorded as sent', asyn
   assert.equal(fetchCalls, 0);
 });
 
+test('a sibling taking over an account’s notifications does not resend what the previous holder pushed', async () => {
+  const bskyClient = new FakeBskyClient();
+  const notification = makeNotification();
+  bskyClient.setResult({ok: true, notifications: [notification]});
+  const accountStore = new FakeStore();
+  let fetchCalls = 0;
+  const fetchImpl = async () => {
+    fetchCalls++;
+    return new Response(null, {status: 200});
+  };
+  const {logger} = makeLogger();
+  const check = (botId: string) =>
+    checkBotNotifications({
+      botId,
+      botHandle: 'shared.bsky.social',
+      bskyClient: bskyClient as unknown as BskyClient,
+      store: new FakeStore() as unknown as BotStore,
+      accountStore: accountStore as unknown as BotStore,
+      ntfyUrl: 'https://ntfy.example/topic',
+      logger,
+      fetchImpl,
+    });
+
+  await check('holder');
+  await check('sibling');
+
+  assert.equal(fetchCalls, 1);
+});
+
+test('a notification recorded only in the per-bot store (before the account store existed) is not resent', async () => {
+  const bskyClient = new FakeBskyClient();
+  const notification = makeNotification();
+  bskyClient.setResult({ok: true, notifications: [notification]});
+  const store = new FakeStore();
+  store.writeSeenValue(notification.uri, 'notified_items');
+  let fetchCalls = 0;
+  const {logger} = makeLogger();
+
+  await checkBotNotifications({
+    botId: 'b',
+    botHandle: 'b.bsky.social',
+    bskyClient: bskyClient as unknown as BskyClient,
+    store: store as unknown as BotStore,
+    accountStore: new FakeStore() as unknown as BotStore,
+    ntfyUrl: 'https://ntfy.example/topic',
+    logger,
+    fetchImpl: async () => {
+      fetchCalls++;
+      return new Response(null, {status: 200});
+    },
+  });
+
+  assert.equal(fetchCalls, 0);
+});
+
 test('checkBotNotifications posts to ntfy and records the uri only after a successful POST', async () => {
   const bskyClient = new FakeBskyClient();
   const notification = makeNotification();
