@@ -42,7 +42,15 @@ async function buildWorker(
 ): Promise<BotWorker> {
   const store = new BotStore(spec.dbPath);
   try {
-    const bskyClient = new BskyClient(spec.botId, spec.instanceUrl, store, logger, dryRun);
+    const bskyClient = new BskyClient(
+      spec.botId,
+      spec.instanceUrl,
+      store,
+      logger,
+      dryRun,
+      undefined,
+      spec.labels,
+    );
     await bskyClient.login(spec.identifier, spec.appPassword);
 
     const feedReader = new FeedReader(

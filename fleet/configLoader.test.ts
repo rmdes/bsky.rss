@@ -131,6 +131,40 @@ test('loadFleet maps adaptiveSpacing/spacingWindow/minSpacing/maxSpacing into sc
   );
 });
 
+const LABEL_BOT = {
+  id: 'bot-a',
+  enabled: true,
+  identifier: 'bot-a.bsky.social',
+  instanceUrl: 'https://bsky.social',
+  feedUrl: 'https://example.com/a.xml',
+  secretKey: 'bot-a',
+  fetchIntervalMinutes: 5,
+};
+
+test('loadFleet reads a bot’s self-labels from config.json', t => {
+  const {configRoot, secretsFilePath, dataRoot, cleanup} = setupFleet();
+  t.after(cleanup);
+  writeBot(configRoot, 'bot-a', LABEL_BOT, {string: '$title', labels: ['graphic-media']});
+  writeFileSync(secretsFilePath, JSON.stringify({'bot-a': 'pw'}));
+
+  const result = loadFleet(configRoot, secretsFilePath, dataRoot);
+
+  assert.equal(result.errors.length, 0);
+  assert.deepEqual(result.bots[0]!.labels, ['graphic-media']);
+});
+
+test('loadFleet rejects a label that is not a Bluesky self-label, so a typo never posts unlabelled', t => {
+  const {configRoot, secretsFilePath, dataRoot, cleanup} = setupFleet();
+  t.after(cleanup);
+  writeBot(configRoot, 'bot-a', LABEL_BOT, {string: '$title', labels: ['graphic_media']});
+  writeFileSync(secretsFilePath, JSON.stringify({'bot-a': 'pw'}));
+
+  const result = loadFleet(configRoot, secretsFilePath, dataRoot);
+
+  assert.equal(result.bots.length, 0);
+  assert.match(result.errors[0]!.error, /graphic_media/);
+});
+
 test('loadFleet skips a bot with enabled: false', t => {
   const {configRoot, secretsFilePath, dataRoot, cleanup} = setupFleet();
   t.after(cleanup);

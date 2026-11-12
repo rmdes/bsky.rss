@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.18.0] - 2026-11-12
+
+### Added
+- **Content warnings per bot:** `"labels": ["graphic-media"]` in a bot's `config.json` puts Bluesky
+  self-labels on every post it makes (allowed: `graphic-media`, `nudity`, `sexual`, `porn`; any other
+  value is rejected as a config error). See `documentation/fleet.md`.
+
+---
+
 ## [2.17.0] - 2026-11-11
 
 ### Added

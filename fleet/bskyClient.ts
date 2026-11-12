@@ -136,6 +136,8 @@ export class BskyClient {
     private logger: Logger,
     private dryRun: boolean = false,
     private alreadyExistsClassifier: (error: unknown) => boolean = isAlreadyExistsError,
+    // Bluesky self-labels (content warnings) applied to every post, e.g. ['graphic-media'].
+    private labels: readonly string[] = [],
   ) {
     this.agent = new BskyAgent({
       service,
@@ -277,6 +279,14 @@ export class BskyClient {
       embed: embed_data,
       langs: params.languages,
       createdAt: (params.date ?? new Date()).toISOString(),
+      ...(this.labels.length
+        ? {
+            labels: {
+              $type: 'com.atproto.label.defs#selfLabels',
+              values: this.labels.map(val => ({val})),
+            },
+          }
+        : {}),
     };
 
     const createStartedAt = Date.now();

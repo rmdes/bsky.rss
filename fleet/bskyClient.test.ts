@@ -399,6 +399,57 @@ test('a blob upload failure returns a distinct pre-record deferral with debug de
   );
 });
 
+function captureRecords(client: BskyClient): Array<Record<string, unknown>> {
+  const created: Array<Record<string, unknown>> = [];
+  (client as unknown as {agent: unknown}).agent = {
+    accountDid: 'did:plc:test',
+    app: {
+      bsky: {
+        feed: {
+          post: {
+            create: async (_repo: unknown, record: Record<string, unknown>) => {
+              created.push(record);
+              return {uri: 'at://did:plc:test/app.bsky.feed.post/x'};
+            },
+          },
+        },
+      },
+    },
+  };
+  return created;
+}
+
+test('a bot configured with labels self-labels every post record', async () => {
+  const logger = new Logger({defaultLevel: 'summary', sink: () => undefined});
+  const store = {readSession: () => undefined, writeSession: () => undefined};
+  const client = new BskyClient(
+    'test-bot',
+    'https://bsky.social',
+    store as unknown as BotStore,
+    logger,
+    false,
+    undefined,
+    ['graphic-media'],
+  );
+  const created = captureRecords(client);
+
+  await client.post({content: 'war footage', rkey: 'labelled'});
+
+  assert.deepEqual(created[0]?.labels, {
+    $type: 'com.atproto.label.defs#selfLabels',
+    values: [{val: 'graphic-media'}],
+  });
+});
+
+test('a bot without labels posts records with no labels field', async () => {
+  const {client} = makeClient('summary');
+  const created = captureRecords(client);
+
+  await client.post({content: 'plain', rkey: 'unlabelled'});
+
+  assert.equal('labels' in created[0]!, false);
+});
+
 test('a classified create-record failure emits sanitized debug detail and duration', async () => {
   const runtime = makeClient('debug');
   (runtime.client as unknown as {agent: unknown}).agent = {

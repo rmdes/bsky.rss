@@ -123,6 +123,15 @@ is taken at most once: the bot keeps a permanent record of every item it queued.
 `"itemDate"`, is the behavior described above. Like any `config.json` change, it applies without a
 restart.
 
+To put a content warning on every post of a bot (for example war footage), list Bluesky self-labels
+in its `config.json`:
+
+    "labels": ["graphic-media"]
+
+Allowed values are `graphic-media`, `nudity`, `sexual`, and `porn`. Bluesky apps then hide or blur the
+post's media according to each viewer's moderation settings. Any other value is a config error (the
+bot keeps its previous config), so a typo never posts unlabelled.
+
 ### `sharedLimiters`
 
 Fleet-wide concurrency limits to prevent resource exhaustion when many bots are

@@ -23,6 +23,7 @@ export interface BotSpec {
   dbPath: string;
   feedReaderConfig: FeedReaderConfig;
   schedulerConfig: SchedulerConfig;
+  labels?: string[]; // Bluesky self-labels for every post (config.json "labels")
 }
 
 export interface LoadedFleet {
@@ -42,6 +43,19 @@ interface BotJson {
 }
 
 const SCHEDULER_FIELDS = ['adaptiveSpacing', 'spacingWindow', 'minSpacing', 'maxSpacing'] as const;
+
+// The self-labels Bluesky defines for posts. Anything else is rejected, so a typo never posts unlabelled.
+const SELF_LABELS = ['graphic-media', 'nudity', 'sexual', 'porn'];
+
+function parseLabels(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some(label => !SELF_LABELS.includes(label as string))) {
+    throw new Error(
+      `config.json "labels" must be a list of ${SELF_LABELS.join(', ')}; got ${JSON.stringify(value)}`,
+    );
+  }
+  return value as string[];
+}
 
 function splitConfigJson(configJson: Record<string, unknown>): {
   feedReaderConfig: FeedReaderConfig;
@@ -81,8 +95,10 @@ export function loadOneBot(
   if (!appPassword) throw new Error(`No secret found for secretKey "${bot.secretKey}"`);
 
   const {feedReaderConfig, schedulerConfig} = splitConfigJson(configJson);
+  const labels = parseLabels(configJson.labels);
 
   return {
+    labels,
     botId: bot.id,
     identifier: bot.identifier,
     appPassword,
