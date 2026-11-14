@@ -11,6 +11,8 @@ export interface FleetConfig {
   freshness: FreshnessConfig;
   sharedLimiters: SharedLimitersConfig;
   perBotQueueMaxLength: number;
+  // Bluesky's card service as last-resort link-card source; on unless set to false.
+  cardServiceFallback?: boolean;
 }
 
 export interface BotSpec {

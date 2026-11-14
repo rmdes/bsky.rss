@@ -51,12 +51,15 @@ function createRuntime(
   botId = 'test-bot',
   fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>,
   fetchYouTubeOembed?: typeof fetch,
+  fetchCardService?: typeof fetch,
 ): {
   operations: BotOperations;
   logger: Logger;
   records: LogRecord[];
   fetchOpenGraph?: typeof fetchOpenGraph;
   fetchYouTubeOembed?: typeof fetch;
+  fetchCardService?: typeof fetch;
+  cardServiceFallback?: boolean;
 } {
   const records: LogRecord[] = [];
   return {
@@ -69,6 +72,8 @@ function createRuntime(
     records,
     fetchOpenGraph,
     fetchYouTubeOembed,
+    // The card service fallback is on only when a test injects it.
+    ...(fetchCardService ? {fetchCardService, cardServiceFallback: true} : {}),
   };
 }
 
@@ -81,6 +86,7 @@ function createInstrumentedReader(
     config?: Record<string, unknown>;
     fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>;
     fetchYouTubeOembed?: typeof fetch;
+    fetchCardService?: typeof fetch;
   } = {},
 ) {
   const botId = options.botId ?? 'test-bot';
@@ -91,7 +97,12 @@ function createInstrumentedReader(
   t.after(() => store.close());
   const identityStore = options.identityStore ?? new BotStore(join(dir, 'identity.sqlite'));
   if (!options.identityStore) t.after(() => identityStore.close());
-  const runtime = createRuntime(botId, options.fetchOpenGraph, options.fetchYouTubeOembed);
+  const runtime = createRuntime(
+    botId,
+    options.fetchOpenGraph,
+    options.fetchYouTubeOembed,
+    options.fetchCardService,
+  );
   const reader = new FeedReader(
     botId,
     identifier,
@@ -1188,6 +1199,130 @@ test('the oEmbed lookup runs under the shared Open Graph limit and logs why it f
       r => r.message.includes('No YouTube thumbnail') && r.message.includes('HTTP 500'),
     ),
   );
+});
+
+const cardImage = 'https://cardyb.bsky.app/v1/image?url=https%3A%2F%2Fimages.example.test%2Fa.jpg';
+
+// Bluesky's card service (cardyb): what the Bluesky app asks when a link is pasted.
+function cardServiceStub(body: Record<string, unknown> | null, status = 200) {
+  const calls: string[] = [];
+  const fetchCardService: typeof fetch = async input => {
+    calls.push(String(input));
+    return new Response(body === null ? 'not json' : JSON.stringify(body), {status});
+  };
+  return {calls, fetchCardService};
+}
+
+async function queuedEmbed(
+  t: {after(callback: () => void): void},
+  fetchOpenGraph: () => Promise<unknown>,
+  fetchCardService: typeof fetch,
+) {
+  const {reader} = createInstrumentedReader(t, {
+    config: {publishEmbed: true, embedType: 'card'},
+    fetchOpenGraph,
+    fetchCardService,
+  });
+  const emitted: ParsedItem[] = [];
+  reader.onItem(item => emitted.push(item));
+  await handleItem(
+    reader,
+    normalizedItem({
+      id: 'https://www.lecho.be/r/t/1/id/1',
+      title: 'Feed title',
+      link: 'https://www.lecho.be/r/t/1/id/1',
+      date: '2026-08-03T12:01:00.000Z',
+    }),
+  );
+  return emitted[0]?.embed;
+}
+
+test('when the page refuses the bot, the card takes title, description and image from the card service', async t => {
+  // Live: lecho.be and demorgen.be answer 403 to the fleet while the Bluesky app gets full cards.
+  const {calls, fetchCardService} = cardServiceStub({
+    error: '',
+    url: 'https://www.lecho.behttps//garbled',
+    title: 'Real headline',
+    description: 'Real summary',
+    image: cardImage,
+  });
+  const embed = await queuedEmbed(
+    t,
+    async () => {
+      throw new Error('403 Forbidden');
+    },
+    fetchCardService,
+  );
+
+  assert.equal(embed?.uri, 'https://www.lecho.be/r/t/1/id/1'); // never the service's url field
+  assert.equal(embed?.title, 'Real headline');
+  assert.equal(embed?.description, 'Real summary');
+  assert.equal(embed?.imageUrl, cardImage);
+  assert.equal(calls.length, 1);
+  assert.match(
+    calls[0]!,
+    /^https:\/\/cardyb\.bsky\.app\/v1\/extract\?url=https%3A%2F%2Fwww\.lecho\.be/,
+  );
+});
+
+test('when the page loads but has no image, only the image comes from the card service', async t => {
+  const {calls, fetchCardService} = cardServiceStub({error: '', title: 'Other', image: cardImage});
+  const embed = await queuedEmbed(t, async () => ({ogTitle: 'Page title'}), fetchCardService);
+
+  assert.equal(embed?.title, 'Page title');
+  assert.equal(embed?.imageUrl, cardImage);
+  assert.equal(calls.length, 1);
+});
+
+test('the card service is not asked when the page already gives an image', async t => {
+  const {calls, fetchCardService} = cardServiceStub({error: '', image: cardImage});
+  const embed = await queuedEmbed(
+    t,
+    async () => ({ogTitle: 'T', ogImage: [{url: 'https://www.lecho.be/og.jpg'}]}),
+    fetchCardService,
+  );
+
+  assert.equal(embed?.imageUrl, 'https://www.lecho.be/og.jpg');
+  assert.equal(calls.length, 0);
+});
+
+test('a failing or empty card service answer leaves today’s fallback card unchanged', async t => {
+  for (const stub of [
+    cardServiceStub({error: 'blocked'}),
+    cardServiceStub(null),
+    cardServiceStub({error: ''}, 500),
+    cardServiceStub({error: '', image: 'javascript:alert(1)'}), // only https images are used
+  ]) {
+    const embed = await queuedEmbed(
+      t,
+      async () => {
+        throw new Error('403');
+      },
+      stub.fetchCardService,
+    );
+    assert.equal(embed?.title, 'Feed title');
+    assert.equal(embed?.imageUrl, undefined);
+  }
+});
+
+test('resolveCardImage tries the card service image when the stored image fails to download', async t => {
+  const {calls, fetchCardService} = cardServiceStub({error: '', image: cardImage});
+  const {reader} = createInstrumentedReader(t, {fetchCardService});
+  const downloads: string[] = [];
+  reader.resolveEmbedImage = async url => {
+    downloads.push(url);
+    return url === cardImage ? Buffer.from('card') : undefined;
+  };
+
+  const image = await reader.resolveCardImage({
+    uri: 'https://www.demorgen.be/a',
+    title: 'T',
+    imageUrl: 'https://dead.example.test/x.jpg',
+  });
+
+  assert.equal(image?.toString(), 'card');
+  assert.deepEqual(downloads, ['https://dead.example.test/x.jpg', cardImage]);
+  assert.equal(calls.length, 1);
 });
 
 test('resolveCardImage falls back to the YouTube thumbnail when the stored image fails to download', async t => {

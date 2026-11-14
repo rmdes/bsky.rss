@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.19.0] - 2026-11-14
+
+### Added
+- **Link cards from Bluesky's card service as a last resort.** When a publisher refuses the bot's
+  page fetch (e.g. lecho.be, demorgen.be answer 403) or no image was found, the bot asks
+  `cardyb.bsky.app`, the service the Bluesky app uses for pasted links, for the card's title,
+  description and image, and retries its image at post time if the stored one won't download.
+  The card still links to the feed's link. On by default; `"cardServiceFallback": false` in
+  `fleet.json` turns it off. See `documentation/fleet.md`.
+
+---
+
 ## [2.18.0] - 2026-11-12
 
 ### Added

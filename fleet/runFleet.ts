@@ -39,6 +39,7 @@ async function buildWorker(
   ntfyUrl: string | undefined,
   ntfyToken: string | undefined,
   holdsNotifier: () => boolean,
+  cardServiceFallback: boolean,
 ): Promise<BotWorker> {
   const store = new BotStore(spec.dbPath);
   try {
@@ -62,7 +63,7 @@ async function buildWorker(
       store,
       identityStore,
       sharedLimiters,
-      {operations, logger},
+      {operations, logger, cardServiceFallback},
     );
 
     const worker = new BotWorker({
@@ -192,6 +193,7 @@ async function main(): Promise<void> {
         ntfyUrl,
         ntfyToken,
         () => claims.claim(spec.botId, spec.identifier),
+        fleetConfig.cardServiceFallback !== false,
       ),
     shutdownTimeoutMs: shutdownPerBotTimeoutMs,
     logger,

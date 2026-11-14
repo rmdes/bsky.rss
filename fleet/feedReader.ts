@@ -14,6 +14,7 @@ import {retryOnce} from '../shared/http/retryOnce.ts';
 import {createFeedSource} from '../shared/feedSource/index.ts';
 import type {FeedSource, NormalizedItem} from '../shared/feedSource/index.ts';
 import {absolutizeImageUrl, isYouTubeUrl, youtubeThumbnail} from '../shared/feedSource/imageUrl.ts';
+import {fetchServiceCard, type ServiceCard} from './cardService.ts';
 import {
   extractMarkdownLinks,
   finalizeMarkdownLinks,
@@ -61,6 +62,9 @@ export interface FeedReaderRuntime {
   fetchOpenGraph?: (url: string, userAgent: string, timeoutMs: number) => Promise<unknown>;
   // Injectable only so tests can stand in for YouTube's oEmbed endpoint; default is global fetch.
   fetchYouTubeOembed?: typeof fetch;
+  // Last-resort link cards from Bluesky's card service (fleet.json "cardServiceFallback").
+  cardServiceFallback?: boolean;
+  fetchCardService?: typeof fetch; // injectable for tests; default is global fetch
 }
 
 const DEFAULT_OG_USER_AGENT =
@@ -558,6 +562,17 @@ export class FeedReader {
       if (embed && !embed.imageUrl && isYouTubeUrl(url)) {
         embed.imageUrl = await this.youtubeThumbnailUrl(url);
       }
+
+      // Last resort: Bluesky's card service, which some publishers serve while refusing the bot.
+      // A refused page also gets the service's title and description instead of the feed's.
+      if (embed && (!openGraphFetch.ok || !embed.imageUrl)) {
+        const card = await this.serviceCard(url);
+        if (card && !openGraphFetch.ok) {
+          embed.title = card.title ?? embed.title;
+          embed.description = card.description ?? embed.description;
+        }
+        if (card?.image && !embed.imageUrl) embed.imageUrl = card.image;
+      }
     }
 
     const title =
@@ -595,11 +610,48 @@ export class FeedReader {
    */
   async resolveCardImage(embed: ParsedEmbed): Promise<Buffer | undefined> {
     const image = embed.imageUrl ? await this.resolveEmbedImage(embed.imageUrl) : undefined;
-    if (image || !isYouTubeUrl(embed.uri)) return image;
-    const thumbnail = await this.youtubeThumbnailUrl(embed.uri);
-    // Already tried: the parse-time fallback may have put this very thumbnail in imageUrl.
-    if (!thumbnail || thumbnail === embed.imageUrl) return undefined;
-    return this.resolveEmbedImage(thumbnail);
+    if (image) return image;
+    if (isYouTubeUrl(embed.uri)) {
+      const thumbnail = await this.youtubeThumbnailUrl(embed.uri);
+      // Already tried: the parse-time fallback may have put this very thumbnail in imageUrl.
+      if (!thumbnail || thumbnail === embed.imageUrl) return undefined;
+      return this.resolveEmbedImage(thumbnail);
+    }
+    // A stored image that won't download: last try, the card service's image for this link.
+    if (!embed.imageUrl) return undefined;
+    const card = await this.serviceCard(embed.uri);
+    if (!card?.image || card.image === embed.imageUrl) return undefined;
+    return this.resolveEmbedImage(card.image);
+  }
+
+  // Shares the Open Graph concurrency limit and timeout; never throws (undefined = no card).
+  private async serviceCard(url: string): Promise<ServiceCard | undefined> {
+    if (!this.runtime.cardServiceFallback) return undefined;
+    try {
+      const card = await this.sharedLimiters.withOgLimit(
+        () =>
+          fetchServiceCard(url, {
+            timeoutMs: this.sharedLimiters.httpTimeoutMs,
+            fetchFn: this.runtime.fetchCardService,
+          }),
+        {logger: this.runtime.logger, botId: this.botId},
+      );
+      if (card) {
+        this.runtime.logger.verbose(
+          'FETCH',
+          `Card from Bluesky card service for ${url}`,
+          this.botId,
+        );
+      }
+      return card;
+    } catch (error) {
+      this.runtime.logger.debug(
+        'FETCH',
+        `Card service lookup failed\n${formatDebugError(error)}`,
+        this.botId,
+      );
+      return undefined;
+    }
   }
 
   // Shares the Open Graph concurrency limit: it's the same kind of per-item link lookup.

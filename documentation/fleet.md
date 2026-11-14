@@ -150,6 +150,21 @@ active simultaneously.
 Maximum number of items that can be queued per bot. When this limit is reached,
 older queued items may be dropped.
 
+### `cardServiceFallback`
+
+**Type:** `boolean`  
+**Default:** `true`
+
+Some publishers refuse the bot's own fetch of an article page (HTTP 403) while serving
+Bluesky's card service, so their link cards would go out without a thumbnail. As a last
+resort, a bot then asks Bluesky's card service (`cardyb.bsky.app`, what the Bluesky app uses
+when a link is pasted): when the page fetch fails it takes the service's title, description and
+image; when the page loads but no image was found (feed image, page tags, YouTube thumbnail) it
+takes only the image; and at post time it retries with the service's image if the stored image
+won't download. The card always links to the feed's own link. The service is only asked in
+those cases, shares the Open Graph concurrency limit, and any failure leaves the card as it
+would have been. Set `false` to turn it off fleet-wide (needs a fleet restart).
+
 **Example `fleet.json`:**
 
 ```json
