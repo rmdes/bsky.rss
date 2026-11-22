@@ -12,31 +12,31 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@atproto/api@npm:0.32.3":
-  version: 0.32.3
-  resolution: "@atproto/api@npm:0.32.3"
+"@atproto/api@npm:0.32.5":
+  version: 0.32.5
+  resolution: "@atproto/api@npm:0.32.5"
   dependencies:
-    "@atproto/common-web": "npm:^0.5.18"
-    "@atproto/lexicon": "npm:^0.7.20"
-    "@atproto/syntax": "npm:^0.7.8"
-    "@atproto/xrpc": "npm:^0.8.19"
+    "@atproto/common-web": "npm:^0.5.19"
+    "@atproto/lexicon": "npm:^0.7.21"
+    "@atproto/syntax": "npm:^0.7.9"
+    "@atproto/xrpc": "npm:^0.8.20"
     await-lock: "npm:^3.0.0"
     multiformats: "npm:^13.0.0"
     tlds: "npm:^1.234.0"
     zod: "npm:^3.23.8"
-  checksum: 10c0/d0eca69da6ad7c8aaab29a518578a54c225ec6baa3e42e8cd75ee8f3ca2e200916fb5ba14a3e0940161b7ea5617a3d948fa7201d4efc473ba964d9f7d25638d7
+  checksum: 10c0/3d9866a0f243702fd2512ebdd745e8496adab8c7756c4c053fcbe03494b2a27bc5ff1b59d8ff792444e6e7b53023c12efe91a4ae7ff61d9608806360aeab88ce
   languageName: node
   linkType: hard
 
-"@atproto/common-web@npm:^0.5.18":
-  version: 0.5.18
-  resolution: "@atproto/common-web@npm:0.5.18"
+"@atproto/common-web@npm:^0.5.19":
+  version: 0.5.19
+  resolution: "@atproto/common-web@npm:0.5.19"
   dependencies:
     "@atproto/lex-data": "npm:^0.1.11"
     "@atproto/lex-json": "npm:^0.1.10"
-    "@atproto/syntax": "npm:^0.7.8"
+    "@atproto/syntax": "npm:^0.7.9"
     zod: "npm:^3.23.8"
-  checksum: 10c0/da94c3ce17dbb7178b2ce5f398d9fc405aab943d7bea0a5b2b6f0e331e2c4bf7dfd65b869cfe49e3c83da992411a31e5047284bcf3fe0ab484ee168af83291e6
+  checksum: 10c0/76b1c77e6b2799e9362b6af80d80e235ecd11c59deb8ea00be3e2a3fafcc1da05c58f59e4df171a2abaebf665bb34956479766c8834e14d056ac6a553b3e5a67
   languageName: node
   linkType: hard
 
@@ -61,35 +61,35 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@atproto/lexicon@npm:^0.7.20":
-  version: 0.7.20
-  resolution: "@atproto/lexicon@npm:0.7.20"
+"@atproto/lexicon@npm:^0.7.21":
+  version: 0.7.21
+  resolution: "@atproto/lexicon@npm:0.7.21"
   dependencies:
-    "@atproto/common-web": "npm:^0.5.18"
-    "@atproto/syntax": "npm:^0.7.8"
+    "@atproto/common-web": "npm:^0.5.19"
+    "@atproto/syntax": "npm:^0.7.9"
     multiformats: "npm:^13.0.0"
     zod: "npm:^3.23.8"
-  checksum: 10c0/783931b8fcb6924d63aca0a9e3cda4d88adb3647224462dd642910ef019fca486bde2d7792f3a34aead24a7c73458ee7d6b5131751c5886f172c21debddd2373
+  checksum: 10c0/afc7b58a52198b1bf49c9fe73d2e8ba2364391d2fd23432edeb91d6b522c388eacde38945019c44049e6c9922c07e5c9d1642cfe85adf1d3e95f814b8a55cbd8
   languageName: node
   linkType: hard
 
-"@atproto/syntax@npm:^0.7.8":
-  version: 0.7.8
-  resolution: "@atproto/syntax@npm:0.7.8"
+"@atproto/syntax@npm:^0.7.9":
+  version: 0.7.9
+  resolution: "@atproto/syntax@npm:0.7.9"
   dependencies:
     iso-datestring-validator: "npm:^2.2.2"
     tslib: "npm:^2.8.1"
-  checksum: 10c0/387088dc78ce856c56a40792b4517358d3aad947d774c816aed89aab5e2a4289bc3f55cb0c5f53da2ec0dc0c8c2189e7633b8e894ae2a795f26fa9b228c4e379
+  checksum: 10c0/fa84069a288ace585e1532491cdeda92ba71f14c6ba63d76716b5e3bb4bfa3abb000ecf5db482a07125f180cb8e35540d8cdc18b61c3445126d381c7f2a7a245
   languageName: node
   linkType: hard
 
-"@atproto/xrpc@npm:0.8.19, @atproto/xrpc@npm:^0.8.19":
-  version: 0.8.19
-  resolution: "@atproto/xrpc@npm:0.8.19"
+"@atproto/xrpc@npm:0.8.20, @atproto/xrpc@npm:^0.8.20":
+  version: 0.8.20
+  resolution: "@atproto/xrpc@npm:0.8.20"
   dependencies:
-    "@atproto/lexicon": "npm:^0.7.20"
+    "@atproto/lexicon": "npm:^0.7.21"
     zod: "npm:^3.23.8"
-  checksum: 10c0/da54be2ae3f024375dc80aa8c94d6861456dd6e46fb2cb723848b5981634e236ec18a92dedf17cdbd131710bf592e3761c58094d0f8aa59cc900fe1f56574aeb
+  checksum: 10c0/fdacd098a88fecb7d6b818816b98230cd4ab39ccf69d656fc042b27e9bf8c1d9241f9bf60ea9a66ba8383c7404d749cbd46b2b71c77e38e2351bec50397fa599
   languageName: node
   linkType: hard
 
@@ -1268,8 +1268,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "bsky.rss@workspace:."
   dependencies:
-    "@atproto/api": "npm:0.32.3"
-    "@atproto/xrpc": "npm:0.8.19"
+    "@atproto/api": "npm:0.32.5"
+    "@atproto/xrpc": "npm:0.8.20"
     "@jimp/core": "npm:1.6.1"
     "@jsquash/webp": "npm:1.5.0"
     "@types/node": "npm:26.6.6"
