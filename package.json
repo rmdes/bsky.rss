@@ -44,13 +44,13 @@
   "dependencies": {
     "@atproto/api": "0.32.5",
     "@atproto/xrpc": "0.8.20",
-    "@jimp/core": "1.6.1",
+    "@jimp/core": "1.7.0",
     "@jsquash/webp": "1.5.0",
     "axios": "1.21.1",
     "dotenv": "^18.0.0",
     "feedsmith": "^3.0.0",
     "html-entities": "2.6.0",
-    "jimp": "1.6.1",
+    "jimp": "1.7.0",
     "open-graph-scraper": "6.13.0",
     "tsx": "4.23.15"
   },
